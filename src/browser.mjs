@@ -1,4 +1,5 @@
-import { chromium } from "playwright";
+import fs from "node:fs";
+import { chromium } from "playwright-core";
 
 const SELECTORS = {
   stop: [
@@ -36,10 +37,24 @@ async function firstVisible(page, selectors) {
   return null;
 }
 
+export function resolveChromiumExecutable() {
+  const executablePath = String(process.env.CHROMIUM_EXECUTABLE_PATH || "").trim();
+  if (!executablePath) {
+    throw new Error("CHROMIUM_EXECUTABLE_PATH is required; point it to the host Chromium executable");
+  }
+  try {
+    fs.accessSync(executablePath, fs.constants.X_OK);
+  } catch {
+    throw new Error(`Configured Chromium is not executable: ${executablePath}`);
+  }
+  return executablePath;
+}
+
 export async function launchBrowser(profileDir, headless) {
   return chromium.launchPersistentContext(profileDir, {
+    executablePath: resolveChromiumExecutable(),
     headless,
-    channel: "chromium",
+    args: ["--disable-dev-shm-usage"],
     viewport: { width: 1280, height: 900 },
     locale: "uk-UA"
   });
