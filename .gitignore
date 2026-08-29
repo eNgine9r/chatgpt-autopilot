@@ -1,0 +1,8 @@
+node_modules/
+.env
+browser-profile/
+state/
+logs/
+config/projects.json
+*.log
+.DS_Store

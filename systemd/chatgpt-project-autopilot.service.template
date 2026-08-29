@@ -1,0 +1,24 @@
+[Unit]
+Description=Standalone ChatGPT Project Autopilot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+Environment=HOME=__HOME__
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node __APP_DIR__/src/index.mjs
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__APP_DIR__/browser-profile __APP_DIR__/state __APP_DIR__/logs
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
