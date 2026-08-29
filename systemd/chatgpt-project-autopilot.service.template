@@ -9,7 +9,9 @@ User=__USER__
 WorkingDirectory=__APP_DIR__
 Environment=HOME=__HOME__
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/env node __APP_DIR__/src/index.mjs
+Environment=XDG_CACHE_HOME=__APP_DIR__/browser-profile/.cache
+Environment=XDG_CONFIG_HOME=__APP_DIR__/browser-profile/.config
+ExecStart=__NODE_BIN__ __APP_DIR__/src/index.mjs
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=20
