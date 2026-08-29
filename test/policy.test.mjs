@@ -43,7 +43,36 @@ test("resumes when user returns to the conversation", () => {
   );
 });
 
-test("sends only when timer is due", () => {
+test("never auto-sends when the latest turn is the user", () => {
+  assert.equal(
+    decideAction({
+      ...base,
+      latestTurnRole: "user",
+      latestAssistantText: ""
+    }),
+    "wait_for_assistant"
+  );
+});
+
+test("fails closed when message roles are not recognized", () => {
+  assert.equal(
+    decideAction({
+      ...base,
+      latestTurnRole: "unknown",
+      latestAssistantText: ""
+    }),
+    "ui_unrecognized"
+  );
+});
+
+test("does not auto-send for an empty assistant turn", () => {
+  assert.equal(
+    decideAction({ ...base, latestAssistantText: "" }),
+    "wait_for_assistant"
+  );
+});
+
+test("sends only when timer is due and assistant is latest", () => {
   assert.equal(decideAction(base), "send_continue");
   assert.equal(decideAction({ ...base, dueAtMs: 3000 }), "wait_timer");
 });
