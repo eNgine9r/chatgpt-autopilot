@@ -14,6 +14,6 @@
     "check": "node --check src/index.mjs && node --check src/login.mjs && node --check src/browser.mjs && node --check src/notifier.mjs"
   },
   "dependencies": {
-    "playwright": "^1.55.0"
+    "playwright-core": "1.55.0"
   }
 }
