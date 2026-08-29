@@ -96,6 +96,10 @@ async function tickProject(project) {
       dueAtMs: runtime.dueAtMs
     });
 
+    if (action === "ui_unrecognized") {
+      throw new Error("ChatGPT message-role DOM is unrecognized; refusing to auto-send");
+    }
+
     if (action === "pause_for_user") {
       state.set(project.id, {
         pausedForUser: true,
@@ -142,6 +146,8 @@ async function tickProject(project) {
       state.set(project.id, { status: "working" });
     } else if (action === "paused_for_user") {
       state.set(project.id, { status: "user_action_required" });
+    } else if (action === "wait_for_assistant") {
+      state.set(project.id, { status: "awaiting_assistant" });
     } else {
       state.set(project.id, { status: "armed", dueAtMs: runtime.dueAtMs });
     }
