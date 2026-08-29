@@ -7,12 +7,15 @@ CALLER="${SUDO_USER:-}"
 
 HOME_DIR="$(getent passwd "$CALLER" | cut -d: -f6)"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+NODE_BIN="$(sudo -u "$CALLER" bash -lc 'command -v node')"
+[[ -x "$NODE_BIN" ]] || { echo "Node executable not found for $CALLER"; exit 1; }
 SERVICE="/etc/systemd/system/chatgpt-project-autopilot.service"
 
 sed \
   -e "s|__USER__|$CALLER|g" \
   -e "s|__HOME__|$HOME_DIR|g" \
   -e "s|__APP_DIR__|$APP_DIR|g" \
+  -e "s|__NODE__|$NODE_BIN|g" \
   "$APP_DIR/systemd/chatgpt-project-autopilot.service.template" > "$SERVICE"
 
 chmod 0644 "$SERVICE"

@@ -1,25 +1,35 @@
 import fs from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { loadDotEnv } from "./env.mjs";
-import { loadRuntimeConfig, loadProjects } from "./config.mjs";
-import { launchBrowser } from "./browser.mjs";
+import { loadRuntimeConfig } from "./config.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
+fs.mkdirSync(config.browserProfileDir, { recursive: true, mode: 0o700 });
 
-const firstUrl = fs.existsSync(config.projectsFile)
-  ? loadProjects(config.projectsFile)[0]?.chatUrl
-  : "https://chatgpt.com/";
+if (!fs.existsSync(config.chromiumExecutablePath)) {
+  throw new Error(`Chromium executable not found: ${config.chromiumExecutablePath}`);
+}
 
-const context = await launchBrowser(config.browserProfileDir, false);
-const page = await context.newPage();
-await page.goto(firstUrl || "https://chatgpt.com/", { waitUntil: "domcontentloaded" });
+console.log("Opening ordinary Chromium with the dedicated Autopilot profile.");
+console.log("Log in to ChatGPT manually. No password is handled by this program.");
+console.log("Close that Chromium window after the normal authenticated ChatGPT UI is visible.");
 
-console.log("");
-console.log("A Chromium window is open using the dedicated standalone browser profile.");
-console.log("Log in to ChatGPT manually. Do NOT put your password into project files.");
-console.log("After login succeeds and the normal ChatGPT composer is visible, return here and press Enter.");
+const child = spawn(config.chromiumExecutablePath, [
+  `--user-data-dir=${config.browserProfileDir}`,
+  "--no-first-run",
+  "--new-window",
+  "https://chatgpt.com/"
+], {
+  env: {
+    ...process.env,
+    DISPLAY: config.display,
+    ...(config.xauthority ? { XAUTHORITY: config.xauthority } : {})
+  },
+  stdio: "inherit"
+});
 
-process.stdin.resume();
-await new Promise((resolve) => process.stdin.once("data", resolve));
-await context.close();
-console.log("Browser profile saved.");
+const [code, signal] = await once(child, "exit");
+if (code !== 0 && signal == null) process.exit(code || 1);
+console.log("Chromium closed. Dedicated browser profile remains on disk.");
