@@ -65,3 +65,22 @@ test("rejects non-ChatGPT URL and too-short timer", () => {
 test("normalizer drops query/hash/trailing slash", () => {
   assert.equal(normalizeChatUrl("https://chatgpt.com/c/abc/?x=1#x"), "https://chatgpt.com/c/abc");
 });
+
+
+test("supports state-driven completion mode and watchdog configuration", () => {
+  const loaded = loadProjects(tempConfig([{
+    ...project,
+    autoContinueMode: "on_completion",
+    completionSettleSeconds: 12,
+    watchdogSeconds: 1620
+  }]));
+  assert.equal(loaded[0].autoContinueMode, "on_completion");
+  assert.equal(loaded[0].completionSettleSeconds, 12);
+  assert.equal(loaded[0].watchdogSeconds, 1620);
+});
+
+test("rejects unsafe state-driven timing configuration", () => {
+  assert.throws(() => loadProjects(tempConfig([{ ...project, autoContinueMode: "unknown" }])), /autoContinueMode/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, completionSettleSeconds: 1 }])), /completionSettleSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, watchdogSeconds: 20 }])), /watchdogSeconds/);
+});

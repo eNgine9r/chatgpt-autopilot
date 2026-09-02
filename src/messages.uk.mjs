@@ -14,6 +14,8 @@ export function telegramEventMessage(project, event) {
       return `🔴 ${project.name}: сесія ChatGPT потребує уваги.\nАвтопродовження не виконує жодних дій.\nПеревірте авторизацію або стан чату:\n${project.chatUrl}`;
     case "AUTOMATION_ERROR":
       return `🔴 ${project.name}: Autopilot не може безпечно розпізнати поточний інтерфейс ChatGPT.\nАвтопродовження призупинено, щоб уникнути помилкових дій.\n${project.chatUrl}`;
+    case "AUTOMATION_STALLED":
+      return `🟡 ${project.name}: робота ChatGPT довго не переходить у завершений стан.\nAutopilot не надсилає повторне «Продовжуй» і чекає безпечного завершення.\n${project.chatUrl}`;
     case "RECOVERED":
       return `🟢 ${project.name}: Autopilot відновив безпечну роботу.\nАвтопродовження знову активне.`;
     case "CONVERSATION_ROLLED_OVER":

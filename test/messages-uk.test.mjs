@@ -28,6 +28,7 @@ test("all supported notification events have Ukrainian user-facing text", () => 
     "USER_ACTION_REQUIRED",
     "SESSION_ATTENTION_REQUIRED",
     "AUTOMATION_ERROR",
+    "AUTOMATION_STALLED",
     "RECOVERED"
   ];
   for (const event of events) {

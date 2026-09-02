@@ -35,7 +35,14 @@
     latestAssistantText,
     gateMarker,
     nowMs,
-    dueAtMs
+    dueAtMs,
+    autoContinueMode = "timer",
+    assistantFinished = null,
+    latestTurnKey = "",
+    lastContinuedTurnKey = "",
+    completionObservedTurnKey = "",
+    completionObservedAtMs = 0,
+    completionSettleMs = 0
   }) {
     if (!enabled) return "disabled";
     if (pausedForUser) {
@@ -43,9 +50,26 @@
       return "paused_for_user";
     }
     if (generating) return "wait_generating";
+
+    if (autoContinueMode === "on_completion" && latestTurnRole === "user") {
+      return "wait_assistant";
+    }
     if (latestTurnRole !== "assistant") return "fail_closed";
     if (!String(latestAssistantText || "").trim()) return "fail_closed";
     if (latestAssistantText.includes(gateMarker)) return "pause_for_user";
+
+    if (autoContinueMode === "on_completion") {
+      if (assistantFinished === false) return "wait_completion";
+      if (assistantFinished !== true) return "fail_closed";
+      if (!latestTurnKey) return "fail_closed";
+      if (lastContinuedTurnKey === latestTurnKey) return "wait_next_turn";
+      if (completionObservedTurnKey !== latestTurnKey || !completionObservedAtMs) {
+        return "observe_completion";
+      }
+      if (nowMs < completionObservedAtMs + completionSettleMs) return "wait_settle";
+      return "send_continue";
+    }
+
     if (!dueAtMs || nowMs < dueAtMs) return "wait_timer";
     return "send_continue";
   }

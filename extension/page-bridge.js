@@ -21,16 +21,18 @@
     if (!validMessageId(payload.messageId) || typeof payload.requestId !== "string") return;
 
     const node = findMessageNode(payload.messageId);
-    const text = node && Extractor?.extractAssistantText
-      ? Extractor.extractAssistantText(node)
-      : "";
+    const snapshot = node && Extractor?.extractAssistantSnapshot
+      ? Extractor.extractAssistantSnapshot(node)
+      : { text: "", status: "", finished: null };
 
     window.postMessage({
       source: RESPONSE_SOURCE,
       type: "EXTRACT_ASSISTANT_RESULT",
       requestId: payload.requestId.slice(0, 128),
       messageId: payload.messageId,
-      text: String(text || "").slice(0, 200000)
+      text: String(snapshot.text || "").slice(0, 200000),
+      status: String(snapshot.status || "").slice(0, 64),
+      finished: typeof snapshot.finished === "boolean" ? snapshot.finished : null
     }, "*");
   });
 })();

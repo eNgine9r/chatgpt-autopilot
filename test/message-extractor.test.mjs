@@ -64,3 +64,26 @@ test("prefers direct DOM text and does not inspect unrelated state", () => {
   };
   assert.equal(Extractor.extractAssistantText(node), "Visible response");
 });
+
+
+test("assistant snapshot exposes finished state separately from text", () => {
+  const done = Extractor.messageSnapshot({
+    id: "done-1",
+    author: { role: "assistant" },
+    status: "finished_successfully",
+    content: { parts: ["ready"] }
+  }, "done-1");
+  assert.equal(done.text, "ready");
+  assert.equal(done.status, "finished_successfully");
+  assert.equal(done.finished, true);
+
+  const working = Extractor.messageSnapshot({
+    id: "work-1",
+    author: { role: "assistant" },
+    status: "in_progress",
+    content: { parts: ["partial"] }
+  }, "work-1");
+  assert.equal(working.text, "partial");
+  assert.equal(working.status, "in_progress");
+  assert.equal(working.finished, false);
+});

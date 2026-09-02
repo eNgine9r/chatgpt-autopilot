@@ -58,17 +58,21 @@
       .filter((turn) => turn.turnId);
   }
 
-  function requestAssistantText(messageId) {
-    if (!messageId) return Promise.resolve("");
+  function requestAssistantSnapshot(messageId) {
+    if (!messageId) return Promise.resolve({ text: "", status: "", finished: null });
     const requestId = `${Date.now().toString(36)}-${(++requestCounter).toString(36)}`;
     return new Promise((resolve) => {
       let done = false;
-      const finish = (text) => {
+      const finish = (snapshot = {}) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
         window.removeEventListener("message", onMessage);
-        resolve(String(text || "").trim());
+        resolve({
+          text: String(snapshot.text || "").trim(),
+          status: String(snapshot.status || ""),
+          finished: typeof snapshot.finished === "boolean" ? snapshot.finished : null
+        });
       };
       const onMessage = (event) => {
         if (event.source !== window) return;
@@ -76,9 +80,9 @@
         if (!payload || payload.source !== RESPONSE_SOURCE) return;
         if (payload.type !== "EXTRACT_ASSISTANT_RESULT" || payload.requestId !== requestId) return;
         if (payload.messageId !== messageId) return;
-        finish(payload.text);
+        finish(payload);
       };
-      const timer = setTimeout(() => finish(""), 800);
+      const timer = setTimeout(() => finish(), 800);
       window.addEventListener("message", onMessage);
       window.postMessage({
         source: REQUEST_SOURCE,
@@ -89,13 +93,17 @@
     });
   }
 
-  async function turnText(turn, role) {
+  async function turnSnapshot(turn, role) {
     const roleNode = turn.querySelector(`[data-message-author-role="${role}"]`);
     const direct = String(roleNode?.innerText || (role === "user" ? turn.innerText : "") || "").trim();
-    if (direct) return direct;
-    if (role !== "assistant") return "";
+    if (role !== "assistant") return { text: direct, status: "", finished: null };
     const messageId = roleNode?.getAttribute("data-message-id") || "";
-    return requestAssistantText(messageId);
+    const structured = await requestAssistantSnapshot(messageId);
+    return { ...structured, text: structured.text || direct };
+  }
+
+  async function turnText(turn, role) {
+    return (await turnSnapshot(turn, role)).text;
   }
 
   async function latestTurn() {
@@ -105,24 +113,34 @@
       const role = turn.getAttribute("data-turn") || "unknown";
       const id = turnId(turn);
       if (role === "user" || role === "assistant") {
-        return { role, turnId: id, text: await turnText(turn, role) };
+        const snapshot = await turnSnapshot(turn, role);
+        return {
+          role,
+          turnId: id,
+          text: snapshot.text,
+          assistantStatus: role === "assistant" ? snapshot.status : "",
+          assistantFinished: role === "assistant" ? snapshot.finished : null
+        };
       }
-      return { role: "unknown", turnId: id, text: "" };
+      return { role: "unknown", turnId: id, text: "", assistantStatus: "", assistantFinished: null };
     }
 
     const legacy = [...document.querySelectorAll(
       '[data-message-author-role="assistant"], [data-message-author-role="user"]'
     )];
-    if (!legacy.length) return { role: "unknown", turnId: "", text: "" };
+    if (!legacy.length) return { role: "unknown", turnId: "", text: "", assistantStatus: "", assistantFinished: null };
     const node = legacy[legacy.length - 1];
     const role = node.getAttribute("data-message-author-role") || "unknown";
     const id = node.getAttribute("data-message-id") || "";
     if (role === "assistant") {
       const direct = String(node.innerText || "").trim();
-      if (direct) return { role, turnId: id, text: direct };
-      return { role, turnId: id, text: await requestAssistantText(id) };
+      const snapshot = await requestAssistantSnapshot(id);
+      return {
+        role, turnId: id, text: snapshot.text || direct,
+        assistantStatus: snapshot.status, assistantFinished: snapshot.finished
+      };
     }
-    return { role, turnId: id, text: String(node.innerText || "").trim() };
+    return { role, turnId: id, text: String(node.innerText || "").trim(), assistantStatus: "", assistantFinished: null };
   }
 
   async function conversationTail() {
@@ -194,6 +212,11 @@
       failures: 0,
       lastGateFingerprint: null,
       lastGateTurnId: null,
+      lastContinuedTurnKey: null,
+      completionObservedTurnKey: null,
+      completionObservedAt: 0,
+      watchdogAt: 0,
+      watchdogNotified: false,
       lastStatus: "armed"
     };
     await chrome.storage.local.set({ [key]: initial });
@@ -252,15 +275,31 @@
     if (shouldNotify) await notify("AUTOMATION_ERROR");
   }
 
-  async function sendContinuation(state) {
+  async function sendContinuation(state, turnKey = "") {
     const sent = await sendPromptText(project.continuationPrompt);
     if (!sent) return failClosed(state);
     await saveState({
       nextAt: Date.now() + project.continueAfterSeconds * 1000,
       sentCount: Number(state.sentCount || 0) + 1,
       failures: 0,
+      lastContinuedTurnKey: turnKey || state.lastContinuedTurnKey || null,
+      completionObservedTurnKey: null,
+      completionObservedAt: 0,
+      watchdogAt: project.autoContinueMode === "on_completion"
+        ? Date.now() + project.watchdogSeconds * 1000
+        : 0,
+      watchdogNotified: false,
       lastStatus: "continue_sent"
     });
+  }
+
+  async function maybeNotifyStall(state) {
+    if (project.autoContinueMode !== "on_completion") return false;
+    if (!state.watchdogAt || Date.now() < Number(state.watchdogAt)) return false;
+    if (state.watchdogNotified) return true;
+    await saveState({ watchdogNotified: true, lastStatus: "stalled" });
+    await notify("AUTOMATION_STALLED");
+    return true;
   }
 
   async function requestRollover(state) {
@@ -285,6 +324,12 @@
       pausedForUser: false,
       nextAt: Date.now() + project.continueAfterSeconds * 1000,
       failures: 0,
+      completionObservedTurnKey: null,
+      completionObservedAt: 0,
+      watchdogAt: project.autoContinueMode === "on_completion"
+        ? Date.now() + project.watchdogSeconds * 1000
+        : 0,
+      watchdogNotified: false,
       lastStatus: "resumed_after_user"
     });
     await notify("RECOVERED");
@@ -334,6 +379,9 @@
         return;
       }
 
+      const turnKey = latest.role === "assistant"
+        ? (latest.turnId || Policy.fingerprint(latest.text))
+        : "";
       const action = Policy.decideAction({
         enabled: project.enabled !== false,
         generating,
@@ -342,19 +390,47 @@
         latestAssistantText: latest.role === "assistant" ? latest.text : "",
         gateMarker: project.userGateMarker,
         nowMs: Date.now(),
-        dueAtMs: state.nextAt
+        dueAtMs: state.nextAt,
+        autoContinueMode: project.autoContinueMode,
+        assistantFinished: latest.assistantFinished,
+        latestTurnKey: turnKey,
+        lastContinuedTurnKey: state.lastContinuedTurnKey || "",
+        completionObservedTurnKey: state.completionObservedTurnKey || "",
+        completionObservedAtMs: Number(state.completionObservedAt || 0),
+        completionSettleMs: project.completionSettleSeconds * 1000
       });
 
       if (action === "resume_from_user") {
         await resumeAfterUser();
         return;
       }
-      if (action === "send_continue") return sendContinuation(state);
-      if (action === "fail_closed" && Date.now() >= Number(state.nextAt || 0)) {
+      if (action === "send_continue") return sendContinuation(state, turnKey);
+      if (action === "observe_completion") {
+        await saveState({
+          completionObservedTurnKey: turnKey,
+          completionObservedAt: Date.now(),
+          watchdogAt: 0,
+          watchdogNotified: false,
+          failures: 0,
+          lastStatus: "settling"
+        });
+        return;
+      }
+      if (action === "fail_closed" && (
+        project.autoContinueMode === "on_completion"
+        || Date.now() >= Number(state.nextAt || 0)
+      )) {
         return failClosed(state);
       }
-      if (action === "wait_generating") {
-        await saveState({ failures: 0, lastStatus: "working" });
+      if (["wait_generating", "wait_assistant", "wait_completion"].includes(action)) {
+        const stalled = await maybeNotifyStall(state);
+        if (!stalled) {
+          await saveState({ failures: 0, lastStatus: action === "wait_assistant" ? "waiting_assistant" : "working" });
+        }
+      } else if (action === "wait_settle") {
+        await saveState({ failures: 0, lastStatus: "settling" });
+      } else if (action === "wait_next_turn") {
+        await saveState({ failures: 0, lastStatus: "waiting_next_turn" });
       } else if (action === "paused_for_user") {
         await saveState({ lastStatus: "user_action_required" });
       } else if (state.failures) {
