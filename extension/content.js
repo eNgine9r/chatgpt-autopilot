@@ -3,7 +3,8 @@
   globalThis.__CHATGPT_PROJECT_AUTOPILOT__ = true;
 
   const Policy = globalThis.AutopilotPolicy;
-  const Extractor = globalThis.AutopilotMessageExtractor;
+  const REQUEST_SOURCE = "chatgpt-autopilot-isolated";
+  const RESPONSE_SOURCE = "chatgpt-autopilot-main";
   const SELECTORS = {
     stop: [
       'button[data-testid="stop-button"]',
@@ -34,6 +35,7 @@
   let lastUrl = "";
   let inspecting = false;
   let mutationTimer = null;
+  let requestCounter = 0;
 
   function first(selectors) {
     for (const selector of selectors) {
@@ -43,9 +45,70 @@
     return null;
   }
 
-  function latestTurn() {
-    if (!Extractor?.latestTurn) return { role: "unknown", text: "" };
-    return Extractor.latestTurn(document);
+  function requestAssistantText(messageId) {
+    if (!messageId) return Promise.resolve("");
+    const requestId = `${Date.now().toString(36)}-${(++requestCounter).toString(36)}`;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (text) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMessage);
+        resolve(String(text || "").trim());
+      };
+      const onMessage = (event) => {
+        if (event.source !== window) return;
+        const payload = event.data;
+        if (!payload || payload.source !== RESPONSE_SOURCE) return;
+        if (payload.type !== "EXTRACT_ASSISTANT_RESULT" || payload.requestId !== requestId) return;
+        if (payload.messageId !== messageId) return;
+        finish(payload.text);
+      };
+      const timer = setTimeout(() => finish(""), 800);
+      window.addEventListener("message", onMessage);
+      window.postMessage({
+        source: REQUEST_SOURCE,
+        type: "EXTRACT_ASSISTANT",
+        requestId,
+        messageId
+      }, "*");
+    });
+  }
+
+  async function latestTurn() {
+    const turns = [...document.querySelectorAll('[data-testid^="conversation-turn-"][data-turn]')];
+    if (turns.length) {
+      const turn = turns[turns.length - 1];
+      const role = turn.getAttribute("data-turn") || "unknown";
+      const roleNode = turn.querySelector(`[data-message-author-role="${role}"]`);
+      if (role === "user") {
+        return { role, text: String(roleNode?.innerText || turn.innerText || "").trim() };
+      }
+      if (role === "assistant") {
+        const direct = String(roleNode?.innerText || "").trim();
+        if (direct) return { role, text: direct };
+        const messageId = roleNode?.getAttribute("data-message-id") || "";
+        return { role, text: await requestAssistantText(messageId) };
+      }
+      return { role: "unknown", text: "" };
+    }
+
+    const legacy = [...document.querySelectorAll(
+      '[data-message-author-role="assistant"], [data-message-author-role="user"]'
+    )];
+    if (!legacy.length) return { role: "unknown", text: "" };
+    const node = legacy[legacy.length - 1];
+    const role = node.getAttribute("data-message-author-role") || "unknown";
+    if (role === "assistant") {
+      const direct = String(node.innerText || "").trim();
+      if (direct) return { role, text: direct };
+      return {
+        role,
+        text: await requestAssistantText(node.getAttribute("data-message-id") || "")
+      };
+    }
+    return { role, text: String(node.innerText || "").trim() };
   }
 
   function isGenerating() {
@@ -161,7 +224,7 @@
       if (!await refreshProject()) return;
       if (!await claim()) return;
       const state = await loadState();
-      const latest = latestTurn();
+      const latest = await latestTurn();
       const generating = isGenerating();
 
       if (latest.role === "assistant" && latest.text.includes(project.userGateMarker)) {
