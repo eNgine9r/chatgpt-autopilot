@@ -8,24 +8,30 @@ function validateEnvValue(value, key) {
 }
 
 export function upsertEnvText(source, updates) {
-  const pending = new Map(
+  const values = new Map(
     Object.entries(updates).map(([key, value]) => [key, validateEnvValue(value, key)])
   );
+  const seen = new Set();
   const lines = String(source || "").split(/\r?\n/);
   const output = [];
 
   for (const line of lines) {
     const match = line.match(/^([A-Z0-9_]+)=/);
-    if (match && pending.has(match[1])) {
-      output.push(`${match[1]}=${pending.get(match[1])}`);
-      pending.delete(match[1]);
-    } else if (line !== "" || output.length) {
-      output.push(line);
+    const key = match?.[1];
+    if (key && values.has(key)) {
+      if (!seen.has(key)) {
+        output.push(`${key}=${values.get(key)}`);
+        seen.add(key);
+      }
+      continue;
     }
+    if (line !== "" || output.length) output.push(line);
   }
 
   while (output.length && output[output.length - 1] === "") output.pop();
-  for (const [key, value] of pending) output.push(`${key}=${value}`);
+  for (const [key, value] of values) {
+    if (!seen.has(key)) output.push(`${key}=${value}`);
+  }
   return `${output.join("\n")}\n`;
 }
 
