@@ -72,16 +72,20 @@ test("supports state-driven completion mode and watchdog configuration", () => {
     ...project,
     autoContinueMode: "on_completion",
     completionSettleSeconds: 12,
+    startupGraceSeconds: 45,
     watchdogSeconds: 1620
   }]));
   assert.equal(loaded[0].autoContinueMode, "on_completion");
   assert.equal(loaded[0].completionSettleSeconds, 12);
+  assert.equal(loaded[0].startupGraceSeconds, 45);
   assert.equal(loaded[0].watchdogSeconds, 1620);
 });
 
 test("rejects unsafe state-driven timing configuration", () => {
   assert.throws(() => loadProjects(tempConfig([{ ...project, autoContinueMode: "unknown" }])), /autoContinueMode/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, completionSettleSeconds: 1 }])), /completionSettleSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, startupGraceSeconds: 4 }])), /startupGraceSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, startupGraceSeconds: 121 }])), /startupGraceSeconds/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, watchdogSeconds: 20 }])), /watchdogSeconds/);
 });
 

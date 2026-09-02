@@ -2,7 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 await import("../extension/policy.js");
-const { decideAction, normalizeChatUrl, fingerprint, shouldResumeFromTurns, isConversationCapacityReached } = globalThis.AutopilotPolicy;
+const {
+  decideAction,
+  normalizeChatUrl,
+  fingerprint,
+  shouldResumeFromTurns,
+  isConversationCapacityReached,
+  isStartupGraceActive
+} = globalThis.AutopilotPolicy;
 
 const base = {
   enabled: true,
@@ -126,4 +133,14 @@ test("generation remains the absolute blocker in state-driven mode", () => {
     assistantFinished: true,
     latestTurnKey: "a1"
   }), "wait_generating");
+});
+
+
+test("startup grace is bounded and expires deterministically", () => {
+  assert.equal(isStartupGraceActive(10_000, 1_000, 30_000), true);
+  assert.equal(isStartupGraceActive(30_999, 1_000, 30_000), true);
+  assert.equal(isStartupGraceActive(31_000, 1_000, 30_000), false);
+  assert.equal(isStartupGraceActive(999, 1_000, 30_000), false);
+  assert.equal(isStartupGraceActive(10_000, 0, 30_000), false);
+  assert.equal(isStartupGraceActive(10_000, 1_000, 0), false);
 });

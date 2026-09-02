@@ -81,6 +81,14 @@
     return turns.slice(index + 1).some((turn) => turn?.role === "user");
   }
 
+
+  function isStartupGraceActive(nowMs, startedAtMs, graceMs) {
+    const now = Number(nowMs || 0);
+    const started = Number(startedAtMs || 0);
+    const grace = Number(graceMs || 0);
+    return started > 0 && grace > 0 && now >= started && now < started + grace;
+  }
+
   function fingerprint(text) {
     let hash = 2166136261;
     for (const ch of String(text || "").slice(-1000)) {
@@ -95,6 +103,7 @@
     decideAction,
     shouldResumeFromTurns,
     fingerprint,
-    isConversationCapacityReached
+    isConversationCapacityReached,
+    isStartupGraceActive
   });
 })();

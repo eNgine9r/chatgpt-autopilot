@@ -33,6 +33,7 @@
 
   let project = null;
   let lastUrl = "";
+  const contentStartedAt = Date.now();
   let inspecting = false;
   let mutationTimer = null;
   let requestCounter = 0;
@@ -420,6 +421,15 @@
         project.autoContinueMode === "on_completion"
         || Date.now() >= Number(state.nextAt || 0)
       )) {
+        const inStartupGrace = Policy.isStartupGraceActive(
+          Date.now(),
+          contentStartedAt,
+          Number(project.startupGraceSeconds || 0) * 1000
+        );
+        if (inStartupGrace) {
+          await saveState({ failures: 0, lastStatus: "starting" });
+          return;
+        }
         return failClosed(state);
       }
       if (["wait_generating", "wait_assistant", "wait_completion"].includes(action)) {
