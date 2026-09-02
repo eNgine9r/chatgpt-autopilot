@@ -1,5 +1,6 @@
 import http from "node:http";
 import { publicProjects } from "./config.mjs";
+import { telegramEventMessage } from "./messages.uk.mjs";
 
 export const ALLOWED_EVENTS = new Set([
   "USER_ACTION_REQUIRED",
@@ -8,20 +9,7 @@ export const ALLOWED_EVENTS = new Set([
   "RECOVERED"
 ]);
 
-export function eventMessage(project, event) {
-  switch (event) {
-    case "USER_ACTION_REQUIRED":
-      return `⚠️ ${project.name}: потрібна ваша дія.\nAuto-Continue призупинено.\n${project.chatUrl}`;
-    case "SESSION_ATTENTION_REQUIRED":
-      return `🔴 ${project.name}: сесія ChatGPT потребує уваги.\nAuto-Continue не виконує дій.\n${project.chatUrl}`;
-    case "AUTOMATION_ERROR":
-      return `🔴 ${project.name}: Autopilot не може безпечно розпізнати або керувати поточним UI.\nАвтоматичне продовження призупинено.\n${project.chatUrl}`;
-    case "RECOVERED":
-      return `🟢 ${project.name}: Autopilot відновив безпечний робочий стан.`;
-    default:
-      throw new Error(`Unsupported event: ${event}`);
-  }
-}
+export const eventMessage = telegramEventMessage;
 
 function applyExtensionCors(req, res) {
   const origin = req.headers.origin || "";
