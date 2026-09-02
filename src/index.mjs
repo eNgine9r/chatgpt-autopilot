@@ -7,7 +7,8 @@ import { createLogger } from "./logger.mjs";
 import { TelegramNotifier } from "./notifier.mjs";
 import { createBridgeServer } from "./bridge.mjs";
 import { buildStartupPlan } from "./startup.mjs";
-import { buildChromiumEnvironment, chromiumPlatformArgs, waylandSocketPath } from "./chromium-session.mjs";
+import { buildChromiumEnvironment, chromiumPlatformArgs } from "./chromium-session.mjs";
+import { waitForStartupReadiness } from "./connect-preflight.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
@@ -19,10 +20,6 @@ if (!fs.existsSync(config.projectsFile)) {
 if (!fs.existsSync(config.chromiumExecutablePath)) {
   throw new Error(`Chromium executable not found: ${config.chromiumExecutablePath}`);
 }
-if (!fs.existsSync(waylandSocketPath(config))) {
-  throw new Error(`Wayland socket not ready: ${waylandSocketPath(config)}`);
-}
-
 const projects = loadProjects(config.projectsFile);
 const enabled = projects.filter((project) => project.enabled);
 if (!enabled.length) throw new Error("No enabled projects in config/projects.json");
@@ -31,6 +28,12 @@ const startupPlan = buildStartupPlan(enabled, config.projectStartupStaggerSecond
 for (const dir of [config.browserProfileDir, config.logDir]) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
+
+const preflight = await waitForStartupReadiness({ config, logger });
+logger.info("startup_preflight_ready", {
+  screenSessions: preflight.connectStatus.screenSessions,
+  shellSessions: preflight.connectStatus.shellSessions
+});
 
 const notifier = new TelegramNotifier({
   token: config.telegramBotToken,
