@@ -100,6 +100,10 @@ export function loadProjects(projectsFile) {
     if (!Number.isFinite(completionSettleSeconds) || completionSettleSeconds < 2 || completionSettleSeconds > 120) {
       throw new Error(`${project.id}: completionSettleSeconds must be between 2 and 120`);
     }
+    const startupGraceSeconds = Number(project.startupGraceSeconds ?? 30);
+    if (!Number.isFinite(startupGraceSeconds) || startupGraceSeconds < 5 || startupGraceSeconds > 120) {
+      throw new Error(`${project.id}: startupGraceSeconds must be between 5 and 120`);
+    }
     const watchdogSeconds = Number(project.watchdogSeconds ?? continueAfterSeconds);
     if (!Number.isFinite(watchdogSeconds) || watchdogSeconds < 60) {
       throw new Error(`${project.id}: watchdogSeconds must be >= 60`);
@@ -132,6 +136,7 @@ export function loadProjects(projectsFile) {
       continueAfterSeconds,
       autoContinueMode,
       completionSettleSeconds,
+      startupGraceSeconds,
       watchdogSeconds,
       userGateMarker: String(project.userGateMarker || "[[USER_ACTION_REQUIRED]]"),
       continuationPrompt,

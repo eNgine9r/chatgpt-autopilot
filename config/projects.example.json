@@ -15,6 +15,7 @@
       "rolloverPrompt": "Продовжуй роботу в новому чаті цього ChatGPT Project після досягнення максимальної довжини попередньої розмови.",
       "autoContinueMode": "timer",
       "completionSettleSeconds": 10,
+      "startupGraceSeconds": 30,
       "watchdogSeconds": 1800
     }
   ]
