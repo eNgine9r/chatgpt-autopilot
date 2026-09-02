@@ -61,11 +61,12 @@
 
   function extractAssistantText(messageNode) {
     if (!messageNode) return "";
-    const direct = String(messageNode.innerText || "").trim();
-    if (direct) return direct;
     const targetId = messageNode.getAttribute?.("data-message-id") || "";
-    if (!targetId) return "";
-    return findMessageText(reactRoots(messageNode), targetId);
+    if (targetId) {
+      const structured = findMessageText(reactRoots(messageNode), targetId);
+      if (structured) return structured;
+    }
+    return String(messageNode.innerText || "").trim();
   }
 
   function latestTurn(documentRef = globalThis.document) {
