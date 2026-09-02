@@ -93,18 +93,22 @@ The command starts **ordinary host Chromium** with the dedicated `browser-profil
 
 ## Telegram phone alerts
 
-Create/use a Telegram bot and put values only in local `.env`:
-
-```text
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
-
-Test delivery:
+Use a dedicated Telegram bot. The secure helper avoids pasting the token into source files, GitHub or chat and discovers `TELEGRAM_CHAT_ID` automatically:
 
 ```bash
-npm run telegram:test
+npm run telegram:setup
 ```
+
+The helper accepts the bot token through hidden terminal input, validates the bot, asks you to send `/start` when needed, discovers the newest private chat, atomically updates gitignored `.env` with mode `0600`, and sends one test notification. The token is never printed or logged.
+
+Then reload the supervisor:
+
+```bash
+systemctl --user restart chatgpt-project-autopilot
+curl -fsS http://127.0.0.1:8765/health
+```
+
+The health response should show `"telegram":true`. See `docs/TELEGRAM_SETUP.md` for the complete flow.
 
 Telegram is notifications-only. There is no Telegram command, shell, GitHub or product-control channel in this release.
 
