@@ -1,19 +1,17 @@
 {
   "name": "chatgpt-project-autopilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Standalone Raspberry Pi ChatGPT project auto-continue watcher with USER_ACTION_REQUIRED safety gate and Telegram alerts.",
+  "description": "Standalone Raspberry Pi ChatGPT auto-continue runtime using ordinary Chromium, a local MV3 extension and Telegram alerts.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "start": "node src/index.mjs",
     "login": "node src/login.mjs",
+    "telegram:test": "node src/telegram-test.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/index.mjs && node --check src/login.mjs && node --check src/browser.mjs && node --check src/notifier.mjs"
-  },
-  "dependencies": {
-    "playwright": "^1.55.0"
+    "check": "node --check src/index.mjs && node --check src/login.mjs && node --check src/bridge.mjs && node --check extension/service-worker.js && node --check extension/policy.js && node --check extension/message-extractor.js && node --check extension/page-bridge.js && node --check extension/content.js && node --check extension/session-watch.js"
   }
 }
