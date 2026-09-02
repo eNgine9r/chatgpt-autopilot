@@ -12,6 +12,6 @@
     "login": "node src/login.mjs",
     "telegram:test": "node src/telegram-test.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/index.mjs && node --check src/login.mjs && node --check src/bridge.mjs && node --check extension/service-worker.js && node --check extension/policy.js && node --check extension/content.js"
+    "check": "node --check src/index.mjs && node --check src/login.mjs && node --check src/bridge.mjs && node --check extension/service-worker.js && node --check extension/policy.js && node --check extension/message-extractor.js && node --check extension/content.js"
   }
 }
