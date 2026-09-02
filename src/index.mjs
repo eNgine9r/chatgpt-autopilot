@@ -9,6 +9,7 @@ import { createBridgeServer } from "./bridge.mjs";
 import { buildStartupPlan } from "./startup.mjs";
 import { buildChromiumEnvironment, chromiumPlatformArgs } from "./chromium-session.mjs";
 import { waitForStartupReadiness } from "./connect-preflight.mjs";
+import { listOwnedGcrPrompterPids, watchAndDismissNewGcrPrompters } from "./keyring-prompt.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
@@ -67,11 +68,34 @@ const browserEnv = buildChromiumEnvironment(config, process.env);
 
 let shuttingDown = false;
 const startupTimers = new Set();
+let keyringPromptBaselinePids = null;
+if (config.keyringPromptAutoCancel) {
+  try {
+    keyringPromptBaselinePids = listOwnedGcrPrompterPids();
+    logger.info("keyring_prompt_baseline", { count: keyringPromptBaselinePids.length });
+  } catch (error) {
+    logger.error("keyring_prompt_baseline_failed", { error: String(error) });
+  }
+}
 
 const browser = spawn(config.chromiumExecutablePath, args, {
   env: browserEnv,
   stdio: ["ignore", browserLogFd, browserLogFd]
 });
+
+if (config.keyringPromptAutoCancel && keyringPromptBaselinePids) {
+  void watchAndDismissNewGcrPrompters({
+    baselinePids: keyringPromptBaselinePids,
+    logger,
+    pollMs: config.keyringPromptPollMs,
+    timeoutMs: config.keyringPromptWatchSeconds * 1000,
+    shouldStop: () => shuttingDown || browser.exitCode != null
+  }).then((cancelledPids) => {
+    logger.info("keyring_prompt_watch_complete", { cancelled: cancelledPids.length });
+  }).catch((error) => {
+    logger.error("keyring_prompt_watch_failed", { error: String(error) });
+  });
+}
 
 logger.info("autopilot_started", {
   chromiumPid: browser.pid,
