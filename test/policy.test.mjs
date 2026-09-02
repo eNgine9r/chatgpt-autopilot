@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 await import("../extension/policy.js");
-const { decideAction, normalizeChatUrl, fingerprint } = globalThis.AutopilotPolicy;
+const { decideAction, normalizeChatUrl, fingerprint, shouldResumeFromTurns } = globalThis.AutopilotPolicy;
 
 const base = {
   enabled: true,
@@ -23,9 +23,21 @@ test("explicit gate pauses before any timer send", () => {
   assert.equal(decideAction({ ...base, latestAssistantText: `Need input\n${base.gateMarker}` }), "pause_for_user");
 });
 
-test("paused project resumes only after a newer user turn", () => {
+test("paused project resumes when latest turn is user", () => {
   assert.equal(decideAction({ ...base, pausedForUser: true }), "paused_for_user");
   assert.equal(decideAction({ ...base, pausedForUser: true, latestTurnRole: "user" }), "resume_from_user");
+});
+
+test("paused recovery detects a user turn after the stored gate", () => {
+  const turns = [
+    { turnId: "u1", role: "user" },
+    { turnId: "gate", role: "assistant" },
+    { turnId: "u2", role: "user" },
+    { turnId: "a2", role: "assistant" }
+  ];
+  assert.equal(shouldResumeFromTurns(turns, "gate"), true);
+  assert.equal(shouldResumeFromTurns(turns.slice(0, 2), "gate"), false);
+  assert.equal(shouldResumeFromTurns(turns, "missing"), false);
 });
 
 test("unknown or empty assistant state fails closed", () => {
