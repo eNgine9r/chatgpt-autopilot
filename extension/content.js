@@ -45,6 +45,19 @@
     return null;
   }
 
+  function turnId(turn) {
+    return turn?.getAttribute("data-turn-id")
+      || turn?.getAttribute("data-turn-id-container")
+      || turn?.getAttribute("data-testid")
+      || "";
+  }
+
+  function conversationOrder() {
+    return [...document.querySelectorAll('[data-testid^="conversation-turn-"][data-turn]')]
+      .map((turn) => ({ turnId: turnId(turn), role: turn.getAttribute("data-turn") || "unknown" }))
+      .filter((turn) => turn.turnId);
+  }
+
   function requestAssistantText(messageId) {
     if (!messageId) return Promise.resolve("");
     const requestId = `${Date.now().toString(36)}-${(++requestCounter).toString(36)}`;
@@ -82,33 +95,32 @@
       const turn = turns[turns.length - 1];
       const role = turn.getAttribute("data-turn") || "unknown";
       const roleNode = turn.querySelector(`[data-message-author-role="${role}"]`);
+      const id = turnId(turn);
       if (role === "user") {
-        return { role, text: String(roleNode?.innerText || turn.innerText || "").trim() };
+        return { role, turnId: id, text: String(roleNode?.innerText || turn.innerText || "").trim() };
       }
       if (role === "assistant") {
         const direct = String(roleNode?.innerText || "").trim();
-        if (direct) return { role, text: direct };
+        if (direct) return { role, turnId: id, text: direct };
         const messageId = roleNode?.getAttribute("data-message-id") || "";
-        return { role, text: await requestAssistantText(messageId) };
+        return { role, turnId: id, text: await requestAssistantText(messageId) };
       }
-      return { role: "unknown", text: "" };
+      return { role: "unknown", turnId: id, text: "" };
     }
 
     const legacy = [...document.querySelectorAll(
       '[data-message-author-role="assistant"], [data-message-author-role="user"]'
     )];
-    if (!legacy.length) return { role: "unknown", text: "" };
+    if (!legacy.length) return { role: "unknown", turnId: "", text: "" };
     const node = legacy[legacy.length - 1];
     const role = node.getAttribute("data-message-author-role") || "unknown";
+    const id = node.getAttribute("data-message-id") || "";
     if (role === "assistant") {
       const direct = String(node.innerText || "").trim();
-      if (direct) return { role, text: direct };
-      return {
-        role,
-        text: await requestAssistantText(node.getAttribute("data-message-id") || "")
-      };
+      if (direct) return { role, turnId: id, text: direct };
+      return { role, turnId: id, text: await requestAssistantText(id) };
     }
-    return { role, text: String(node.innerText || "").trim() };
+    return { role, turnId: id, text: String(node.innerText || "").trim() };
   }
 
   function isGenerating() {
@@ -152,6 +164,7 @@
       sentCount: 0,
       failures: 0,
       lastGateFingerprint: null,
+      lastGateTurnId: null,
       lastStatus: "armed"
     };
     await chrome.storage.local.set({ [key]: initial });
@@ -217,6 +230,16 @@
     });
   }
 
+  async function resumeAfterUser() {
+    await saveState({
+      pausedForUser: false,
+      nextAt: Date.now() + project.continueAfterSeconds * 1000,
+      failures: 0,
+      lastStatus: "resumed_after_user"
+    });
+    await notify("RECOVERED");
+  }
+
   async function inspect() {
     if (inspecting) return;
     inspecting = true;
@@ -227,12 +250,22 @@
       const latest = await latestTurn();
       const generating = isGenerating();
 
+      if (
+        state.pausedForUser
+        && state.lastGateTurnId
+        && Policy.shouldResumeFromTurns(conversationOrder(), state.lastGateTurnId)
+      ) {
+        await resumeAfterUser();
+        return;
+      }
+
       if (latest.role === "assistant" && latest.text.includes(project.userGateMarker)) {
         const fp = Policy.fingerprint(latest.text);
         if (!state.pausedForUser || state.lastGateFingerprint !== fp) {
           await saveState({
             pausedForUser: true,
             lastGateFingerprint: fp,
+            lastGateTurnId: latest.turnId || null,
             failures: 0,
             lastStatus: "user_action_required"
           });
@@ -253,12 +286,7 @@
       });
 
       if (action === "resume_from_user") {
-        await saveState({
-          pausedForUser: false,
-          nextAt: Date.now() + project.continueAfterSeconds * 1000,
-          failures: 0,
-          lastStatus: "resumed_after_user"
-        });
+        await resumeAfterUser();
         return;
       }
       if (action === "send_continue") return sendContinuation(state);
