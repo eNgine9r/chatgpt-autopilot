@@ -1,122 +1,147 @@
 # ChatGPT Project Autopilot
 
-Standalone Raspberry Pi helper for keeping selected ChatGPT project conversations moving in the background.
+Standalone Raspberry Pi helper that keeps selected ChatGPT conversations moving without using the user's main PC.
 
-This repository is intentionally independent from NEXOLAB, BTC Radar, Sellora, and every other product repository/runtime.
+The repository is intentionally independent from NEXOLAB, BTC Radar, Sellora and every other product repository/runtime.
 
-## MVP behavior
+## Runtime architecture
 
-- one persistent Playwright/Chromium browser profile with manual ChatGPT login;
-- multiple independently configured ChatGPT chats;
-- per-chat continuation timer, default 24 minutes 40 seconds;
-- never interrupts ChatGPT while a response is generating;
-- sends a configured continuation prompt only when a chat is idle and due;
-- detects exact `[[USER_ACTION_REQUIRED]]` and pauses only that chat;
-- sends Telegram phone alerts for user-action gates, lost sessions, and repeated automation failures;
-- resumes a paused chat after the user posts a newer message;
-- stores only small local state/logs, not full conversations;
-- supports systemd auto-start and auto-restart on Raspberry Pi.
+```text
+systemd
+  -> Node supervisor / loopback bridge (127.0.0.1 only)
+      -> ordinary host Chromium on the Raspberry Pi desktop
+          -> dedicated browser-profile/
+          -> repository-owned Manifest V3 extension
+              -> per-chat timer and safety policy
+              -> ChatGPT web UI
+      -> optional Telegram Bot API notifications
+```
 
-## Safety boundary
+Production runtime does **not** use Playwright, Selenium, scripted Google login, remote shell control, GitHub control or product-runtime access.
 
-The MVP controls only the ChatGPT web UI. It contains no GitHub, SSH, Docker, Modbus, product-database, or project-runtime control code.
+## Behavior
 
-Do not store ChatGPT passwords, GitHub tokens, project secrets, device credentials, or production data in this repository. ChatGPT login is performed manually once into a dedicated persistent browser profile. Telegram values live only in local `.env`.
+- one dedicated persistent Chromium profile with a one-time manual ChatGPT login;
+- multiple independently configured ChatGPT conversations;
+- per-chat continuation timer, default `1480` seconds (24m40s);
+- never sends while ChatGPT is generating;
+- sends a configured continuation prompt only when the chat is idle and due;
+- exact `[[USER_ACTION_REQUIRED]]` marker pauses only the affected chat;
+- a newer user turn after the stored gate resumes that chat, including after a browser/service restart;
+- duplicate tabs are protected by a per-project extension lease;
+- unrecognized/empty ChatGPT state fails closed instead of guessing;
+- Telegram can notify on user-action gates, session/UI errors and recovery;
+- browser/session/config/log data stays local on the Raspberry Pi.
 
-This is UI automation. ChatGPT can change its DOM or authentication flow; on an unrecognized UI/session state the service fails closed and alerts rather than guessing what to click. It does not bypass ChatGPT usage limits or account controls.
+## Security boundary
 
-## Raspberry Pi prerequisites
+The extension matches only `https://chatgpt.com/*`. The Node bridge binds only to `127.0.0.1` and accepts a fixed notification-event allowlist. Telegram credentials stay only in local `.env`; they are never exposed to the extension.
 
-- 64-bit Raspberry Pi OS or another Playwright-supported Linux ARM64 environment;
+Do not commit or share:
+
+- `browser-profile/` (contains the authenticated ChatGPT session);
+- `.env`;
+- `config/projects.json`;
+- logs containing local operational evidence.
+
+The service does not attempt to bypass Google/OpenAI authentication, browser security challenges, ChatGPT account controls, rate limits or usage limits.
+
+## Raspberry Pi requirements
+
+- 64-bit Raspberry Pi OS / compatible ARM64 Linux desktop;
 - Node.js 22+;
-- internet access for ChatGPT and optional Telegram notifications;
-- enough disk space for Chromium.
-
-Playwright officially supports ARM64 Linux Chromium, including Raspberry Pi-class environments. Browser binaries must match the installed Playwright version.
+- ordinary Chromium installed on the host;
+- an active graphical session (`DISPLAY`, normally `:0`);
+- internet access to ChatGPT and, if enabled, Telegram.
 
 ## Install
 
 ```bash
-git clone git@github.com:eNgine9r/chatgpt-autopilot.git
+git clone https://github.com/eNgine9r/chatgpt-autopilot.git
 cd chatgpt-autopilot
 chmod +x scripts/*.sh
 ./scripts/install.sh
 ```
 
-The installer creates local `.env` and `config/projects.json`, installs Node dependencies, and installs Chromium.
-
-If Playwright reports missing Linux libraries:
-
-```bash
-sudo npx playwright install-deps chromium
-npx playwright install chromium
-```
+The installer creates private local `.env`, `config/projects.json`, `browser-profile/` and `logs/`, verifies Node/Chromium, and runs no browser-download framework.
 
 ## Configure chats
 
-`config/projects.json` is local and gitignored. Start from `config/projects.example.json`.
+Edit local `config/projects.json`. Each entry has its own URL, interval and continuation prompt:
 
-Each project has its own URL, timer, continuation prompt, and user-gate marker. Set `enabled: true` only for chats that should be automated.
+```json
+{
+  "projects": [
+    {
+      "id": "example-project",
+      "name": "Example Project",
+      "enabled": true,
+      "chatUrl": "https://chatgpt.com/c/REPLACE_WITH_CHAT_ID",
+      "continueAfterSeconds": 1480,
+      "userGateMarker": "[[USER_ACTION_REQUIRED]]",
+      "continuationPrompt": "Продовжуй роботу з фактичної поточної точки..."
+    }
+  ]
+}
+```
 
-The default `1480` seconds equals 24 minutes 40 seconds.
+Use a stable `/c/<chat-id>` ChatGPT conversation URL. Keep actual chat URLs in local `config/projects.json`, which is gitignored.
+
+## One-time ChatGPT login
+
+Do not automate or store the Google/OpenAI password.
+
+Stop the background service first if it exists:
+
+```bash
+sudo systemctl stop chatgpt-project-autopilot 2>/dev/null || true
+npm run login
+```
+
+The command starts **ordinary host Chromium** with the dedicated `browser-profile/`. Complete Google/OpenAI login manually. When the normal ChatGPT composer is visible, close the login browser cleanly.
+
+The same authenticated profile is then used by the background runtime.
 
 ## Telegram phone alerts
 
-Put the bot values only in local `.env`:
+Create/use a Telegram bot and put the values only in local `.env`:
 
 ```text
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
 
-Test:
+Test delivery:
 
 ```bash
-node src/telegram-test.mjs
+npm run telegram:test
 ```
 
-MVP Telegram integration is notifications-only. There is intentionally no remote command channel.
-
-## One-time ChatGPT login
-
-Do not put the ChatGPT password into files or scripts.
-
-If the background service already exists, stop it first because the same persistent Chromium profile must not be opened by two browser processes:
-
-```bash
-sudo systemctl stop chatgpt-project-autopilot
-npm run login
-```
-
-A visible Chromium window opens using the dedicated `browser-profile/`. Log in manually. Once the normal ChatGPT composer is visible, return to the terminal and press Enter.
-
-Then test in the foreground:
-
-```bash
-HEADLESS=true npm start
-```
+Telegram is notifications-only. There is no Telegram command, shell, GitHub or project-control channel in this release.
 
 ## Verification
+
+Static/deterministic checks:
 
 ```bash
 npm test
 npm run check
+bash -n scripts/install.sh scripts/install-systemd.sh
 ```
 
-Before enabling systemd, run a bounded functional test:
+Recommended bounded live acceptance before systemd:
 
-1. Enable one test conversation.
-2. Temporarily set `continueAfterSeconds` to `60`.
-3. Start the service in the foreground.
-4. Verify it does not interrupt active generation.
-5. Verify one continuation is sent when idle and due.
-6. Make the assistant finish with `[[USER_ACTION_REQUIRED]]`.
-7. Verify Telegram alert and paused state.
-8. Reply manually in that ChatGPT conversation.
-9. Verify it returns to armed state without sending a duplicate continuation.
-10. Restore the normal interval.
+1. Configure one disposable/test conversation with `continueAfterSeconds: 60`.
+2. Start `node src/index.mjs` in the foreground.
+3. Verify active generation is not interrupted.
+4. Verify one due timer continuation and a normal assistant response.
+5. Have the assistant end with `[[USER_ACTION_REQUIRED]]`.
+6. Verify the chat pauses and the notification event is emitted.
+7. Leave it paused for another full timer interval and verify no additional continuation.
+8. Reply manually, then verify the project returns to armed state.
+9. Restore the normal `1480`-second interval.
 
-## systemd
+## systemd 24/7 service
 
 After foreground acceptance:
 
@@ -124,7 +149,9 @@ After foreground acceptance:
 sudo ./scripts/install-systemd.sh
 ```
 
-Useful commands:
+The installer resolves an exact Node.js 22+ executable (including NVM installs) and writes it into the service unit.
+
+Operations:
 
 ```bash
 systemctl status chatgpt-project-autopilot
@@ -133,26 +160,22 @@ sudo systemctl restart chatgpt-project-autopilot
 sudo systemctl stop chatgpt-project-autopilot
 ```
 
-## Local private data
+The unit waits for `network-online.target` and `graphical.target`, restarts on failure, runs as the normal user, and grants write access only to the dedicated browser profile/log paths under the application directory.
 
-- `browser-profile/` — ChatGPT session/cookies; protect like a credential.
-- `state/runtime-state.json` — small timer/status/counter state.
-- `logs/autopilot.log` — automation events only; full chats are not logged.
-- `.env` — optional Telegram values.
-- `config/projects.json` — actual chat URLs and local project configuration.
+## Failure behavior
 
-All are gitignored. Runtime state writes are change-driven rather than every polling cycle to avoid unnecessary Raspberry Pi storage I/O.
+The service intentionally fails closed when it cannot safely recognize a finished assistant response, the composer, or the send button. After repeated unsafe UI observations it emits `AUTOMATION_ERROR` instead of clicking an unknown control.
+
+Modern ChatGPT can keep a completed response in page React state while the visible assistant message node is temporarily empty after reload. The extension handles this with a bounded MAIN-world extractor that returns only the text belonging to the specific assistant `data-message-id`; the isolated extension runtime does not receive arbitrary page state.
+
+## Local data
+
+- `browser-profile/` — authenticated Chromium profile; protect like a credential;
+- `config/projects.json` — enabled chat URLs/prompts;
+- `.env` — host paths and optional Telegram credentials;
+- `logs/autopilot.log` — supervisor/notification events;
+- Chromium extension state — per-chat timer, pause gate and send count in the dedicated browser profile.
 
 ## Resource model
 
-One Chromium context is shared across configured project pages. Chromium is the main RAM consumer; the Node controller is small. Keep the number of simultaneously enabled chats bounded and measure on the target Pi before increasing it.
-
-## Later work
-
-Possible follow-ups after real Raspberry Pi acceptance:
-
-- lightweight local status page;
-- selector compatibility diagnostics;
-- bounded per-chat exponential retry/backoff;
-- authenticated read-only Telegram `/status` command;
-- protected/encrypted browser-profile backup.
+One normal Chromium process tree serves all configured chat tabs. Chromium is the dominant RAM consumer; the Node supervisor is small. Keep enabled chats bounded and measure resource use on the target Raspberry Pi before scaling the number of concurrent tabs.
