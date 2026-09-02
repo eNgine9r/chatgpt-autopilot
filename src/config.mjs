@@ -6,10 +6,16 @@ export function resolveFromCwd(value) {
 }
 
 export function loadRuntimeConfig() {
+  const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
+  const xdgRuntimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
   return {
     chromiumExecutablePath: process.env.CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium",
     display: process.env.DISPLAY || ":0",
     xauthority: process.env.XAUTHORITY || "",
+    xdgRuntimeDir,
+    waylandDisplay: process.env.WAYLAND_DISPLAY || "wayland-0",
+    dbusSessionBusAddress: process.env.DBUS_SESSION_BUS_ADDRESS || `unix:path=${xdgRuntimeDir}/bus`,
+    chromiumOzonePlatform: process.env.CHROMIUM_OZONE_PLATFORM || "wayland",
     projectStartupStaggerSeconds: Number(process.env.PROJECT_STARTUP_STAGGER_SECONDS || 60),
     browserProfileDir: resolveFromCwd(process.env.BROWSER_PROFILE_DIR || "./browser-profile"),
     logDir: resolveFromCwd(process.env.LOG_DIR || "./logs"),

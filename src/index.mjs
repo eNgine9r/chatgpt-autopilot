@@ -7,6 +7,7 @@ import { createLogger } from "./logger.mjs";
 import { TelegramNotifier } from "./notifier.mjs";
 import { createBridgeServer } from "./bridge.mjs";
 import { buildStartupPlan } from "./startup.mjs";
+import { buildChromiumEnvironment, chromiumPlatformArgs, waylandSocketPath } from "./chromium-session.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
@@ -17,6 +18,9 @@ if (!fs.existsSync(config.projectsFile)) {
 }
 if (!fs.existsSync(config.chromiumExecutablePath)) {
   throw new Error(`Chromium executable not found: ${config.chromiumExecutablePath}`);
+}
+if (!fs.existsSync(waylandSocketPath(config))) {
+  throw new Error(`Wayland socket not ready: ${waylandSocketPath(config)}`);
 }
 
 const projects = loadProjects(config.projectsFile);
@@ -46,6 +50,7 @@ const bridge = await createBridgeServer({
 const browserLogPath = path.join(config.logDir, "chromium.log");
 const browserLogFd = fs.openSync(browserLogPath, "a", 0o600);
 const args = [
+  ...chromiumPlatformArgs(config),
   `--user-data-dir=${config.browserProfileDir}`,
   `--load-extension=${config.extensionDir}`,
   `--disable-extensions-except=${config.extensionDir}`,
@@ -55,11 +60,7 @@ const args = [
   startupPlan[0].project.chatUrl
 ];
 
-const browserEnv = {
-  ...process.env,
-  DISPLAY: config.display,
-  ...(config.xauthority ? { XAUTHORITY: config.xauthority } : {})
-};
+const browserEnv = buildChromiumEnvironment(config, process.env);
 
 let shuttingDown = false;
 const startupTimers = new Set();
@@ -75,7 +76,9 @@ logger.info("autopilot_started", {
   startupStaggerSeconds: config.projectStartupStaggerSeconds,
   primaryProject: startupPlan[0].project.name,
   telegram: notifier.enabled,
-  display: config.display
+  display: config.display,
+  waylandDisplay: config.waylandDisplay,
+  xdgRuntimeDir: config.xdgRuntimeDir
 });
 
 for (const entry of startupPlan.slice(1)) {
@@ -83,6 +86,7 @@ for (const entry of startupPlan.slice(1)) {
     startupTimers.delete(timer);
     if (shuttingDown || browser.exitCode != null) return;
     const opener = spawn(config.chromiumExecutablePath, [
+      ...chromiumPlatformArgs(config),
       `--user-data-dir=${config.browserProfileDir}`,
       "--new-tab",
       entry.project.chatUrl
