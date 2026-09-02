@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 await import("../extension/policy.js");
-const { decideAction, normalizeChatUrl, fingerprint, shouldResumeFromTurns } = globalThis.AutopilotPolicy;
+const { decideAction, normalizeChatUrl, fingerprint, shouldResumeFromTurns, isConversationCapacityReached } = globalThis.AutopilotPolicy;
 
 const base = {
   enabled: true,
@@ -58,4 +58,13 @@ test("chat URL normalization is stable", () => {
 test("fingerprint is deterministic", () => {
   assert.equal(fingerprint("abc"), fingerprint("abc"));
   assert.notEqual(fingerprint("abc"), fingerprint("abd"));
+});
+
+
+test("capacity detection accepts only strong explicit platform-style signals", () => {
+  assert.equal(isConversationCapacityReached("You’ve reached the maximum length for this conversation."), true);
+  assert.equal(isConversationCapacityReached("Ця розмова досягла максимальної довжини. Розпочніть новий чат."), true);
+  assert.equal(isConversationCapacityReached("Достигнута максимальная длина этого чата."), true);
+  assert.equal(isConversationCapacityReached("We should probably start a new chat sometime."), false);
+  assert.equal(isConversationCapacityReached("Context windows are an interesting topic."), false);
 });

@@ -2,7 +2,9 @@ const BRIDGE = "http://127.0.0.1:8765";
 const PULSE_ALARM = "autopilot-pulse";
 const MONITOR_STARTED_KEY = "monitor:startedAt";
 const MISSING_PREFIX = "missing:";
+const ROLLOVER_PREFIX = "rollover:";
 const STARTUP_GRACE_MS = 90000;
+const ROLLOVER_TIMEOUT_MS = 120000;
 const claimChains = new Map();
 
 async function bridge(path, options = {}) {
@@ -20,11 +22,40 @@ function normalizeChatUrl(raw) {
   }
 }
 
+function projectIdFromRoot(raw) {
+  try {
+    const url = new URL(normalizeChatUrl(raw));
+    return url.pathname.match(/^\/g\/(g-p-[^/]+)(?:\/project)?$/)?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+function projectIdFromChat(raw) {
+  try {
+    const url = new URL(normalizeChatUrl(raw));
+    return url.pathname.match(/^\/g\/(g-p-[^/]+)\/c\/[^/]+$/)?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+function sameProjectChat(projectRootUrl, chatUrl) {
+  const root = projectIdFromRoot(projectRootUrl);
+  const chat = projectIdFromChat(chatUrl);
+  return Boolean(root && chat && root === chat);
+}
+
 async function ensurePulse() {
   const alarm = await chrome.alarms.get(PULSE_ALARM);
   if (!alarm) chrome.alarms.create(PULSE_ALARM, { periodInMinutes: 0.5 });
   const current = (await chrome.storage.session.get(MONITOR_STARTED_KEY))[MONITOR_STARTED_KEY];
   if (!current) await chrome.storage.session.set({ [MONITOR_STARTED_KEY]: Date.now() });
+}
+
+async function getProjects() {
+  const config = await bridge("/config");
+  return Array.isArray(config.projects) ? config.projects : [];
 }
 
 async function claimUnlocked(projectId, sender) {
@@ -71,16 +102,138 @@ async function notifyBridge(projectId, event) {
   });
 }
 
+async function rolloverEntries() {
+  const all = await chrome.storage.session.get(null);
+  return Object.entries(all)
+    .filter(([key]) => key.startsWith(ROLLOVER_PREFIX))
+    .map(([key, value]) => ({ key, projectId: key.slice(ROLLOVER_PREFIX.length), ...value }));
+}
+
+async function setProjectState(projectId, patch) {
+  const key = `project:${projectId}`;
+  const current = (await chrome.storage.local.get(key))[key] || {};
+  await chrome.storage.local.set({ [key]: { ...current, ...patch, updatedAt: Date.now() } });
+}
+
+async function failRollover(entry) {
+  await setProjectState(entry.projectId, {
+    rolloverInProgress: false,
+    pausedForUser: true,
+    failures: 0,
+    lastStatus: "rollover_failed"
+  });
+  await chrome.storage.session.remove(entry.key);
+  await notifyBridge(entry.projectId, "AUTOMATION_ERROR").catch(() => {});
+}
+
+async function completeRollover(entry, project, chatUrl) {
+  const result = await bridge("/rollover-complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: entry.projectId, chatUrl })
+  });
+  await setProjectState(entry.projectId, {
+    rolloverInProgress: false,
+    pausedForUser: false,
+    nextAt: Date.now() + Number(project.continueAfterSeconds || 60) * 1000,
+    failures: 0,
+    lastStatus: "rolled_over"
+  });
+  await chrome.storage.session.remove(entry.key);
+  await releaseLeasesForTab(entry.tabId);
+  return result;
+}
+
+async function processPendingRollovers() {
+  const entries = await rolloverEntries();
+  if (!entries.length) return;
+  const projects = await getProjects();
+  const byId = new Map(projects.map((project) => [project.id, project]));
+
+  for (const entry of entries) {
+    const project = byId.get(entry.projectId);
+    if (!project?.autoRollover || !project.projectRootUrl) {
+      await failRollover(entry);
+      continue;
+    }
+    if (Date.now() - Number(entry.startedAt || 0) > ROLLOVER_TIMEOUT_MS) {
+      await failRollover(entry);
+      continue;
+    }
+
+    let tab;
+    try { tab = await chrome.tabs.get(entry.tabId); }
+    catch { await failRollover(entry); continue; }
+    const current = normalizeChatUrl(tab.url || "");
+
+    if (sameProjectChat(project.projectRootUrl, current) && current !== normalizeChatUrl(entry.sourceUrl)) {
+      try { await completeRollover(entry, project, current); }
+      catch { /* retry until timeout */ }
+      continue;
+    }
+
+    if (current === normalizeChatUrl(entry.projectRootUrl) && !entry.promptSentAt) {
+      try {
+        const response = await chrome.tabs.sendMessage(entry.tabId, {
+          type: "ROLLOVER_SEND",
+          prompt: entry.prompt
+        });
+        if (response?.ok) {
+          await chrome.storage.session.set({
+            [entry.key]: { ...entry, promptSentAt: Date.now() }
+          });
+        }
+      } catch {
+        // Content script may not be ready yet; next pulse retries.
+      }
+    }
+  }
+}
+
+async function startRollover(message, sender) {
+  const tabId = sender.tab?.id;
+  const projectId = String(message.projectId || "");
+  if (!Number.isInteger(tabId) || !projectId) return { ok: false, error: "invalid_sender" };
+  const projects = await getProjects();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project?.autoRollover || !project.projectRootUrl) {
+    return { ok: false, error: "rollover_disabled" };
+  }
+  const sourceUrl = normalizeChatUrl(sender.tab?.url || project.chatUrl || "");
+  if (!sameProjectChat(project.projectRootUrl, sourceUrl)) {
+    return { ok: false, error: "source_outside_project" };
+  }
+
+  const handoff = String(message.handoff || "").slice(-12000);
+  const prompt = `${project.rolloverPrompt}\n\nОстанній доступний фрагмент попередньої розмови для handoff:\n${handoff}`.slice(0, 15000);
+  const key = `${ROLLOVER_PREFIX}${projectId}`;
+  await chrome.storage.session.set({
+    [key]: {
+      tabId,
+      sourceUrl,
+      projectRootUrl: project.projectRootUrl,
+      prompt,
+      startedAt: Date.now(),
+      promptSentAt: 0
+    }
+  });
+  await setProjectState(projectId, { rolloverInProgress: true, lastStatus: "rollover_in_progress" });
+  await releaseLeasesForTab(tabId);
+  await chrome.tabs.update(tabId, { url: project.projectRootUrl });
+  return { ok: true };
+}
+
 async function monitorConfiguredTabs() {
   const startedAt = Number((await chrome.storage.session.get(MONITOR_STARTED_KEY))[MONITOR_STARTED_KEY] || 0);
   if (!startedAt || Date.now() - startedAt < STARTUP_GRACE_MS) return;
 
-  const config = await bridge("/config");
-  const projects = Array.isArray(config.projects) ? config.projects : [];
+  const projects = await getProjects();
+  const pending = new Set((await rolloverEntries()).map((entry) => entry.projectId));
   const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
   const openUrls = new Set(tabs.map((tab) => normalizeChatUrl(tab.url || "")).filter(Boolean));
 
   for (const project of projects) {
+    if (pending.has(project.id)) continue;
     const key = `${MISSING_PREFIX}${project.id}`;
     const missing = !openUrls.has(normalizeChatUrl(project.chatUrl));
     const wasMissing = Boolean((await chrome.storage.session.get(key))[key]);
@@ -97,11 +250,13 @@ async function monitorConfiguredTabs() {
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case "GET_CONFIG":
-      return { ok: true, ...(await bridge("/config")) };
+      return { ok: true, projects: await getProjects() };
     case "CLAIM":
       return { ok: true, ...(await claim(String(message.projectId || ""), sender)) };
     case "NOTIFY":
       return { ok: true, ...(await notifyBridge(message.projectId, message.event)) };
+    case "ROLLOVER":
+      return startRollover(message, sender);
     default:
       return { ok: false, error: "unsupported_message" };
   }
@@ -122,14 +277,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     chrome.tabs.sendMessage(tab.id, { type: "PULSE" }).catch(() => {});
   }
   monitorConfiguredTabs().catch(() => {});
+  processPendingRollovers().catch(() => {});
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   releaseLeasesForTab(tabId).catch(() => {});
+  processPendingRollovers().catch(() => {});
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) releaseLeasesForTab(tabId).catch(() => {});
+  if (changeInfo.url || changeInfo.status === "complete") {
+    processPendingRollovers().catch(() => {});
+  }
 });
 
 chrome.runtime.onInstalled.addListener(ensurePulse);

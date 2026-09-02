@@ -89,21 +89,23 @@
     });
   }
 
+  async function turnText(turn, role) {
+    const roleNode = turn.querySelector(`[data-message-author-role="${role}"]`);
+    const direct = String(roleNode?.innerText || (role === "user" ? turn.innerText : "") || "").trim();
+    if (direct) return direct;
+    if (role !== "assistant") return "";
+    const messageId = roleNode?.getAttribute("data-message-id") || "";
+    return requestAssistantText(messageId);
+  }
+
   async function latestTurn() {
     const turns = [...document.querySelectorAll('[data-testid^="conversation-turn-"][data-turn]')];
     if (turns.length) {
       const turn = turns[turns.length - 1];
       const role = turn.getAttribute("data-turn") || "unknown";
-      const roleNode = turn.querySelector(`[data-message-author-role="${role}"]`);
       const id = turnId(turn);
-      if (role === "user") {
-        return { role, turnId: id, text: String(roleNode?.innerText || turn.innerText || "").trim() };
-      }
-      if (role === "assistant") {
-        const direct = String(roleNode?.innerText || "").trim();
-        if (direct) return { role, turnId: id, text: direct };
-        const messageId = roleNode?.getAttribute("data-message-id") || "";
-        return { role, turnId: id, text: await requestAssistantText(messageId) };
+      if (role === "user" || role === "assistant") {
+        return { role, turnId: id, text: await turnText(turn, role) };
       }
       return { role: "unknown", turnId: id, text: "" };
     }
@@ -123,8 +125,32 @@
     return { role, turnId: id, text: String(node.innerText || "").trim() };
   }
 
+  async function conversationTail() {
+    const turns = [...document.querySelectorAll('[data-testid^="conversation-turn-"][data-turn]')].slice(-10);
+    const parts = [];
+    for (const turn of turns) {
+      const role = turn.getAttribute("data-turn") || "unknown";
+      if (role !== "user" && role !== "assistant") continue;
+      const text = await turnText(turn, role);
+      if (!text || Policy.isConversationCapacityReached(text)) continue;
+      parts.push(`${role === "user" ? "КОРИСТУВАЧ" : "АСИСТЕНТ"}:\n${text.slice(0, 3500)}`);
+    }
+    return parts.join("\n\n---\n\n").slice(-12000);
+  }
+
   function isGenerating() {
     return Boolean(first(SELECTORS.stop));
+  }
+
+  function capacitySurfaceText() {
+    const nodes = document.querySelectorAll(
+      '[role="alert"], [aria-live="assertive"], [aria-live="polite"], [data-testid*="toast"]'
+    );
+    return [...nodes]
+      .map((node) => String(node.innerText || "").trim())
+      .filter(Boolean)
+      .join("\n")
+      .slice(-6000);
   }
 
   function stateKey() {
@@ -159,8 +185,11 @@
     const found = (await chrome.storage.local.get(key))[key];
     if (found) return found;
     const initial = {
-      nextAt: Date.now() + project.continueAfterSeconds * 1000,
+      nextAt: project.startImmediately
+        ? Date.now() - 1
+        : Date.now() + project.continueAfterSeconds * 1000,
       pausedForUser: false,
+      rolloverInProgress: false,
       sentCount: 0,
       failures: 0,
       lastGateFingerprint: null,
@@ -205,6 +234,17 @@
     }));
   }
 
+  async function sendPromptText(prompt) {
+    const composer = first(SELECTORS.composer);
+    if (!composer || isGenerating()) return false;
+    setComposerText(composer, prompt);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const send = first(SELECTORS.send);
+    if (!send || send.disabled || send.getAttribute("aria-disabled") === "true") return false;
+    send.click();
+    return true;
+  }
+
   async function failClosed(state) {
     const failures = Number(state.failures || 0) + 1;
     const shouldNotify = failures === 3;
@@ -213,21 +253,31 @@
   }
 
   async function sendContinuation(state) {
-    const composer = first(SELECTORS.composer);
-    if (!composer) return failClosed(state);
-    setComposerText(composer, project.continuationPrompt);
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    const send = first(SELECTORS.send);
-    if (!send || send.disabled || send.getAttribute("aria-disabled") === "true") {
-      return failClosed(state);
-    }
-    send.click();
+    const sent = await sendPromptText(project.continuationPrompt);
+    if (!sent) return failClosed(state);
     await saveState({
       nextAt: Date.now() + project.continueAfterSeconds * 1000,
       sentCount: Number(state.sentCount || 0) + 1,
       failures: 0,
       lastStatus: "continue_sent"
     });
+  }
+
+  async function requestRollover(state) {
+    const handoff = await conversationTail();
+    await saveState({
+      rolloverInProgress: true,
+      failures: 0,
+      lastStatus: "rollover_requested"
+    });
+    const response = await message({ type: "ROLLOVER", projectId: project.id, handoff });
+    if (response?.ok) return;
+    await saveState({
+      rolloverInProgress: false,
+      pausedForUser: true,
+      lastStatus: "rollover_failed"
+    });
+    await notify("AUTOMATION_ERROR");
   }
 
   async function resumeAfterUser() {
@@ -247,8 +297,18 @@
       if (!await refreshProject()) return;
       if (!await claim()) return;
       const state = await loadState();
+      if (state.rolloverInProgress) return;
       const latest = await latestTurn();
       const generating = isGenerating();
+
+      if (
+        project.autoRollover
+        && !generating
+        && Policy.isConversationCapacityReached(`${latest.text}\n${capacitySurfaceText()}`)
+      ) {
+        await requestRollover(state);
+        return;
+      }
 
       if (
         state.pausedForUser
@@ -305,8 +365,18 @@
     }
   }
 
-  chrome.runtime.onMessage.addListener((payload) => {
-    if (payload?.type === "PULSE") inspect();
+  chrome.runtime.onMessage.addListener((payload, _sender, sendResponse) => {
+    if (payload?.type === "PULSE") {
+      inspect();
+      return false;
+    }
+    if (payload?.type === "ROLLOVER_SEND") {
+      sendPromptText(String(payload.prompt || ""))
+        .then((ok) => sendResponse({ ok }))
+        .catch((error) => sendResponse({ ok: false, error: String(error) }));
+      return true;
+    }
+    return false;
   });
 
   new MutationObserver(() => {

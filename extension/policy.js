@@ -9,6 +9,24 @@
     }
   }
 
+  const CAPACITY_PATTERNS = [
+    /you(?:'|’)ve reached the maximum length for this conversation/i,
+    /this conversation (?:has )?reached (?:its|the) maximum length/i,
+    /maximum conversation length (?:has been )?reached/i,
+    /this conversation is too long to continue/i,
+    /досягнуто максимальної довжини (?:цієї )?(?:розмови|чату)/i,
+    /(?:ця розмова|цей чат) (?:вже )?досяг(?:ла|) максимальної довжини/i,
+    /(?:ця розмова|цей чат) надто довг(?:а|ий),? щоб продовжувати/i,
+    /достигнута максимальная длина (?:этого )?(?:разговора|чата)/i,
+    /(?:этот разговор|этот чат) достиг максимальной длины/i
+  ];
+
+  function isConversationCapacityReached(text) {
+    const value = String(text || "").replace(/\s+/g, " ").trim();
+    if (!value) return false;
+    return CAPACITY_PATTERNS.some((pattern) => pattern.test(value));
+  }
+
   function decideAction({
     enabled,
     generating,
@@ -52,6 +70,7 @@
     normalizeChatUrl,
     decideAction,
     shouldResumeFromTurns,
-    fingerprint
+    fingerprint,
+    isConversationCapacityReached
   });
 })();
