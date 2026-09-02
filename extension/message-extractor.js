@@ -2,38 +2,47 @@
   const MAX_VISITED = 4000;
   const MAX_DEPTH = 10;
   const MAX_FIBER_LEVELS = 12;
+  const FINISHED_STATUSES = new Set(["finished_successfully", "finished", "done"]);
   const SKIP_KEYS = new Set([
     "stateNode", "return", "child", "sibling", "alternate",
     "_debugOwner", "_debugInfo", "_owner"
   ]);
 
-  function messageText(candidate, targetId) {
-    if (!candidate || typeof candidate !== "object") return "";
-    if (!targetId || candidate.id !== targetId) return "";
-    if (candidate.author?.role !== "assistant") return "";
+  function messageSnapshot(candidate, targetId) {
+    if (!candidate || typeof candidate !== "object") return null;
+    if (!targetId || candidate.id !== targetId) return null;
+    if (candidate.author?.role !== "assistant") return null;
     const status = String(candidate.status || "");
-    if (status && !["finished_successfully", "finished", "done"].includes(status)) return "";
     const parts = candidate.content?.parts;
-    if (!Array.isArray(parts)) return "";
-    return parts.filter((part) => typeof part === "string").join("\n").trim();
+    const text = Array.isArray(parts)
+      ? parts.filter((part) => typeof part === "string").join("\n").trim()
+      : "";
+    return {
+      text,
+      status,
+      finished: status ? FINISHED_STATUSES.has(status) : null
+    };
   }
 
-  function findMessageText(roots, targetId) {
+  function messageText(candidate, targetId) {
+    const snapshot = messageSnapshot(candidate, targetId);
+    if (!snapshot || snapshot.finished === false) return "";
+    return snapshot.text;
+  }
+
+  function findMessageSnapshot(roots, targetId) {
     const queue = roots.map((value) => ({ value, depth: 0 }));
     const seen = new WeakSet();
     let visited = 0;
-
     while (queue.length && visited < MAX_VISITED) {
       const { value, depth } = queue.shift();
       if (!value || typeof value !== "object") continue;
       if (seen.has(value)) continue;
       seen.add(value);
       visited += 1;
-
-      const found = messageText(value, targetId);
+      const found = messageSnapshot(value, targetId);
       if (found) return found;
       if (depth >= MAX_DEPTH) continue;
-
       let entries;
       try { entries = Object.entries(value); } catch { continue; }
       for (const [key, child] of entries) {
@@ -42,14 +51,19 @@
         queue.push({ value: child, depth: depth + 1 });
       }
     }
-    return "";
+    return null;
+  }
+
+  function findMessageText(roots, targetId) {
+    const snapshot = findMessageSnapshot(roots, targetId);
+    if (!snapshot || snapshot.finished === false) return "";
+    return snapshot.text;
   }
 
   function reactRoots(messageNode) {
     if (!messageNode || typeof messageNode !== "object") return [];
     const fiberKey = Object.keys(messageNode).find((key) => key.startsWith("__reactFiber$"));
     if (!fiberKey) return [];
-
     const roots = [];
     let fiber = messageNode[fiberKey];
     for (let level = 0; fiber && level < MAX_FIBER_LEVELS; level += 1) {
@@ -59,14 +73,23 @@
     return roots.filter(Boolean);
   }
 
-  function extractAssistantText(messageNode) {
-    if (!messageNode) return "";
+  function extractAssistantSnapshot(messageNode) {
+    if (!messageNode) return { text: "", status: "", finished: null };
     const targetId = messageNode.getAttribute?.("data-message-id") || "";
     if (targetId) {
-      const structured = findMessageText(reactRoots(messageNode), targetId);
+      const structured = findMessageSnapshot(reactRoots(messageNode), targetId);
       if (structured) return structured;
     }
-    return String(messageNode.innerText || "").trim();
+    return {
+      text: String(messageNode.innerText || "").trim(),
+      status: "",
+      finished: null
+    };
+  }
+
+  function extractAssistantText(messageNode) {
+    const snapshot = extractAssistantSnapshot(messageNode);
+    return snapshot.finished === false ? "" : snapshot.text;
   }
 
   function latestTurn(documentRef = globalThis.document) {
@@ -84,7 +107,6 @@
       }
       return { role: "unknown", text: "" };
     }
-
     const legacy = [...documentRef.querySelectorAll(
       '[data-message-author-role="assistant"], [data-message-author-role="user"]'
     )];
@@ -98,8 +120,11 @@
   }
 
   globalThis.AutopilotMessageExtractor = Object.freeze({
+    messageSnapshot,
     messageText,
+    findMessageSnapshot,
     findMessageText,
+    extractAssistantSnapshot,
     extractAssistantText,
     latestTurn
   });

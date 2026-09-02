@@ -7,6 +7,7 @@ const project = { id: "demo", name: "Демонстрація", chatUrl: "https:
 test("bridge notification surface is fixed and notification-only", () => {
   assert.deepEqual([...ALLOWED_EVENTS].sort(), [
     "AUTOMATION_ERROR",
+    "AUTOMATION_STALLED",
     "CONVERSATION_ROLLED_OVER",
     "RECOVERED",
     "SESSION_ATTENTION_REQUIRED",

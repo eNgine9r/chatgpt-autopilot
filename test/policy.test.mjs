@@ -68,3 +68,62 @@ test("capacity detection accepts only strong explicit platform-style signals", (
   assert.equal(isConversationCapacityReached("We should probably start a new chat sometime."), false);
   assert.equal(isConversationCapacityReached("Context windows are an interesting topic."), false);
 });
+
+
+test("state-driven mode waits for the assistant instead of using a timer", () => {
+  const stateDriven = { ...base, autoContinueMode: "on_completion", latestTurnRole: "user" };
+  assert.equal(decideAction(stateDriven), "wait_assistant");
+  assert.equal(decideAction({ ...stateDriven, latestTurnRole: "assistant", assistantFinished: false }), "wait_completion");
+});
+
+test("state-driven mode requires an explicit finished assistant status", () => {
+  const stateDriven = {
+    ...base,
+    autoContinueMode: "on_completion",
+    assistantFinished: null,
+    latestTurnKey: "a1"
+  };
+  assert.equal(decideAction(stateDriven), "fail_closed");
+  assert.equal(decideAction({ ...stateDriven, assistantFinished: false }), "wait_completion");
+});
+
+test("state-driven mode observes, settles, sends once, then waits for a new turn", () => {
+  const stateDriven = {
+    ...base,
+    autoContinueMode: "on_completion",
+    assistantFinished: true,
+    latestTurnKey: "a1",
+    lastContinuedTurnKey: "",
+    completionObservedTurnKey: "",
+    completionObservedAtMs: 0,
+    completionSettleMs: 10000,
+    nowMs: 20000
+  };
+  assert.equal(decideAction(stateDriven), "observe_completion");
+  assert.equal(decideAction({
+    ...stateDriven,
+    completionObservedTurnKey: "a1",
+    completionObservedAtMs: 15000
+  }), "wait_settle");
+  assert.equal(decideAction({
+    ...stateDriven,
+    completionObservedTurnKey: "a1",
+    completionObservedAtMs: 9000
+  }), "send_continue");
+  assert.equal(decideAction({
+    ...stateDriven,
+    lastContinuedTurnKey: "a1",
+    completionObservedTurnKey: "a1",
+    completionObservedAtMs: 9000
+  }), "wait_next_turn");
+});
+
+test("generation remains the absolute blocker in state-driven mode", () => {
+  assert.equal(decideAction({
+    ...base,
+    autoContinueMode: "on_completion",
+    generating: true,
+    assistantFinished: true,
+    latestTurnKey: "a1"
+  }), "wait_generating");
+});

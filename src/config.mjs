@@ -74,6 +74,18 @@ export function loadProjects(projectsFile) {
     if (!Number.isFinite(continueAfterSeconds) || continueAfterSeconds < 60) {
       throw new Error(`${project.id}: continueAfterSeconds must be >= 60`);
     }
+    const autoContinueMode = String(project.autoContinueMode || "timer");
+    if (!["timer", "on_completion"].includes(autoContinueMode)) {
+      throw new Error(`${project.id}: autoContinueMode must be timer or on_completion`);
+    }
+    const completionSettleSeconds = Number(project.completionSettleSeconds ?? 10);
+    if (!Number.isFinite(completionSettleSeconds) || completionSettleSeconds < 2 || completionSettleSeconds > 120) {
+      throw new Error(`${project.id}: completionSettleSeconds must be between 2 and 120`);
+    }
+    const watchdogSeconds = Number(project.watchdogSeconds ?? continueAfterSeconds);
+    if (!Number.isFinite(watchdogSeconds) || watchdogSeconds < 60) {
+      throw new Error(`${project.id}: watchdogSeconds must be >= 60`);
+    }
 
     const continuationPrompt = String(project.continuationPrompt || "").trim();
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
@@ -99,6 +111,9 @@ export function loadProjects(projectsFile) {
       enabled: project.enabled !== false,
       chatUrl,
       continueAfterSeconds,
+      autoContinueMode,
+      completionSettleSeconds,
+      watchdogSeconds,
       userGateMarker: String(project.userGateMarker || "[[USER_ACTION_REQUIRED]]"),
       continuationPrompt,
       startImmediately: project.startImmediately === true,
