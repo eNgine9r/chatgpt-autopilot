@@ -32,6 +32,13 @@
     return "send_continue";
   }
 
+  function shouldResumeFromTurns(turns, gateTurnId) {
+    if (!gateTurnId || !Array.isArray(turns)) return false;
+    const index = turns.findIndex((turn) => turn?.turnId === gateTurnId);
+    if (index < 0) return false;
+    return turns.slice(index + 1).some((turn) => turn?.role === "user");
+  }
+
   function fingerprint(text) {
     let hash = 2166136261;
     for (const ch of String(text || "").slice(-1000)) {
@@ -41,5 +48,10 @@
     return (hash >>> 0).toString(16);
   }
 
-  globalThis.AutopilotPolicy = Object.freeze({ normalizeChatUrl, decideAction, fingerprint });
+  globalThis.AutopilotPolicy = Object.freeze({
+    normalizeChatUrl,
+    decideAction,
+    shouldResumeFromTurns,
+    fingerprint
+  });
 })();
