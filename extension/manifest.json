@@ -14,8 +14,15 @@
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["policy.js", "message-extractor.js", "content.js"],
-      "run_at": "document_idle"
+      "js": ["message-extractor.js", "page-bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["policy.js", "content.js"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
     }
   ]
 }
