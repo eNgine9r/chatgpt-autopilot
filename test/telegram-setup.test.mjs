@@ -9,8 +9,15 @@ import {
   writeEnvAtomic
 } from "../src/telegram-setup-lib.mjs";
 
-test("upsertEnvText replaces target keys and preserves unrelated settings", () => {
-  const source = "DISPLAY=:0\nTELEGRAM_BOT_TOKEN=old\nOTHER=value\n";
+test("upsertEnvText replaces target keys, removes duplicates and preserves unrelated settings", () => {
+  const source = [
+    "DISPLAY=:0",
+    "TELEGRAM_BOT_TOKEN=old-one",
+    "OTHER=value",
+    "TELEGRAM_BOT_TOKEN=old-two",
+    "TELEGRAM_CHAT_ID=old-chat",
+    ""
+  ].join("\n");
   const result = upsertEnvText(source, {
     TELEGRAM_BOT_TOKEN: "new:token",
     TELEGRAM_CHAT_ID: "12345"
@@ -20,6 +27,8 @@ test("upsertEnvText replaces target keys and preserves unrelated settings", () =
   assert.match(result, /^TELEGRAM_BOT_TOKEN=new:token$/m);
   assert.match(result, /^TELEGRAM_CHAT_ID=12345$/m);
   assert.equal((result.match(/TELEGRAM_BOT_TOKEN=/g) || []).length, 1);
+  assert.equal((result.match(/TELEGRAM_CHAT_ID=/g) || []).length, 1);
+  assert.doesNotMatch(result, /old-one|old-two|old-chat/);
 });
 
 test("selectLatestPrivateChat chooses the newest private message", () => {
