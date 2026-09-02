@@ -3,6 +3,7 @@
   globalThis.__CHATGPT_PROJECT_AUTOPILOT__ = true;
 
   const Policy = globalThis.AutopilotPolicy;
+  const Extractor = globalThis.AutopilotMessageExtractor;
   const SELECTORS = {
     stop: [
       'button[data-testid="stop-button"]',
@@ -43,15 +44,8 @@
   }
 
   function latestTurn() {
-    const turns = [...document.querySelectorAll(
-      '[data-message-author-role="assistant"], [data-message-author-role="user"]'
-    )];
-    if (!turns.length) return { role: "unknown", text: "" };
-    const node = turns[turns.length - 1];
-    return {
-      role: node.getAttribute("data-message-author-role") || "unknown",
-      text: (node.innerText || "").trim()
-    };
+    if (!Extractor?.latestTurn) return { role: "unknown", text: "" };
+    return Extractor.latestTurn(document);
   }
 
   function isGenerating() {
