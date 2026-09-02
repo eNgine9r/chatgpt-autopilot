@@ -84,3 +84,10 @@ test("rejects unsafe state-driven timing configuration", () => {
   assert.throws(() => loadProjects(tempConfig([{ ...project, completionSettleSeconds: 1 }])), /completionSettleSeconds/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, watchdogSeconds: 20 }])), /watchdogSeconds/);
 });
+
+test("validates startup priority", () => {
+  const loaded = loadProjects(tempConfig([{ ...project, startupPriority: 10 }]));
+  assert.equal(loaded[0].startupPriority, 10);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, startupPriority: -1 }])), /startupPriority/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, startupPriority: 10.5 }])), /startupPriority/);
+});

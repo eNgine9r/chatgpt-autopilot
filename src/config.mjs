@@ -10,6 +10,7 @@ export function loadRuntimeConfig() {
     chromiumExecutablePath: process.env.CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium",
     display: process.env.DISPLAY || ":0",
     xauthority: process.env.XAUTHORITY || "",
+    projectStartupStaggerSeconds: Number(process.env.PROJECT_STARTUP_STAGGER_SECONDS || 60),
     browserProfileDir: resolveFromCwd(process.env.BROWSER_PROFILE_DIR || "./browser-profile"),
     logDir: resolveFromCwd(process.env.LOG_DIR || "./logs"),
     projectsFile: resolveFromCwd(process.env.PROJECTS_FILE || "./config/projects.json"),
@@ -70,6 +71,11 @@ export function loadProjects(projectsFile) {
     if (ids.has(project.id)) throw new Error(`Duplicate project id: ${project.id}`);
     ids.add(project.id);
 
+    const startupPriority = Number(project.startupPriority ?? 100);
+    if (!Number.isInteger(startupPriority) || startupPriority < 0 || startupPriority > 1000) {
+      throw new Error(`${project.id}: startupPriority must be an integer between 0 and 1000`);
+    }
+
     const continueAfterSeconds = Number(project.continueAfterSeconds ?? 1480);
     if (!Number.isFinite(continueAfterSeconds) || continueAfterSeconds < 60) {
       throw new Error(`${project.id}: continueAfterSeconds must be >= 60`);
@@ -110,6 +116,7 @@ export function loadProjects(projectsFile) {
       name: String(project.name),
       enabled: project.enabled !== false,
       chatUrl,
+      startupPriority,
       continueAfterSeconds,
       autoContinueMode,
       completionSettleSeconds,

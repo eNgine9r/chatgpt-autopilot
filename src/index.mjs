@@ -6,6 +6,7 @@ import { loadRuntimeConfig, loadProjects } from "./config.mjs";
 import { createLogger } from "./logger.mjs";
 import { TelegramNotifier } from "./notifier.mjs";
 import { createBridgeServer } from "./bridge.mjs";
+import { buildStartupPlan } from "./startup.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
@@ -21,6 +22,7 @@ if (!fs.existsSync(config.chromiumExecutablePath)) {
 const projects = loadProjects(config.projectsFile);
 const enabled = projects.filter((project) => project.enabled);
 if (!enabled.length) throw new Error("No enabled projects in config/projects.json");
+const startupPlan = buildStartupPlan(enabled, config.projectStartupStaggerSeconds);
 
 for (const dir of [config.browserProfileDir, config.logDir]) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -50,29 +52,57 @@ const args = [
   "--no-first-run",
   "--disable-session-crashed-bubble",
   "--new-window",
-  ...enabled.map((project) => project.chatUrl)
+  startupPlan[0].project.chatUrl
 ];
 
+const browserEnv = {
+  ...process.env,
+  DISPLAY: config.display,
+  ...(config.xauthority ? { XAUTHORITY: config.xauthority } : {})
+};
+
+let shuttingDown = false;
+const startupTimers = new Set();
+
 const browser = spawn(config.chromiumExecutablePath, args, {
-  env: {
-    ...process.env,
-    DISPLAY: config.display,
-    ...(config.xauthority ? { XAUTHORITY: config.xauthority } : {})
-  },
+  env: browserEnv,
   stdio: ["ignore", browserLogFd, browserLogFd]
 });
 
 logger.info("autopilot_started", {
   chromiumPid: browser.pid,
-  projects: enabled.map((project) => project.name),
+  projects: startupPlan.map(({ project }) => project.name),
+  startupStaggerSeconds: config.projectStartupStaggerSeconds,
+  primaryProject: startupPlan[0].project.name,
   telegram: notifier.enabled,
   display: config.display
 });
 
-let shuttingDown = false;
+for (const entry of startupPlan.slice(1)) {
+  const timer = setTimeout(() => {
+    startupTimers.delete(timer);
+    if (shuttingDown || browser.exitCode != null) return;
+    const opener = spawn(config.chromiumExecutablePath, [
+      `--user-data-dir=${config.browserProfileDir}`,
+      "--new-tab",
+      entry.project.chatUrl
+    ], { env: browserEnv, stdio: ["ignore", browserLogFd, browserLogFd] });
+    opener.on("error", (error) => {
+      logger.error("project_tab_open_failed", { project: entry.project.name, error: String(error) });
+    });
+    logger.info("project_tab_open_requested", {
+      project: entry.project.name,
+      delayMs: entry.delayMs
+    });
+  }, entry.delayMs);
+  startupTimers.add(timer);
+}
+
 async function shutdown(signal, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
+  for (const timer of startupTimers) clearTimeout(timer);
+  startupTimers.clear();
   logger.info("shutdown", { signal });
   await new Promise((resolve) => bridge.close(resolve));
   if (browser.exitCode == null) {
