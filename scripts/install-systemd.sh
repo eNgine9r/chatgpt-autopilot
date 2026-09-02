@@ -9,6 +9,7 @@ fi
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOME_DIR="${HOME:?HOME is required}"
 USER_ID="$(id -u)"
+USER_NAME="$(id -un)"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/systemd/user"
 SERVICE="$SERVICE_DIR/chatgpt-project-autopilot.service"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$USER_ID}"
@@ -28,7 +29,7 @@ if [[ ! -x "$NODE_BIN" ]] || (( $(node_major "$NODE_BIN") < 22 )); then
 fi
 
 [[ -n "$NODE_BIN" && -x "$NODE_BIN" ]] || {
-  echo "Node.js 22+ executable not found for $(id -un)"
+  echo "Node.js 22+ executable not found for $USER_NAME"
   exit 1
 }
 [[ -f "$APP_DIR/.env" ]] || { echo "Missing $APP_DIR/.env"; exit 1; }
@@ -52,10 +53,15 @@ trap - EXIT
 
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$RUNTIME_DIR/bus}"
+
+# Linger keeps the user manager alive across logout and lets the service be scheduled at boot.
+# Some distributions require administrator policy for this command, so failure is non-fatal.
+loginctl enable-linger "$USER_NAME" >/dev/null 2>&1 || true
+
 systemctl --user daemon-reload
 systemctl --user enable --now chatgpt-project-autopilot.service
 
 echo "Installed user service: $SERVICE"
 echo "Node: $NODE_BIN ($($NODE_BIN --version))"
-echo "Linger: $(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || echo unknown)"
+echo "Linger: $(loginctl show-user "$USER_NAME" -p Linger --value 2>/dev/null || echo unknown)"
 systemctl --user --no-pager --full status chatgpt-project-autopilot.service || true
