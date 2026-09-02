@@ -20,7 +20,7 @@
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["policy.js", "content.js"],
+      "js": ["policy.js", "content.js", "session-watch.js"],
       "run_at": "document_idle",
       "world": "ISOLATED"
     }
