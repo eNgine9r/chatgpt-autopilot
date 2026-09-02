@@ -30,6 +30,31 @@ export function normalizeChatUrl(raw) {
   return `${url.origin}${pathname}`;
 }
 
+export function projectIdFromChatUrl(raw) {
+  const url = new URL(normalizeChatUrl(raw));
+  const match = url.pathname.match(/^\/g\/(g-p-[^/]+)\/c\/[^/]+$/);
+  return match?.[1] || "";
+}
+
+export function deriveProjectRootUrl(raw) {
+  const id = projectIdFromChatUrl(raw);
+  if (!id) return "";
+  return `https://chatgpt.com/g/${id}/project`;
+}
+
+export function sameProjectChatUrl(projectRootUrl, chatUrl) {
+  try {
+    const root = new URL(normalizeChatUrl(projectRootUrl));
+    const chat = new URL(normalizeChatUrl(chatUrl));
+    if (root.origin !== chat.origin) return false;
+    const rootMatch = root.pathname.match(/^\/g\/(g-p-[^/]+)(?:\/project)?$/);
+    const chatMatch = chat.pathname.match(/^\/g\/(g-p-[^/]+)\/c\/[^/]+$/);
+    return Boolean(rootMatch && chatMatch && rootMatch[1] === chatMatch[1]);
+  } catch {
+    return false;
+  }
+}
+
 export function loadProjects(projectsFile) {
   const raw = JSON.parse(fs.readFileSync(projectsFile, "utf8"));
   if (!Array.isArray(raw.projects)) throw new Error("config.projects must be an array");
@@ -53,14 +78,33 @@ export function loadProjects(projectsFile) {
     const continuationPrompt = String(project.continuationPrompt || "").trim();
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
 
+    const chatUrl = normalizeChatUrl(project.chatUrl);
+    const autoRollover = project.autoRollover === true;
+    const projectRootUrl = project.projectRootUrl
+      ? normalizeChatUrl(project.projectRootUrl)
+      : deriveProjectRootUrl(chatUrl);
+    if (autoRollover && (!projectRootUrl || !sameProjectChatUrl(projectRootUrl, chatUrl))) {
+      throw new Error(`${project.id}: autoRollover requires a ChatGPT Project chat URL`);
+    }
+
+    const rolloverPrompt = String(project.rolloverPrompt || (
+      "Це автоматичне продовження попереднього чату цього ChatGPT Project, який досяг максимальної довжини. " +
+      "Продовжуй роботу з останньої фактичної точки. Використай інструкції, файли та контекст цього Project. " +
+      "Не повторюй уже виконане. Якщо для продовження реально потрібна дія користувача, зупинись і використай службовий стоп-маркер відповідно до інструкцій Autopilot."
+    )).trim();
+
     return {
       id: String(project.id),
       name: String(project.name),
       enabled: project.enabled !== false,
-      chatUrl: normalizeChatUrl(project.chatUrl),
+      chatUrl,
       continueAfterSeconds,
       userGateMarker: String(project.userGateMarker || "[[USER_ACTION_REQUIRED]]"),
-      continuationPrompt
+      continuationPrompt,
+      startImmediately: project.startImmediately === true,
+      autoRollover,
+      projectRootUrl,
+      rolloverPrompt
     };
   });
 }

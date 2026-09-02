@@ -1,12 +1,14 @@
 import http from "node:http";
-import { publicProjects } from "./config.mjs";
+import { publicProjects, normalizeChatUrl, sameProjectChatUrl } from "./config.mjs";
+import { persistProjectChatUrl } from "./project-store.mjs";
 import { telegramEventMessage } from "./messages.uk.mjs";
 
 export const ALLOWED_EVENTS = new Set([
   "USER_ACTION_REQUIRED",
   "SESSION_ATTENTION_REQUIRED",
   "AUTOMATION_ERROR",
-  "RECOVERED"
+  "RECOVERED",
+  "CONVERSATION_ROLLED_OVER"
 ]);
 
 export const eventMessage = telegramEventMessage;
@@ -21,7 +23,7 @@ function applyExtensionCors(req, res) {
   }
 }
 
-async function readJson(req, limit = 4096) {
+async function readJson(req, limit = 16384) {
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
@@ -38,7 +40,7 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-export function createBridgeServer({ host, port, projects, notifier, logger }) {
+export function createBridgeServer({ host, port, projects, projectsFile, notifier, logger }) {
   const projectById = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
 
   const server = http.createServer(async (req, res) => {
@@ -65,6 +67,30 @@ export function createBridgeServer({ host, port, projects, notifier, logger }) {
         const delivered = await notifier.send(eventMessage(project, event));
         logger.info("extension_event", { project: project.name, event, delivered });
         return json(res, 200, { ok: true, delivered });
+      }
+      if (req.method === "POST" && req.url === "/rollover-complete") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!project.autoRollover || !project.projectRootUrl) {
+          return json(res, 409, { error: "rollover_disabled" });
+        }
+        const newChatUrl = normalizeChatUrl(String(payload.chatUrl || ""));
+        if (!sameProjectChatUrl(project.projectRootUrl, newChatUrl)) {
+          return json(res, 400, { error: "rollover_chat_outside_project" });
+        }
+        const persisted = persistProjectChatUrl(projectsFile, project.id, project.projectRootUrl, newChatUrl);
+        project.chatUrl = persisted;
+        const delivered = await notifier.send(eventMessage(project, "CONVERSATION_ROLLED_OVER"));
+        logger.info("conversation_rolled_over", {
+          project: project.name,
+          chatUrl: persisted,
+          delivered
+        });
+        return json(res, 200, { ok: true, chatUrl: persisted, delivered });
       }
       return json(res, 404, { error: "not_found" });
     } catch (error) {

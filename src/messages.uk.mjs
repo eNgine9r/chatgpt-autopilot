@@ -16,6 +16,8 @@ export function telegramEventMessage(project, event) {
       return `🔴 ${project.name}: Autopilot не може безпечно розпізнати поточний інтерфейс ChatGPT.\nАвтопродовження призупинено, щоб уникнути помилкових дій.\n${project.chatUrl}`;
     case "RECOVERED":
       return `🟢 ${project.name}: Autopilot відновив безпечну роботу.\nАвтопродовження знову активне.`;
+    case "CONVERSATION_ROLLED_OVER":
+      return `🔄 ${project.name}: попередній чат досяг максимальної довжини.\nAutopilot створив новий чат у тому самому проєкті та продовжив роботу там.\n${project.chatUrl}`;
     default:
       throw new Error(`Непідтримувана подія: ${event}`);
   }

@@ -36,6 +36,7 @@ const bridge = await createBridgeServer({
   host: config.bridgeHost,
   port: config.bridgePort,
   projects,
+  projectsFile: config.projectsFile,
   notifier,
   logger
 });
