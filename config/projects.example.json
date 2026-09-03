@@ -28,6 +28,7 @@
       "repoPath": "/absolute/path/on/worker/project",
       "continuationPrompt": "Продовжуй роботу з фактичної поточної точки. Не повторюй виконане. Якщо потрібна дія користувача, зупинись і додай [[USER_ACTION_REQUIRED]].",
       "completionSettleSeconds": 10,
+      "watchdogEnabled": true,
       "noProgressAlertSeconds": 1800,
       "userGateMarker": "[[USER_ACTION_REQUIRED]]",
       "codex": {

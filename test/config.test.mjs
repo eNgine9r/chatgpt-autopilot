@@ -34,6 +34,7 @@ test("loads and normalizes valid ChatGPT project", () => {
   const loaded = loadProjects(tempConfig([project]));
   assert.equal(loaded[0].chatUrl, "https://chatgpt.com/c/abc");
   assert.equal(publicProjects(loaded).length, 1);
+  assert.equal(loaded[0].watchdogEnabled, true);
 });
 
 test("supports one-time immediate start without changing recurrence", () => {
@@ -74,12 +75,14 @@ test("supports state-driven completion mode and watchdog configuration", () => {
     completionSettleSeconds: 12,
     startupGraceSeconds: 45,
     watchdogSeconds: 1620,
+    watchdogEnabled: false,
     noProgressAlertSeconds: 1800
   }]));
   assert.equal(loaded[0].autoContinueMode, "on_completion");
   assert.equal(loaded[0].completionSettleSeconds, 12);
   assert.equal(loaded[0].startupGraceSeconds, 45);
   assert.equal(loaded[0].watchdogSeconds, 1620);
+  assert.equal(loaded[0].watchdogEnabled, false);
   assert.equal(loaded[0].noProgressAlertSeconds, 1800);
 });
 

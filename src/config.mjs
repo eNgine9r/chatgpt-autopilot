@@ -154,6 +154,7 @@ export function loadProjects(projectsFile) {
     if (!Number.isFinite(watchdogSeconds) || watchdogSeconds < 60) {
       throw new Error(`${project.id}: watchdogSeconds must be >= 60`);
     }
+    const watchdogEnabled = project.watchdogEnabled !== false;
     const noProgressAlertSeconds = Number(project.noProgressAlertSeconds ?? 1800);
     if (!Number.isFinite(noProgressAlertSeconds) || noProgressAlertSeconds < 60 || noProgressAlertSeconds > 86400) {
       throw new Error(`${project.id}: noProgressAlertSeconds must be between 60 and 86400`);
@@ -191,6 +192,7 @@ export function loadProjects(projectsFile) {
       completionSettleSeconds,
       startupGraceSeconds,
       watchdogSeconds,
+      watchdogEnabled,
       noProgressAlertSeconds,
       userGateMarker: String(project.userGateMarker || "[[USER_ACTION_REQUIRED]]"),
       continuationPrompt,

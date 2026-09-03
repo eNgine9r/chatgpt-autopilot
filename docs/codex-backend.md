@@ -46,3 +46,7 @@ If Codex asks for approval, permission escalation, or another server-side reques
 7. Keep the browser configuration available for rollback.
 
 Do not cut over when the Codex account is usage-limited or when the target repository has unrelated active writes that could conflict with another worker.
+
+## Intentional idle / shadow mode
+
+For a Codex project that is intentionally kept idle (`autoContinue: false`), set `watchdogEnabled: false` to suppress generic no-progress/heartbeat alerts. Transport exits still trigger the Codex backend alert path, so SSH/App Server failures remain visible.
