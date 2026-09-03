@@ -10,6 +10,8 @@ const {
   isConversationCapacityReached,
   isStartupGraceActive,
   refreshedWatchdogAt,
+  recoveryWatchdogDeadline,
+  shouldCheckRecoveryWatchdog,
   shouldAutoRolloverForStall
 } = globalThis.AutopilotPolicy;
 
@@ -171,4 +173,31 @@ test("stalled Project chat rolls over only after deadline and never across a use
   assert.equal(shouldAutoRolloverForStall({ ...baseRollover, pausedForUser: true }), false);
   assert.equal(shouldAutoRolloverForStall({ ...baseRollover, rolloverInProgress: true }), false);
   assert.equal(shouldAutoRolloverForStall({ ...baseRollover, autoRollover: false }), false);
+});
+
+test("recovery watchdog covers post-continuation and fail-closed stalls", () => {
+  for (const action of [
+    "wait_generating",
+    "wait_assistant",
+    "wait_completion",
+    "wait_next_turn",
+    "fail_closed"
+  ]) {
+    assert.equal(shouldCheckRecoveryWatchdog(action), true, action);
+  }
+  for (const action of ["wait_settle", "paused_for_user", "send_continue", "disabled"]) {
+    assert.equal(shouldCheckRecoveryWatchdog(action), false, action);
+  }
+});
+
+test("missing recovery deadline is rebuilt from last real progress", () => {
+  assert.equal(recoveryWatchdogDeadline({
+    watchdogAtMs: 0, lastProgressAtMs: 10_000, nowMs: 50_000, watchdogMs: 20_000
+  }), 30_000);
+  assert.equal(recoveryWatchdogDeadline({
+    watchdogAtMs: 0, lastProgressAtMs: 0, nowMs: 50_000, watchdogMs: 20_000
+  }), 70_000);
+  assert.equal(recoveryWatchdogDeadline({
+    watchdogAtMs: 99_000, lastProgressAtMs: 10_000, nowMs: 50_000, watchdogMs: 20_000
+  }), 99_000);
 });
