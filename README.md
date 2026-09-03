@@ -155,6 +155,10 @@ systemctl --user stop chatgpt-project-autopilot
 
 The service restarts on failure. If linger is permitted, the user manager is scheduled at boot; Chromium itself may retry until the Raspberry Pi graphical display becomes available.
 
+## Supervisor no-progress watchdog
+
+Each enabled chat reports a lightweight heartbeat and a bounded progress fingerprint to the loopback supervisor. By default, if a chat shows no meaningful progress for 30 minutes, or if its heartbeat disappears for 30 minutes, Autopilot sends one Telegram warning with the project name and chat URL. The alert is notification-only: it never clicks, sends, restarts, or mutates the project. A new alert is allowed only after meaningful progress recovers. Configure the threshold per project with `noProgressAlertSeconds` (default `1800`).
+
 ## Failure behavior
 
 The service intentionally fails closed when it cannot safely recognize a finished assistant response, the target conversation, composer or send button. Repeated unsafe observations generate `AUTOMATION_ERROR` or `SESSION_ATTENTION_REQUIRED` instead of clicking an unknown control.

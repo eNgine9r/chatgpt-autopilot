@@ -41,7 +41,7 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-export function createBridgeServer({ host, port, projects, projectsFile, notifier, logger }) {
+export function createBridgeServer({ host, port, projects, projectsFile, notifier, logger, progressWatchdog = null }) {
   const projectById = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
 
   const server = http.createServer(async (req, res) => {
@@ -55,6 +55,20 @@ export function createBridgeServer({ host, port, projects, projectsFile, notifie
       if (req.method === "GET" && req.url === "/config") {
         return json(res, 200, { projects: publicProjects(projects) });
       }
+      if (req.method === "POST" && req.url === "/heartbeat") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const projectId = String(payload.projectId || "");
+        if (!projectById.has(projectId)) return json(res, 404, { error: "unknown_project" });
+        if (!progressWatchdog) return json(res, 503, { error: "watchdog_unavailable" });
+        const result = progressWatchdog.observe(projectId, {
+          progressKey: String(payload.progressKey || ""),
+          status: String(payload.status || "")
+        });
+        return json(res, 200, result);
+      }
       if (req.method === "POST" && req.url === "/event") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
           return json(res, 415, { error: "application_json_required" });
@@ -65,6 +79,11 @@ export function createBridgeServer({ host, port, projects, projectsFile, notifie
         if (!project) return json(res, 404, { error: "unknown_project" });
         if (!ALLOWED_EVENTS.has(event)) return json(res, 400, { error: "unsupported_event" });
 
+        if (event === "AUTOMATION_STALLED" && progressWatchdog) {
+          const result = await progressWatchdog.notifyStall(project.id, "extension_watchdog");
+          logger.info("extension_event", { project: project.name, event, delivered: result.delivered, suppressed: result.suppressed });
+          return json(res, 200, result);
+        }
         const delivered = await notifier.send(eventMessage(project, event));
         logger.info("extension_event", { project: project.name, event, delivered });
         return json(res, 200, { ok: true, delivered });

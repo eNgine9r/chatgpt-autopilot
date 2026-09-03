@@ -37,6 +37,8 @@
   let inspecting = false;
   let mutationTimer = null;
   let requestCounter = 0;
+  let lastHeartbeatAt = 0;
+  let lastHeartbeatKey = "";
 
   function first(selectors) {
     for (const selector of selectors) {
@@ -182,6 +184,14 @@
     } catch (error) {
       return { ok: false, error: String(error) };
     }
+  }
+
+  async function reportHeartbeat(progressKey, status) {
+    const now = Date.now();
+    if (progressKey === lastHeartbeatKey && now - lastHeartbeatAt < 15000) return;
+    lastHeartbeatKey = progressKey;
+    lastHeartbeatAt = now;
+    await message({ type: "HEARTBEAT", projectId: project.id, progressKey, status });
   }
 
   async function refreshProject() {
@@ -346,6 +356,14 @@
       if (state.rolloverInProgress) return;
       const latest = await latestTurn();
       const generating = isGenerating();
+      const progressKey = [
+        latest.role || "unknown",
+        latest.turnId || "",
+        latest.assistantFinished === true ? "finished" : (latest.assistantFinished === false ? "working" : "unknown"),
+        generating ? "generating" : "idle",
+        Policy.fingerprint(latest.text || "")
+      ].join("|");
+      await reportHeartbeat(progressKey, generating ? "working" : String(latest.role || "unknown"));
 
       if (
         project.autoRollover

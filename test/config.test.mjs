@@ -73,12 +73,14 @@ test("supports state-driven completion mode and watchdog configuration", () => {
     autoContinueMode: "on_completion",
     completionSettleSeconds: 12,
     startupGraceSeconds: 45,
-    watchdogSeconds: 1620
+    watchdogSeconds: 1620,
+    noProgressAlertSeconds: 1800
   }]));
   assert.equal(loaded[0].autoContinueMode, "on_completion");
   assert.equal(loaded[0].completionSettleSeconds, 12);
   assert.equal(loaded[0].startupGraceSeconds, 45);
   assert.equal(loaded[0].watchdogSeconds, 1620);
+  assert.equal(loaded[0].noProgressAlertSeconds, 1800);
 });
 
 test("rejects unsafe state-driven timing configuration", () => {
@@ -87,6 +89,8 @@ test("rejects unsafe state-driven timing configuration", () => {
   assert.throws(() => loadProjects(tempConfig([{ ...project, startupGraceSeconds: 4 }])), /startupGraceSeconds/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, startupGraceSeconds: 121 }])), /startupGraceSeconds/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, watchdogSeconds: 20 }])), /watchdogSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, noProgressAlertSeconds: 30 }])), /noProgressAlertSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, noProgressAlertSeconds: 90000 }])), /noProgressAlertSeconds/);
 });
 
 test("validates startup priority", () => {

@@ -102,6 +102,14 @@ async function notifyBridge(projectId, event) {
   });
 }
 
+async function heartbeatBridge(projectId, progressKey, status) {
+  return bridge("/heartbeat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId, progressKey, status })
+  });
+}
+
 async function rolloverEntries() {
   const all = await chrome.storage.session.get(null);
   return Object.entries(all)
@@ -255,6 +263,8 @@ async function handleMessage(message, sender) {
       return { ok: true, ...(await claim(String(message.projectId || ""), sender)) };
     case "NOTIFY":
       return { ok: true, ...(await notifyBridge(message.projectId, message.event)) };
+    case "HEARTBEAT":
+      return { ok: true, ...(await heartbeatBridge(message.projectId, message.progressKey, message.status)) };
     case "ROLLOVER":
       return startRollover(message, sender);
     default:
