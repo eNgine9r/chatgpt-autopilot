@@ -89,6 +89,38 @@
     return started > 0 && grace > 0 && now >= started && now < started + grace;
   }
 
+  function refreshedWatchdogAt({
+    watchdogAtMs,
+    previousProgressKey,
+    currentProgressKey,
+    nowMs,
+    watchdogMs
+  }) {
+    const current = String(currentProgressKey || "");
+    const previous = String(previousProgressKey || "");
+    const deadline = Number(watchdogAtMs || 0);
+    if (!deadline) return 0;
+    if (!current || current === previous) return deadline;
+    return Number(nowMs || 0) + Number(watchdogMs || 0);
+  }
+
+  function shouldAutoRolloverForStall({
+    autoRollover,
+    pausedForUser,
+    rolloverInProgress,
+    nowMs,
+    watchdogAtMs
+  }) {
+    const deadline = Number(watchdogAtMs || 0);
+    return Boolean(
+      autoRollover
+      && !pausedForUser
+      && !rolloverInProgress
+      && deadline > 0
+      && Number(nowMs || 0) >= deadline
+    );
+  }
+
   function fingerprint(text) {
     let hash = 2166136261;
     for (const ch of String(text || "").slice(-1000)) {
@@ -104,6 +136,8 @@
     shouldResumeFromTurns,
     fingerprint,
     isConversationCapacityReached,
-    isStartupGraceActive
+    isStartupGraceActive,
+    refreshedWatchdogAt,
+    shouldAutoRolloverForStall
   });
 })();

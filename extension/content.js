@@ -174,6 +174,17 @@
       .slice(-6000);
   }
 
+  function latestActivityFingerprint() {
+    const turns = [...document.querySelectorAll('[data-testid^="conversation-turn-"][data-turn]')];
+    const turn = turns[turns.length - 1];
+    if (!turn) return "";
+    const labels = [...turn.querySelectorAll('button[aria-label]')]
+      .map((node) => String(node.getAttribute("aria-label") || "").trim())
+      .filter(Boolean)
+      .slice(-40);
+    return labels.length ? Policy.fingerprint(labels.join("\n")) : "";
+  }
+
   function stateKey() {
     return `project:${project.id}`;
   }
@@ -228,6 +239,8 @@
       completionObservedAt: 0,
       watchdogAt: 0,
       watchdogNotified: false,
+      lastProgressKey: "",
+      lastProgressAt: 0,
       lastStatus: "armed"
     };
     await chrome.storage.local.set({ [key]: initial });
@@ -300,13 +313,25 @@
         ? Date.now() + project.watchdogSeconds * 1000
         : 0,
       watchdogNotified: false,
+      lastProgressKey: "",
+      lastProgressAt: Date.now(),
       lastStatus: "continue_sent"
     });
   }
 
-  async function maybeNotifyStall(state) {
+  async function maybeHandleStall(state) {
     if (project.autoContinueMode !== "on_completion") return false;
     if (!state.watchdogAt || Date.now() < Number(state.watchdogAt)) return false;
+    if (Policy.shouldAutoRolloverForStall({
+      autoRollover: project.autoRollover,
+      pausedForUser: Boolean(state.pausedForUser),
+      rolloverInProgress: Boolean(state.rolloverInProgress),
+      nowMs: Date.now(),
+      watchdogAtMs: state.watchdogAt
+    })) {
+      await requestRollover(state);
+      return true;
+    }
     if (state.watchdogNotified) return true;
     await saveState({ watchdogNotified: true, lastStatus: "stalled" });
     await notify("AUTOMATION_STALLED");
@@ -318,6 +343,8 @@
     await saveState({
       rolloverInProgress: true,
       failures: 0,
+      watchdogAt: 0,
+      watchdogNotified: false,
       lastStatus: "rollover_requested"
     });
     const response = await message({ type: "ROLLOVER", projectId: project.id, handoff });
@@ -341,6 +368,8 @@
         ? Date.now() + project.watchdogSeconds * 1000
         : 0,
       watchdogNotified: false,
+      lastProgressKey: "",
+      lastProgressAt: Date.now(),
       lastStatus: "resumed_after_user"
     });
     await notify("RECOVERED");
@@ -352,17 +381,36 @@
     try {
       if (!await refreshProject()) return;
       if (!await claim()) return;
-      const state = await loadState();
+      let state = await loadState();
       if (state.rolloverInProgress) return;
       const latest = await latestTurn();
       const generating = isGenerating();
+      const now = Date.now();
       const progressKey = [
         latest.role || "unknown",
         latest.turnId || "",
         latest.assistantFinished === true ? "finished" : (latest.assistantFinished === false ? "working" : "unknown"),
         generating ? "generating" : "idle",
-        Policy.fingerprint(latest.text || "")
+        Policy.fingerprint(latest.text || ""),
+        latestActivityFingerprint()
       ].join("|");
+      if (progressKey !== String(state.lastProgressKey || "")) {
+        const refreshedWatchdogAt = Policy.refreshedWatchdogAt({
+          watchdogAtMs: state.watchdogAt,
+          previousProgressKey: state.lastProgressKey,
+          currentProgressKey: progressKey,
+          nowMs: now,
+          watchdogMs: project.watchdogSeconds * 1000
+        });
+        state = await saveState({
+          lastProgressKey: progressKey,
+          lastProgressAt: now,
+          watchdogAt: refreshedWatchdogAt,
+          watchdogNotified: refreshedWatchdogAt !== Number(state.watchdogAt || 0)
+            ? false
+            : Boolean(state.watchdogNotified)
+        });
+      }
       await reportHeartbeat(progressKey, generating ? "working" : String(latest.role || "unknown"));
 
       if (
@@ -391,6 +439,8 @@
             lastGateFingerprint: fp,
             lastGateTurnId: latest.turnId || null,
             failures: 0,
+            watchdogAt: 0,
+            watchdogNotified: false,
             lastStatus: "user_action_required"
           });
           await notify("USER_ACTION_REQUIRED");
@@ -451,7 +501,7 @@
         return failClosed(state);
       }
       if (["wait_generating", "wait_assistant", "wait_completion"].includes(action)) {
-        const stalled = await maybeNotifyStall(state);
+        const stalled = await maybeHandleStall(state);
         if (!stalled) {
           await saveState({ failures: 0, lastStatus: action === "wait_assistant" ? "waiting_assistant" : "working" });
         }

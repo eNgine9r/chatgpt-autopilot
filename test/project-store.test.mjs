@@ -38,3 +38,19 @@ test("rollover refuses a chat from another project", () => {
     "https://chatgpt.com/g/g-p-other/c/new"
   ), /outside_project/);
 });
+
+test("rollover persists a slugged chat URL for the same canonical Project", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-rollover-slug-"));
+  const file = path.join(dir, "projects.json");
+  const id = "g-p-0123456789abcdef0123456789abcdef";
+  fs.writeFileSync(file, JSON.stringify({ projects: [
+    { id: "btc", chatUrl: `https://chatgpt.com/g/${id}/c/old` }
+  ] }, null, 2), { mode: 0o600 });
+  const next = persistProjectChatUrl(
+    file,
+    "btc",
+    `https://chatgpt.com/g/${id}/project`,
+    `https://chatgpt.com/g/${id}-bot-tg-bc/c/new?messageId=x`
+  );
+  assert.equal(next, `https://chatgpt.com/g/${id}-bot-tg-bc/c/new`);
+});

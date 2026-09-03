@@ -8,6 +8,7 @@ import {
   normalizeChatUrl,
   publicProjects,
   deriveProjectRootUrl,
+  projectIdFromChatUrl,
   sameProjectChatUrl
 } from "../src/config.mjs";
 
@@ -52,6 +53,17 @@ test("derives and validates ChatGPT Project root for rollover", () => {
   assert.equal(loaded[0].autoRollover, true);
   assert.equal(loaded[0].projectRootUrl, root);
   assert.match(loaded[0].rolloverPrompt, /автоматичне продовження/i);
+});
+
+test("accepts slugged ChatGPT Project conversation URLs", () => {
+  const id = "g-p-0123456789abcdef0123456789abcdef";
+  const slugged = `https://chatgpt.com/g/${id}-bot-tg-bc/c/chat-new`;
+  const root = `https://chatgpt.com/g/${id}/project`;
+  assert.equal(projectIdFromChatUrl(slugged), id);
+  assert.equal(deriveProjectRootUrl(slugged), root);
+  assert.equal(sameProjectChatUrl(root, slugged), true);
+  assert.equal(sameProjectChatUrl(root, `https://chatgpt.com/g/${id}-other-slug/c/abc`), true);
+  assert.equal(sameProjectChatUrl(root, "https://chatgpt.com/g/g-p-11111111111111111111111111111111-other/c/abc"), false);
 });
 
 test("rejects rollover for a non-project chat", () => {
