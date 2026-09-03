@@ -23,6 +23,7 @@ export function loadRuntimeConfig() {
     keyringPromptPollMs: Number(process.env.KEYRING_PROMPT_POLL_MS || 500),
     keyringPromptWatchSeconds: Number(process.env.KEYRING_PROMPT_WATCH_SECONDS || 45),
     projectStartupStaggerSeconds: Number(process.env.PROJECT_STARTUP_STAGGER_SECONDS || 60),
+    supervisorWatchdogPollSeconds: Number(process.env.SUPERVISOR_WATCHDOG_POLL_SECONDS || 30),
     browserProfileDir: resolveFromCwd(process.env.BROWSER_PROFILE_DIR || "./browser-profile"),
     logDir: resolveFromCwd(process.env.LOG_DIR || "./logs"),
     projectsFile: resolveFromCwd(process.env.PROJECTS_FILE || "./config/projects.json"),
@@ -108,6 +109,10 @@ export function loadProjects(projectsFile) {
     if (!Number.isFinite(watchdogSeconds) || watchdogSeconds < 60) {
       throw new Error(`${project.id}: watchdogSeconds must be >= 60`);
     }
+    const noProgressAlertSeconds = Number(project.noProgressAlertSeconds ?? 1800);
+    if (!Number.isFinite(noProgressAlertSeconds) || noProgressAlertSeconds < 60 || noProgressAlertSeconds > 86400) {
+      throw new Error(`${project.id}: noProgressAlertSeconds must be between 60 and 86400`);
+    }
 
     const continuationPrompt = String(project.continuationPrompt || "").trim();
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
@@ -138,6 +143,7 @@ export function loadProjects(projectsFile) {
       completionSettleSeconds,
       startupGraceSeconds,
       watchdogSeconds,
+      noProgressAlertSeconds,
       userGateMarker: String(project.userGateMarker || "[[USER_ACTION_REQUIRED]]"),
       continuationPrompt,
       startImmediately: project.startImmediately === true,

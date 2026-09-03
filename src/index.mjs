@@ -6,6 +6,7 @@ import { loadRuntimeConfig, loadProjects } from "./config.mjs";
 import { createLogger } from "./logger.mjs";
 import { TelegramNotifier } from "./notifier.mjs";
 import { createBridgeServer } from "./bridge.mjs";
+import { SupervisorProgressWatchdog } from "./progress-watchdog.mjs";
 import { buildStartupPlan } from "./startup.mjs";
 import { buildChromiumEnvironment, chromiumPlatformArgs } from "./chromium-session.mjs";
 import { waitForStartupReadiness } from "./connect-preflight.mjs";
@@ -42,14 +43,23 @@ const notifier = new TelegramNotifier({
   logger
 });
 
+const progressWatchdog = new SupervisorProgressWatchdog({ projects, notifier, logger });
 const bridge = await createBridgeServer({
   host: config.bridgeHost,
   port: config.bridgePort,
   projects,
   projectsFile: config.projectsFile,
   notifier,
-  logger
+  logger,
+  progressWatchdog
 });
+
+const progressWatchdogTimer = setInterval(() => {
+  progressWatchdog.check().catch((error) => {
+    logger.error("supervisor_watchdog_failed", { error: String(error) });
+  });
+}, Math.max(5, config.supervisorWatchdogPollSeconds) * 1000);
+progressWatchdogTimer.unref();
 
 const browserLogPath = path.join(config.logDir, "chromium.log");
 const browserLogFd = fs.openSync(browserLogPath, "a", 0o600);
@@ -134,6 +144,7 @@ async function shutdown(signal, exitCode = 0) {
   shuttingDown = true;
   for (const timer of startupTimers) clearTimeout(timer);
   startupTimers.clear();
+  clearInterval(progressWatchdogTimer);
   logger.info("shutdown", { signal });
   await new Promise((resolve) => bridge.close(resolve));
   if (browser.exitCode == null) {

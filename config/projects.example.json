@@ -16,7 +16,8 @@
       "autoContinueMode": "timer",
       "completionSettleSeconds": 10,
       "startupGraceSeconds": 30,
-      "watchdogSeconds": 1800
+      "watchdogSeconds": 1800,
+      "noProgressAlertSeconds": 1800
     }
   ]
 }
