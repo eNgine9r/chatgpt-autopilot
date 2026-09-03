@@ -374,6 +374,8 @@
   async function resumeAfterUser() {
     await saveState({
       pausedForUser: false,
+      lastGateFingerprint: null,
+      lastGateTurnId: null,
       nextAt: Date.now() + project.continueAfterSeconds * 1000,
       failures: 0,
       completionObservedTurnKey: null,
@@ -441,6 +443,18 @@
         && state.lastGateTurnId
         && Policy.shouldResumeFromTurns(conversationOrder(), state.lastGateTurnId)
       ) {
+        await resumeAfterUser();
+        return;
+      }
+
+      if (Policy.shouldResumeFromLatestAssistant({
+        pausedForUser: Boolean(state.pausedForUser),
+        gateTurnId: state.lastGateTurnId || "",
+        latestTurnRole: latest.role,
+        latestTurnId: latest.turnId || "",
+        latestAssistantText: latest.text || "",
+        gateMarker: project.userGateMarker
+      })) {
         await resumeAfterUser();
         return;
       }
