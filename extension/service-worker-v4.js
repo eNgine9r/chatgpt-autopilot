@@ -22,10 +22,17 @@ function normalizeChatUrl(raw) {
   }
 }
 
+function canonicalProjectId(segment) {
+  const value = String(segment || "");
+  const match = value.match(/^(g-p-[a-f0-9]{32})(?:-[^/]+)?$/i);
+  return match?.[1] || value;
+}
+
 function projectIdFromRoot(raw) {
   try {
     const url = new URL(normalizeChatUrl(raw));
-    return url.pathname.match(/^\/g\/(g-p-[^/]+)(?:\/project)?$/)?.[1] || "";
+    const match = url.pathname.match(/^\/g\/([^/]+)(?:\/project)?$/);
+    return match ? canonicalProjectId(match[1]) : "";
   } catch {
     return "";
   }
@@ -34,7 +41,8 @@ function projectIdFromRoot(raw) {
 function projectIdFromChat(raw) {
   try {
     const url = new URL(normalizeChatUrl(raw));
-    return url.pathname.match(/^\/g\/(g-p-[^/]+)\/c\/[^/]+$/)?.[1] || "";
+    const match = url.pathname.match(/^\/g\/([^/]+)\/c\/[^/]+$/);
+    return match ? canonicalProjectId(match[1]) : "";
   } catch {
     return "";
   }
@@ -128,6 +136,8 @@ async function failRollover(entry) {
     rolloverInProgress: false,
     pausedForUser: true,
     failures: 0,
+    watchdogAt: 0,
+    watchdogNotified: false,
     lastStatus: "rollover_failed"
   });
   await chrome.storage.session.remove(entry.key);
@@ -145,6 +155,12 @@ async function completeRollover(entry, project, chatUrl) {
     pausedForUser: false,
     nextAt: Date.now() + Number(project.continueAfterSeconds || 60) * 1000,
     failures: 0,
+    watchdogAt: 0,
+    watchdogNotified: false,
+    lastProgressKey: "",
+    lastProgressAt: 0,
+    completionObservedTurnKey: null,
+    completionObservedAt: 0,
     lastStatus: "rolled_over"
   });
   await chrome.storage.session.remove(entry.key);

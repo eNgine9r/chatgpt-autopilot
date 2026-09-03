@@ -45,10 +45,16 @@ export function normalizeChatUrl(raw) {
   return `${url.origin}${pathname}`;
 }
 
+function canonicalProjectId(segment) {
+  const value = String(segment || "");
+  const match = value.match(/^(g-p-[a-f0-9]{32})(?:-[^/]+)?$/i);
+  return match?.[1] || value;
+}
+
 export function projectIdFromChatUrl(raw) {
   const url = new URL(normalizeChatUrl(raw));
-  const match = url.pathname.match(/^\/g\/(g-p-[^/]+)\/c\/[^/]+$/);
-  return match?.[1] || "";
+  const match = url.pathname.match(/^\/g\/([^/]+)\/c\/[^/]+$/);
+  return match ? canonicalProjectId(match[1]) : "";
 }
 
 export function deriveProjectRootUrl(raw) {
@@ -62,9 +68,13 @@ export function sameProjectChatUrl(projectRootUrl, chatUrl) {
     const root = new URL(normalizeChatUrl(projectRootUrl));
     const chat = new URL(normalizeChatUrl(chatUrl));
     if (root.origin !== chat.origin) return false;
-    const rootMatch = root.pathname.match(/^\/g\/(g-p-[^/]+)(?:\/project)?$/);
-    const chatMatch = chat.pathname.match(/^\/g\/(g-p-[^/]+)\/c\/[^/]+$/);
-    return Boolean(rootMatch && chatMatch && rootMatch[1] === chatMatch[1]);
+    const rootMatch = root.pathname.match(/^\/g\/([^/]+)(?:\/project)?$/);
+    const chatMatch = chat.pathname.match(/^\/g\/([^/]+)\/c\/[^/]+$/);
+    return Boolean(
+      rootMatch
+      && chatMatch
+      && canonicalProjectId(rootMatch[1]) === canonicalProjectId(chatMatch[1])
+    );
   } catch {
     return false;
   }

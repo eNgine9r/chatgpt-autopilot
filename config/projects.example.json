@@ -13,7 +13,7 @@
       "startImmediately": false,
       "autoRollover": false,
       "projectRootUrl": "",
-      "rolloverPrompt": "Продовжуй роботу в новому чаті цього ChatGPT Project після досягнення максимальної довжини попередньої розмови.",
+      "rolloverPrompt": "Продовжуй роботу в новому чаті цього ChatGPT Project після досягнення максимальної довжини або тривалої відсутності прогресу в попередній розмові.",
       "autoContinueMode": "on_completion",
       "completionSettleSeconds": 10,
       "startupGraceSeconds": 30,

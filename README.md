@@ -80,7 +80,9 @@ Edit local `config/projects.json`. Browser projects keep a ChatGPT URL; Codex pr
 }
 ```
 
-Use a stable `/c/<chat-id>` ChatGPT conversation URL. Actual URLs remain in gitignored local configuration.
+Use a stable `/c/<chat-id>` ChatGPT conversation URL. Actual URLs remain in gitignored local configuration. ChatGPT Project URLs may include a human-readable slug after the canonical `g-p-<id>` segment; Autopilot normalizes both forms to the same Project identity.
+
+For state-driven browser projects, `autoRollover: true` enables self-healing inside the same ChatGPT Project. A hard conversation-capacity signal rolls over immediately. After Autopilot sends a continuation, the `watchdogSeconds` deadline is also extended on every real progress change (assistant status/text/turn/tool surface). Only a full watchdog window with no progress triggers a fresh Project chat with a bounded tail handoff. `[[USER_ACTION_REQUIRED]]` always blocks this recovery path.
 
 ## One-time ChatGPT login
 
@@ -159,13 +161,15 @@ The service restarts on failure. If linger is permitted, the user manager is sch
 
 ## Supervisor no-progress watchdog
 
-Each enabled chat reports a lightweight heartbeat and a bounded progress fingerprint to the loopback supervisor. By default, if a chat shows no meaningful progress for 30 minutes, or if its heartbeat disappears for 30 minutes, Autopilot sends one Telegram warning with the project name and chat URL. The alert is notification-only: it never clicks, sends, restarts, or mutates the project. A new alert is allowed only after meaningful progress recovers. Configure the threshold per project with `noProgressAlertSeconds` (default `1800`).
+Each enabled chat reports a lightweight heartbeat and a bounded progress fingerprint to the loopback supervisor. By default, if a chat shows no meaningful progress for 30 minutes, or if its heartbeat disappears for 30 minutes, the supervisor sends one Telegram warning with the project name and chat URL. This supervisor path is notification-only and remains independent from browser recovery. A new alert is allowed only after meaningful progress recovers. Configure it per project with `noProgressAlertSeconds` (default `1800`).
+
+Separately, `watchdogSeconds` belongs to the state-driven browser continuation loop. While a sent continuation is awaiting useful progress, every changed progress fingerprint pushes this recovery deadline forward. If the deadline expires and `autoRollover` is enabled, the extension requests a same-Project rollover instead of waiting forever; if rollover is disabled, the existing `AUTOMATION_STALLED` notification behavior is retained.
 
 ## Failure behavior
 
 The service intentionally fails closed when it cannot safely recognize a finished assistant response, the target conversation, composer or send button. Repeated unsafe observations generate `AUTOMATION_ERROR` or `SESSION_ATTENTION_REQUIRED` instead of clicking an unknown control.
 
-Modern ChatGPT can keep a completed response in page React state while the visible assistant node is temporarily empty after reload. The extension handles this with a bounded MAIN-world extractor that returns only text belonging to the specific assistant `data-message-id`; arbitrary page state is not forwarded to the isolated extension runtime.
+Modern ChatGPT can keep a completed response in page React state while the visible assistant node is temporarily empty after reload. The extension handles this with a bounded MAIN-world extractor that resolves the specific assistant by `data-message-id` or the current `data-turn-id` fallback; arbitrary page state is not forwarded to the isolated extension runtime.
 
 ## Local data
 

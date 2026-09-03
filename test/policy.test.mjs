@@ -8,7 +8,9 @@ const {
   fingerprint,
   shouldResumeFromTurns,
   isConversationCapacityReached,
-  isStartupGraceActive
+  isStartupGraceActive,
+  refreshedWatchdogAt,
+  shouldAutoRolloverForStall
 } = globalThis.AutopilotPolicy;
 
 const base = {
@@ -143,4 +145,30 @@ test("startup grace is bounded and expires deterministically", () => {
   assert.equal(isStartupGraceActive(999, 1_000, 30_000), false);
   assert.equal(isStartupGraceActive(10_000, 0, 30_000), false);
   assert.equal(isStartupGraceActive(10_000, 1_000, 0), false);
+});
+
+test("watchdog deadline moves only when real progress changes", () => {
+  assert.equal(refreshedWatchdogAt({
+    watchdogAtMs: 30_000, previousProgressKey: "a", currentProgressKey: "a", nowMs: 10_000, watchdogMs: 20_000
+  }), 30_000);
+  assert.equal(refreshedWatchdogAt({
+    watchdogAtMs: 30_000, previousProgressKey: "a", currentProgressKey: "b", nowMs: 10_000, watchdogMs: 20_000
+  }), 30_000);
+  assert.equal(refreshedWatchdogAt({
+    watchdogAtMs: 30_000, previousProgressKey: "a", currentProgressKey: "b", nowMs: 12_000, watchdogMs: 20_000
+  }), 32_000);
+  assert.equal(refreshedWatchdogAt({
+    watchdogAtMs: 0, previousProgressKey: "a", currentProgressKey: "b", nowMs: 12_000, watchdogMs: 20_000
+  }), 0);
+});
+
+test("stalled Project chat rolls over only after deadline and never across a user gate", () => {
+  const baseRollover = {
+    autoRollover: true, pausedForUser: false, rolloverInProgress: false, nowMs: 30_000, watchdogAtMs: 30_000
+  };
+  assert.equal(shouldAutoRolloverForStall(baseRollover), true);
+  assert.equal(shouldAutoRolloverForStall({ ...baseRollover, nowMs: 29_999 }), false);
+  assert.equal(shouldAutoRolloverForStall({ ...baseRollover, pausedForUser: true }), false);
+  assert.equal(shouldAutoRolloverForStall({ ...baseRollover, rolloverInProgress: true }), false);
+  assert.equal(shouldAutoRolloverForStall({ ...baseRollover, autoRollover: false }), false);
 });
