@@ -11,6 +11,9 @@
     for (const node of document.querySelectorAll('[data-message-author-role="assistant"][data-message-id]')) {
       if (node.getAttribute("data-message-id") === messageId) return node;
     }
+    for (const turn of document.querySelectorAll('[data-turn="assistant"][data-turn-id]')) {
+      if (turn.getAttribute("data-turn-id") === messageId) return turn;
+    }
     return null;
   }
 

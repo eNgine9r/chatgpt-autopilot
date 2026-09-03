@@ -75,7 +75,10 @@
 
   function extractAssistantSnapshot(messageNode) {
     if (!messageNode) return { text: "", status: "", finished: null };
-    const targetId = messageNode.getAttribute?.("data-message-id") || "";
+    const targetId = messageNode.getAttribute?.("data-message-id")
+      || messageNode.getAttribute?.("data-turn-id")
+      || messageNode.getAttribute?.("data-turn-id-container")
+      || "";
     if (targetId) {
       const structured = findMessageSnapshot(reactRoots(messageNode), targetId);
       if (structured) return structured;

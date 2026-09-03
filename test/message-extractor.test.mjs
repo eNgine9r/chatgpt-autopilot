@@ -87,3 +87,27 @@ test("assistant snapshot exposes finished state separately from text", () => {
   assert.equal(working.status, "in_progress");
   assert.equal(working.finished, false);
 });
+
+test("extracts React fiber message matching data-turn-id when message id is absent", () => {
+  const message = {
+    id: "turn-6",
+    author: { role: "assistant" },
+    status: "finished_successfully",
+    content: { parts: ["turn-id ready"] }
+  };
+  const node = {
+    innerText: "Visible fallback",
+    getAttribute(name) { return name === "data-turn-id" ? "turn-6" : null; },
+    "__reactFiber$test": {
+      memoizedState: { nested: [message] },
+      memoizedProps: null,
+      pendingProps: null,
+      updateQueue: null,
+      return: null
+    }
+  };
+  const snapshot = Extractor.extractAssistantSnapshot(node);
+  assert.equal(snapshot.text, "turn-id ready");
+  assert.equal(snapshot.status, "finished_successfully");
+  assert.equal(snapshot.finished, true);
+});
