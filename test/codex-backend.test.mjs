@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CodexProjectBackend } from "../src/codex-backend.mjs";
+import { loadCodexState, saveCodexState } from "../src/codex-state-store.mjs";
 
 class FakeClient extends EventEmitter {
   constructor() {
@@ -110,4 +111,37 @@ test("failed turn pauses and includes the Codex error in Telegram", async () => 
   assert.equal(backend.paused, true);
   assert.equal(messages.length, 1);
   assert.match(messages[0], /Usage limit exceeded/);
+});
+
+
+test("missing rollout on resume self-heals with a fresh idle thread", async () => {
+  const { backend, client, stateDir } = fixture();
+  saveCodexState(stateDir, "worker", { threadId: "thr_stale" });
+  const originalRequest = client.request.bind(client);
+  client.request = async (method, params) => {
+    if (method === "thread/resume") {
+      client.requests.push({ method, params });
+      throw new Error("no rollout found for thread id thr_stale");
+    }
+    return originalRequest(method, params);
+  };
+
+  const state = await backend.start();
+  assert.equal(state.threadId, "thr_123");
+  assert.deepEqual(client.requests.map((item) => item.method), ["thread/resume", "thread/start"]);
+  assert.equal(loadCodexState(stateDir, "worker").threadId, "thr_123");
+  assert.equal(client.requests.some((item) => item.method === "turn/start"), false);
+});
+
+test("unrelated resume failures remain fail-closed", async () => {
+  const { backend, client, stateDir } = fixture();
+  saveCodexState(stateDir, "worker", { threadId: "thr_stale" });
+  client.request = async (method, params) => {
+    client.requests.push({ method, params });
+    if (method === "thread/resume") throw new Error("authentication failed");
+    throw new Error(`unexpected:${method}`);
+  };
+
+  await assert.rejects(() => backend.start(), /authentication failed/);
+  assert.deepEqual(client.requests.map((item) => item.method), ["thread/resume"]);
 });
