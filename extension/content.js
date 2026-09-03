@@ -98,7 +98,7 @@
 
   async function turnSnapshot(turn, role) {
     const roleNode = turn.querySelector(`[data-message-author-role="${role}"]`);
-    const direct = String(roleNode?.innerText || (role === "user" ? turn.innerText : "") || "").trim();
+    const direct = String(roleNode?.innerText || turn.innerText || "").trim();
     if (role !== "assistant") return { text: direct, status: "", finished: null };
     const messageId = roleNode?.getAttribute("data-message-id") || turnId(turn) || "";
     const structured = await requestAssistantSnapshot(messageId);

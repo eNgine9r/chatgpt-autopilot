@@ -103,7 +103,8 @@
       const role = turn.getAttribute("data-turn") || "unknown";
       const roleNode = turn.querySelector?.(`[data-message-author-role="${role}"]`) || null;
       if (role === "assistant") {
-        return { role, text: extractAssistantText(roleNode) };
+        const structured = extractAssistantText(roleNode);
+        return { role, text: structured || String(turn.innerText || "").trim() };
       }
       if (role === "user") {
         return { role, text: String(roleNode?.innerText || turn.innerText || "").trim() };

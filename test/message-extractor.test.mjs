@@ -111,3 +111,23 @@ test("extracts React fiber message matching data-turn-id when message id is abse
   assert.equal(snapshot.status, "finished_successfully");
   assert.equal(snapshot.finished, true);
 });
+
+test("latest assistant turn falls back to visible turn text when role node text is empty", () => {
+  const roleNode = {
+    innerText: "",
+    getAttribute() { return null; }
+  };
+  const turn = {
+    innerText: "Visible assistant fallback",
+    getAttribute(name) { return name === "data-turn" ? "assistant" : null; },
+    querySelector() { return roleNode; }
+  };
+  const documentRef = {
+    querySelectorAll(selector) {
+      return selector.includes('conversation-turn-') ? [turn] : [];
+    }
+  };
+  const latest = Extractor.latestTurn(documentRef);
+  assert.equal(latest.role, "assistant");
+  assert.equal(latest.text, "Visible assistant fallback");
+});
