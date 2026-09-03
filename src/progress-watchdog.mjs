@@ -51,10 +51,12 @@ export class SupervisorProgressWatchdog {
     const record = this.record(projectId);
     if (record.alerted) return { ok: true, delivered: false, suppressed: true };
     const minutes = Math.max(1, Math.round(this.thresholdMs(project) / 60000));
+    const isCodex = project.backend === "codex";
     const detail = reason === "heartbeat_missing"
-      ? "Autopilot не отримує heartbeat від вкладки."
-      : "У чаті не виявлено фактичного прогресу.";
-    const text = `⚠️ ${project.name}: понад ${minutes} хв немає прогресу.\n${detail}\nПеревірте чат вручну.\n${project.chatUrl}`;
+      ? (isCodex ? "Autopilot не отримує подій від Codex App Server." : "Autopilot не отримує heartbeat від вкладки.")
+      : (isCodex ? "Codex не повідомляє про фактичний прогрес." : "У чаті не виявлено фактичного прогресу.");
+    const action = isCodex ? "Перевірте Codex worker та журнал Autopilot." : `Перевірте чат вручну.\n${project.chatUrl}`;
+    const text = `⚠️ ${project.name}: понад ${minutes} хв немає прогресу.\n${detail}\n${action}`;
     const delivered = await this.notifier.send(text);
     record.alerted = true;
     record.alertReason = reason;

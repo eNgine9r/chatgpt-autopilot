@@ -26,6 +26,7 @@ export function loadRuntimeConfig() {
     supervisorWatchdogPollSeconds: Number(process.env.SUPERVISOR_WATCHDOG_POLL_SECONDS || 30),
     browserProfileDir: resolveFromCwd(process.env.BROWSER_PROFILE_DIR || "./browser-profile"),
     logDir: resolveFromCwd(process.env.LOG_DIR || "./logs"),
+    stateDir: resolveFromCwd(process.env.STATE_DIR || "./state"),
     projectsFile: resolveFromCwd(process.env.PROJECTS_FILE || "./config/projects.json"),
     extensionDir: resolveFromCwd("./extension"),
     bridgeHost: "127.0.0.1",
@@ -69,14 +70,51 @@ export function sameProjectChatUrl(projectRootUrl, chatUrl) {
   }
 }
 
+function normalizeCodexConfig(project) {
+  if (!project.repoPath || !path.isAbsolute(String(project.repoPath))) {
+    throw new Error(`${project.id}: Codex backend requires an absolute repoPath`);
+  }
+  const raw = project.codex || {};
+  const transport = raw.transport || {};
+  const type = String(transport.type || "local");
+  if (!["local", "ssh"].includes(type)) {
+    throw new Error(`${project.id}: Codex transport must be local or ssh`);
+  }
+  const normalizedTransport = { type };
+  if (type === "local") {
+    normalizedTransport.executable = String(transport.executable || "codex");
+  } else {
+    for (const key of ["host", "user", "identityFile"]) {
+      if (!String(transport[key] || "").trim()) {
+        throw new Error(`${project.id}: Codex ssh transport requires ${key}`);
+      }
+    }
+    normalizedTransport.host = String(transport.host);
+    normalizedTransport.user = String(transport.user);
+    normalizedTransport.identityFile = String(transport.identityFile);
+    normalizedTransport.sshExecutable = String(transport.sshExecutable || "/usr/bin/ssh");
+  }
+
+  return {
+    transport: normalizedTransport,
+    networkAccess: raw.networkAccess === true,
+    startOnBoot: raw.startOnBoot === true,
+    autoContinue: raw.autoContinue !== false,
+    approvalPolicy: "on-request",
+    model: String(raw.model || "").trim(),
+    effort: String(raw.effort || "").trim(),
+    personality: String(raw.personality || "").trim()
+  };
+}
+
 export function loadProjects(projectsFile) {
   const raw = JSON.parse(fs.readFileSync(projectsFile, "utf8"));
   if (!Array.isArray(raw.projects)) throw new Error("config.projects must be an array");
 
   const ids = new Set();
   return raw.projects.map((project) => {
-    if (!project.id || !project.name || !project.chatUrl) {
-      throw new Error("Each project requires id, name and chatUrl");
+    if (!project.id || !project.name) {
+      throw new Error("Each project requires id and name");
     }
     if (!/^[a-z0-9][a-z0-9_-]{1,63}$/i.test(project.id)) {
       throw new Error(`${project.id}: invalid project id`);
@@ -84,11 +122,18 @@ export function loadProjects(projectsFile) {
     if (ids.has(project.id)) throw new Error(`Duplicate project id: ${project.id}`);
     ids.add(project.id);
 
+    const backend = String(project.backend || "browser");
+    if (!["browser", "codex"].includes(backend)) {
+      throw new Error(`${project.id}: backend must be browser or codex`);
+    }
+    if (backend === "browser" && !project.chatUrl) {
+      throw new Error(`${project.id}: browser backend requires chatUrl`);
+    }
+
     const startupPriority = Number(project.startupPriority ?? 100);
     if (!Number.isInteger(startupPriority) || startupPriority < 0 || startupPriority > 1000) {
       throw new Error(`${project.id}: startupPriority must be an integer between 0 and 1000`);
     }
-
     const continueAfterSeconds = Number(project.continueAfterSeconds ?? 1480);
     if (!Number.isFinite(continueAfterSeconds) || continueAfterSeconds < 60) {
       throw new Error(`${project.id}: continueAfterSeconds must be >= 60`);
@@ -117,11 +162,11 @@ export function loadProjects(projectsFile) {
     const continuationPrompt = String(project.continuationPrompt || "").trim();
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
 
-    const chatUrl = normalizeChatUrl(project.chatUrl);
-    const autoRollover = project.autoRollover === true;
-    const projectRootUrl = project.projectRootUrl
-      ? normalizeChatUrl(project.projectRootUrl)
-      : deriveProjectRootUrl(chatUrl);
+    const chatUrl = backend === "browser" ? normalizeChatUrl(project.chatUrl) : "";
+    const autoRollover = backend === "browser" && project.autoRollover === true;
+    const projectRootUrl = backend === "browser" && chatUrl
+      ? (project.projectRootUrl ? normalizeChatUrl(project.projectRootUrl) : deriveProjectRootUrl(chatUrl))
+      : "";
     if (autoRollover && (!projectRootUrl || !sameProjectChatUrl(projectRootUrl, chatUrl))) {
       throw new Error(`${project.id}: autoRollover requires a ChatGPT Project chat URL`);
     }
@@ -136,7 +181,10 @@ export function loadProjects(projectsFile) {
       id: String(project.id),
       name: String(project.name),
       enabled: project.enabled !== false,
+      backend,
       chatUrl,
+      repoPath: backend === "codex" ? String(project.repoPath) : "",
+      codex: backend === "codex" ? normalizeCodexConfig(project) : null,
       startupPriority,
       continueAfterSeconds,
       autoContinueMode,
@@ -155,5 +203,7 @@ export function loadProjects(projectsFile) {
 }
 
 export function publicProjects(projects) {
-  return projects.filter((project) => project.enabled).map((project) => ({ ...project }));
+  return projects
+    .filter((project) => project.enabled && project.backend === "browser")
+    .map((project) => ({ ...project, codex: undefined }));
 }

@@ -1,6 +1,6 @@
 # ChatGPT Project Autopilot
 
-Standalone Raspberry Pi helper that keeps selected ChatGPT conversations moving without using the user's main PC.
+Standalone supervisor for keeping selected development projects moving without relying on the user's main PC.
 
 The repository is intentionally independent from NEXOLAB, BTC Radar, Sellora and every other product repository/runtime.
 
@@ -8,36 +8,38 @@ The repository is intentionally independent from NEXOLAB, BTC Radar, Sellora and
 
 ```text
 systemd --user
-  -> Node supervisor / loopback bridge (127.0.0.1 only)
-      -> ordinary host Chromium on the Raspberry Pi desktop
-          -> dedicated browser-profile/
-          -> repository-owned Manifest V3 extension
-              -> per-chat timer and safety policy
-              -> ChatGPT web UI
-      -> optional Telegram Bot API notifications
+  ├─ Browser supervisor
+  │   └─ Chromium + repository-owned MV3 extension
+  │       └─ ChatGPT web UI fallback projects
+  └─ Codex supervisor
+      └─ JSONL/JSON-RPC over local or restricted SSH stdio
+          └─ Codex App Server on the project worker
 ```
 
-Production runtime does **not** use Playwright, Selenium, scripted Google login, remote shell control, GitHub control or product-runtime access.
+The two supervisors are fault-isolated. Browser failures do not terminate Codex workers, and Codex transport failures do not terminate browser automation.
 
 ## Behavior
 
-- one dedicated persistent Chromium profile with a one-time manual ChatGPT login;
-- multiple independently configured ChatGPT conversations;
-- per-chat continuation timer, default `1480` seconds (24m40s);
-- never sends while ChatGPT is generating;
-- sends a configured continuation prompt only when the chat is idle and due;
-- exact `[[USER_ACTION_REQUIRED]]` marker pauses only the affected chat;
-- a newer user turn after the stored gate resumes that chat, including after a browser/service restart;
-- duplicate tabs are protected by a per-project extension lease;
-- unrecognized/empty ChatGPT state fails closed instead of guessing;
-- Telegram can notify on user-action gates, session/UI errors and recovery;
-- browser/session/config/log data stays local on the Raspberry Pi.
+- `backend: "browser"` preserves the existing Chromium/MV3 continuation flow;
+- `backend: "codex"` uses App Server lifecycle events instead of a fixed browser timer;
+- Codex thread IDs persist locally and are resumed after supervisor restart;
+- `thread/status/changed`, `turn/completed` and item events drive state and progress;
+- exact `[[USER_ACTION_REQUIRED]]`, approval requests and permission escalation pause only the affected project;
+- the 30-minute no-progress watchdog remains independent of the primary backend;
+- Telegram is used for intervention and failure alerts;
+- unrecognized backend/session state fails closed instead of guessing.
 
 ## Security boundary
 
-The extension matches only `https://chatgpt.com/*`. The Node bridge binds only to `127.0.0.1` and accepts a fixed notification-event allowlist. Telegram credentials stay only in local `.env`; they are never exposed to the extension.
+The browser extension matches only `https://chatgpt.com/*`; its local bridge binds only to `127.0.0.1`.
 
-Do not commit or share `browser-profile/`, `.env`, `config/projects.json`, or local operational logs. The service does not attempt to bypass Google/OpenAI authentication, browser security challenges, account controls, rate limits or usage limits.
+For remote Codex workers, use a dedicated SSH key restricted by `authorized_keys` to a Tailscale source and a forced command that starts only `codex app-server --listen stdio://`. Autopilot does not use that key as a general remote shell.
+
+Codex defaults to `on-request` approvals, `workspace-write` sandboxing, repository-scoped writable roots, and network access disabled unless explicitly enabled. Autopilot does not automatically answer approval/escalation requests.
+
+Do not commit or share `browser-profile/`, `.env`, `config/projects.json`, private SSH keys, `state/`, or local operational logs. Autopilot does not attempt to bypass authentication, account controls, rate limits, usage limits, or product safety gates.
+
+For Codex deployment and migration details, see `docs/codex-backend.md`.
 
 ## Raspberry Pi requirements
 
@@ -58,9 +60,9 @@ chmod +x scripts/*.sh
 
 The installer is unprivileged, understands NVM Node installations, creates private local `.env`, `config/projects.json`, `browser-profile/` and `logs/`, and uses the host Chromium instead of downloading a browser automation bundle.
 
-## Configure chats
+## Configure projects
 
-Edit local `config/projects.json`. Each entry has its own URL, interval and continuation prompt:
+Edit local `config/projects.json`. Browser projects keep a ChatGPT URL; Codex projects use a worker repository path and transport configuration:
 
 ```json
 {

@@ -23,7 +23,7 @@ if (!fs.existsSync(config.chromiumExecutablePath)) {
   throw new Error(`Chromium executable not found: ${config.chromiumExecutablePath}`);
 }
 const projects = loadProjects(config.projectsFile);
-const enabled = projects.filter((project) => project.enabled);
+const enabled = projects.filter((project) => project.enabled && project.backend === "browser");
 if (!enabled.length) throw new Error("No enabled projects in config/projects.json");
 const startupPlan = buildStartupPlan(enabled, config.projectStartupStaggerSeconds);
 
@@ -43,11 +43,11 @@ const notifier = new TelegramNotifier({
   logger
 });
 
-const progressWatchdog = new SupervisorProgressWatchdog({ projects, notifier, logger });
+const progressWatchdog = new SupervisorProgressWatchdog({ projects: enabled, notifier, logger });
 const bridge = await createBridgeServer({
   host: config.bridgeHost,
   port: config.bridgePort,
-  projects,
+  projects: enabled,
   projectsFile: config.projectsFile,
   notifier,
   logger,

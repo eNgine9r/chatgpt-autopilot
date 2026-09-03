@@ -1,30 +1,33 @@
 # ChatGPT Autopilot Engineering Rules
 
-This repository is a standalone development helper. It must remain isolated from every product repository and runtime.
+This repository is a standalone development supervisor. It must remain isolated from product runtime code and secrets.
 
-## Hard isolation
+## Control surfaces
 
-- Do not read, modify, clone, deploy, or control NEXOLAB, BTC Radar, Sellora, or any other project from this codebase.
-- Do not add GitHub, SSH, Docker, Modbus, database, hardware, or production-control capabilities unless a future explicitly scoped Issue approves them.
-- ChatGPT web UI automation is the only control surface in the MVP.
+- Browser/MV3 automation remains a supported fallback backend.
+- Issue #27 explicitly authorizes a Codex App Server backend and least-privilege SSH stdio transport to user-owned worker hosts.
+- SSH used by Autopilot must be restricted to the Codex App Server forced command; it is not a general remote shell capability.
+- Do not add Docker, Modbus, database, hardware, trading execution, or production-control capabilities unless a future explicitly scoped Issue approves them.
+- Project repository writes may occur only through the configured Codex sandbox and its approval policy; Autopilot itself does not directly edit product repositories.
 
 ## Secrets
 
-- Never commit ChatGPT credentials, browser cookies/profile data, Telegram tokens, chat IDs, GitHub tokens, or production data.
-- Manual browser login is required; no scripted password login.
+- Never commit ChatGPT credentials, browser cookies/profile data, Telegram tokens, chat IDs, private SSH keys, GitHub tokens, or production data.
+- Manual browser login remains required for the browser backend.
 - Local `.env`, `browser-profile/`, `state/`, `logs/`, and `config/projects.json` remain gitignored.
 
 ## Safety
 
-- Fail closed when the ChatGPT UI/session cannot be recognized.
-- Never send a continuation while ChatGPT is generating.
-- `[[USER_ACTION_REQUIRED]]` is an explicit per-chat pause gate.
-- Do not attempt to bypass ChatGPT usage limits, account controls, or authentication protections.
-- Telegram is notifications-only in the MVP; no remote command channel.
+- Fail closed when a backend/session cannot be recognized or authenticated.
+- Never send a continuation while the active backend is still working.
+- `[[USER_ACTION_REQUIRED]]` is an explicit per-project pause gate.
+- Approval requests or sandbox escalation requests pause automation and notify the user.
+- Do not attempt to bypass usage limits, account controls, authentication protections, or product safety gates.
 
 ## Development
 
 - One Issue → one branch → one focused Pull Request.
-- Prefer deterministic policy tests for automation decisions.
+- Prefer deterministic tests for backend state transitions and transport framing.
 - Keep Raspberry Pi storage writes bounded and change-driven.
-- Do not claim Raspberry Pi/browser/Telegram acceptance until it actually runs on the target environment.
+- Roll out backend migrations one project at a time with browser fallback available.
+- Do not claim Codex/browser/Telegram acceptance until it actually runs on the target environment.
