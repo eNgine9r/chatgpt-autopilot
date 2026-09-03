@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-project-autopilot",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "private": true,
   "type": "module",
   "description": "Fault-isolated browser and Codex project supervisors with Telegram safety alerts.",
@@ -16,6 +16,6 @@
     "telegram:localize": "node src/telegram-localize.mjs",
     "telegram:test": "node src/telegram-test.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/index.mjs && node --check src/codex-supervisor.mjs && node --check src/codex-backend.mjs && node --check src/codex-rpc.mjs && node --check src/codex-state-store.mjs && node --check src/startup-alert-dedupe.mjs && node --check src/config.mjs && node --check src/bridge.mjs && node --check src/progress-watchdog.mjs && node --check extension/service-worker-v8.js && node --check extension/policy.js && node --check extension/lease-policy.js && node --check extension/message-extractor.js && node --check extension/page-bridge.js && node --check extension/content.js && node --check extension/session-watch.js"
+    "check": "node --check src/index.mjs && node --check src/codex-supervisor.mjs && node --check src/codex-backend.mjs && node --check src/codex-rpc.mjs && node --check src/codex-state-store.mjs && node --check src/startup-alert-dedupe.mjs && node --check src/config.mjs && node --check src/bridge.mjs && node --check src/progress-watchdog.mjs && node --check extension/service-worker-v9.js && node --check extension/policy.js && node --check extension/lease-policy.js && node --check extension/message-extractor.js && node --check extension/page-bridge.js && node --check extension/content.js && node --check extension/session-watch.js"
   }
 }
