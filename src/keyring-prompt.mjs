@@ -45,7 +45,10 @@ export async function watchAndDismissNewGcrPrompters({
 } = {}) {
   const handled = new Set();
   const cancelled = [];
-  const deadline = now() + Math.max(0, timeoutMs);
+  const timeout = Number(timeoutMs);
+  const deadline = Number.isFinite(timeout) && timeout > 0
+    ? now() + timeout
+    : Number.POSITIVE_INFINITY;
 
   while (!shouldStop() && now() <= deadline) {
     let currentPids = [];
