@@ -50,6 +50,24 @@ test("watchAndDismissNewGcrPrompters cancels only new prompt once", async () => 
   assert.deepEqual(cancelled, [20]);
 });
 
+
+
+test("startup policy can dismiss an already-open prompt by using an empty baseline", async () => {
+  let clock = 0;
+  const killed = [];
+  const cancelled = await watchAndDismissNewGcrPrompters({
+    baselinePids: [],
+    listPids: () => [55],
+    killProcess: (pid, signal) => killed.push([pid, signal]),
+    pollMs: 100,
+    timeoutMs: 100,
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; }
+  });
+  assert.deepEqual(killed, [[55, "SIGTERM"]]);
+  assert.deepEqual(cancelled, [55]);
+});
+
 test("watchAndDismissNewGcrPrompters never cancels a baseline prompt", async () => {
   let clock = 0;
   const killed = [];

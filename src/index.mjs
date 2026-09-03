@@ -95,7 +95,9 @@ const browser = spawn(config.chromiumExecutablePath, args, {
 
 if (config.keyringPromptAutoCancel && keyringPromptBaselinePids) {
   void watchAndDismissNewGcrPrompters({
-    baselinePids: keyringPromptBaselinePids,
+    // The automation account is dedicated to this browser. Cancel any already-open
+    // same-user keyring prompt as well as prompts created after Chromium starts.
+    baselinePids: [],
     logger,
     pollMs: config.keyringPromptPollMs,
     timeoutMs: config.keyringPromptWatchSeconds * 1000,

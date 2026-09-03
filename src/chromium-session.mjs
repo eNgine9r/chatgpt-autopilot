@@ -15,7 +15,10 @@ export function chromiumPlatformArgs(config) {
   if (config.chromiumOzonePlatform !== "wayland") {
     throw new Error("CHROMIUM_OZONE_PLATFORM must be wayland for the Raspberry Pi Autopilot runtime");
   }
-  return [`--ozone-platform=${config.chromiumOzonePlatform}`];
+  return [
+    `--ozone-platform=${config.chromiumOzonePlatform}`,
+    "--password-store=basic"
+  ];
 }
 
 export function waylandSocketPath(config) {
