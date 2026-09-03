@@ -5,6 +5,7 @@ import { createLogger } from "./logger.mjs";
 import { TelegramNotifier } from "./notifier.mjs";
 import { SupervisorProgressWatchdog } from "./progress-watchdog.mjs";
 import { CodexProjectBackend } from "./codex-backend.mjs";
+import { shouldSendStartupAlert, clearStartupAlert } from "./startup-alert-dedupe.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
@@ -44,6 +45,7 @@ for (const project of enabled) {
   });
   try {
     const state = await backend.start();
+    clearStartupAlert(config.stateDir, project.id);
     backends.push(backend);
     logger.info("codex_project_connected", {
       project: project.name,
@@ -54,13 +56,18 @@ for (const project of enabled) {
       await backend.startTurn(project.continuationPrompt);
     }
   } catch (error) {
+    const startupError = String(error);
     logger.error("codex_project_start_failed", {
       project: project.name,
-      error: String(error)
+      error: startupError
     });
-    await notifier.send(
-      `🔴 ${project.name}: не вдалося підключити Codex App Server.\n${String(error).slice(0, 500)}`
-    );
+    if (shouldSendStartupAlert(config.stateDir, project.id, startupError)) {
+      await notifier.send(
+        `🔴 ${project.name}: не вдалося підключити Codex App Server.\n${startupError.slice(0, 500)}`
+      );
+    } else {
+      logger.info("codex_project_start_alert_suppressed", { project: project.name });
+    }
   }
 }
 
