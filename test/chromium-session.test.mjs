@@ -22,7 +22,10 @@ test("Chromium inherits an explicit Wayland user session", () => {
 });
 
 test("Chromium is pinned to Wayland and socket path is deterministic", () => {
-  assert.deepEqual(chromiumPlatformArgs(config), ["--ozone-platform=wayland"]);
+  assert.deepEqual(chromiumPlatformArgs(config), [
+    "--ozone-platform=wayland",
+    "--password-store=basic"
+  ]);
   assert.equal(waylandSocketPath(config), "/run/user/1000/wayland-0");
   assert.throws(() => chromiumPlatformArgs({ ...config, chromiumOzonePlatform: "x11" }), /must be wayland/);
 });
