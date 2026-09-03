@@ -24,8 +24,8 @@ NPM_BIN="$(dirname "$NODE_BIN")/npm"
 
 [[ -f .env ]] || cp .env.example .env
 [[ -f config/projects.json ]] || cp config/projects.example.json config/projects.json
-mkdir -p browser-profile logs
-chmod 700 browser-profile logs
+mkdir -p browser-profile logs state
+chmod 700 browser-profile logs state
 chmod 600 .env config/projects.json
 
 chromium_path="${CHROMIUM_EXECUTABLE_PATH:-$(awk -F= '/^CHROMIUM_EXECUTABLE_PATH=/{print $2}' .env | tail -1)}"

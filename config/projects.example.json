@@ -1,23 +1,46 @@
 {
   "projects": [
     {
-      "id": "example-project",
-      "name": "Example Project",
+      "id": "example-browser-project",
+      "name": "Browser Project",
       "enabled": false,
+      "backend": "browser",
       "chatUrl": "https://chatgpt.com/c/REPLACE_WITH_CHAT_ID",
       "startupPriority": 100,
       "continueAfterSeconds": 1480,
       "userGateMarker": "[[USER_ACTION_REQUIRED]]",
-      "continuationPrompt": "Продовжуй роботу з фактичної поточної точки відповідно до інструкцій цього проєкту та поточного чату. Не повторюй уже виконане. Перевір фактичний стан задачі та переходь до наступної логічної дії. Не зупиняйся на проміжному результаті, якщо можеш безпечно продовжувати. ВАЖЛИВО: якщо для продовження реально потрібна дія користувача, не обходь її. Чітко напиши, що потрібно зробити користувачу, а останнім окремим рядком додай [[USER_ACTION_REQUIRED]].",
+      "continuationPrompt": "Продовжуй роботу з фактичної поточної точки. Не повторюй уже виконане. Якщо реально потрібна дія користувача, зупинись і додай [[USER_ACTION_REQUIRED]].",
       "startImmediately": false,
       "autoRollover": false,
       "projectRootUrl": "",
       "rolloverPrompt": "Продовжуй роботу в новому чаті цього ChatGPT Project після досягнення максимальної довжини попередньої розмови.",
-      "autoContinueMode": "timer",
+      "autoContinueMode": "on_completion",
       "completionSettleSeconds": 10,
       "startupGraceSeconds": 30,
       "watchdogSeconds": 1800,
       "noProgressAlertSeconds": 1800
+    },
+    {
+      "id": "example-codex-project",
+      "name": "Codex Project",
+      "enabled": false,
+      "backend": "codex",
+      "repoPath": "/absolute/path/on/worker/project",
+      "continuationPrompt": "Продовжуй роботу з фактичної поточної точки. Не повторюй виконане. Якщо потрібна дія користувача, зупинись і додай [[USER_ACTION_REQUIRED]].",
+      "completionSettleSeconds": 10,
+      "noProgressAlertSeconds": 1800,
+      "userGateMarker": "[[USER_ACTION_REQUIRED]]",
+      "codex": {
+        "autoContinue": true,
+        "startOnBoot": false,
+        "networkAccess": false,
+        "transport": {
+          "type": "ssh",
+          "host": "worker-host",
+          "user": "worker-user",
+          "identityFile": "/absolute/path/to/restricted-key"
+        }
+      }
     }
   ]
 }

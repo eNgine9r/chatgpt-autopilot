@@ -1,19 +1,21 @@
 {
   "name": "chatgpt-project-autopilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Standalone Raspberry Pi ChatGPT auto-continue runtime using ordinary Chromium, a local MV3 extension and Telegram alerts.",
+  "description": "Fault-isolated browser and Codex project supervisors with Telegram safety alerts.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "start": "node src/index.mjs",
+    "start:browser": "node src/index.mjs",
+    "start:codex": "node src/codex-supervisor.mjs",
     "login": "node src/login.mjs",
     "telegram:setup": "node src/telegram-setup.mjs",
     "telegram:localize": "node src/telegram-localize.mjs",
     "telegram:test": "node src/telegram-test.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/index.mjs && node --check src/connect-preflight.mjs && node --check src/keyring-prompt.mjs && node --check src/startup.mjs && node --check src/chromium-session.mjs && node --check src/login.mjs && node --check src/bridge.mjs && node --check src/project-store.mjs && node --check src/messages.uk.mjs && node --check src/telegram-localize.mjs && node --check src/telegram-setup.mjs && node --check src/telegram-setup-lib.mjs && node --check extension/service-worker.js && node --check extension/policy.js && node --check extension/message-extractor.js && node --check extension/page-bridge.js && node --check extension/content.js && node --check extension/session-watch.js"
+    "check": "node --check src/index.mjs && node --check src/codex-supervisor.mjs && node --check src/codex-backend.mjs && node --check src/codex-rpc.mjs && node --check src/codex-state-store.mjs && node --check src/config.mjs && node --check src/bridge.mjs && node --check src/progress-watchdog.mjs && node --check extension/service-worker.js && node --check extension/policy.js && node --check extension/message-extractor.js && node --check extension/page-bridge.js && node --check extension/content.js && node --check extension/session-watch.js"
   }
 }
