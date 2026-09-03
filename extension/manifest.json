@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Project Autopilot",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Local per-chat continuation and USER_ACTION_REQUIRED safety gate.",
   "permissions": [
     "storage",
@@ -13,7 +13,7 @@
     "http://127.0.0.1:8765/*"
   ],
   "background": {
-    "service_worker": "service-worker-v6.js"
+    "service_worker": "service-worker-v7.js"
   },
   "content_scripts": [
     {

@@ -1,3 +1,4 @@
+importScripts("lease-policy.js");
 const BRIDGE = "http://127.0.0.1:8765";
 const PULSE_ALARM = "autopilot-pulse";
 const MONITOR_STARTED_KEY = "monitor:startedAt";
@@ -5,6 +6,7 @@ const MISSING_PREFIX = "missing:";
 const ROLLOVER_PREFIX = "rollover:";
 const STARTUP_GRACE_MS = 90000;
 const ROLLOVER_TIMEOUT_MS = 120000;
+const LEASE_TTL_MS = 90000;
 const claimChains = new Map();
 
 async function bridge(path, options = {}) {
@@ -72,10 +74,19 @@ async function claimUnlocked(projectId, sender) {
   const key = `lease:${projectId}`;
   const current = (await chrome.storage.session.get(key))[key];
   if (current?.tabId !== undefined && current.tabId !== tabId) {
-    try {
-      await chrome.tabs.get(current.tabId);
-      return { granted: false, tabId: current.tabId };
-    } catch {
+    const stale = AutopilotLeasePolicy.isLeaseStale({
+      leaseAtMs: current.at,
+      nowMs: Date.now(),
+      ttlMs: LEASE_TTL_MS
+    });
+    if (!stale) {
+      try {
+        await chrome.tabs.get(current.tabId);
+        return { granted: false, tabId: current.tabId };
+      } catch {
+        await chrome.storage.session.remove(key);
+      }
+    } else {
       await chrome.storage.session.remove(key);
     }
   }
