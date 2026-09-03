@@ -104,6 +104,16 @@
     return Number(nowMs || 0) + Number(watchdogMs || 0);
   }
 
+  function shouldCheckRecoveryWatchdog(action) {
+    return [
+      "wait_generating",
+      "wait_assistant",
+      "wait_completion",
+      "wait_next_turn",
+      "fail_closed"
+    ].includes(String(action || ""));
+  }
+
   function shouldAutoRolloverForStall({
     autoRollover,
     pausedForUser,
@@ -138,6 +148,7 @@
     isConversationCapacityReached,
     isStartupGraceActive,
     refreshedWatchdogAt,
+    shouldCheckRecoveryWatchdog,
     shouldAutoRolloverForStall
   });
 })();

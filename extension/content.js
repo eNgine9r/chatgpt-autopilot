@@ -301,7 +301,11 @@
 
   async function sendContinuation(state, turnKey = "") {
     const sent = await sendPromptText(project.continuationPrompt);
-    if (!sent) return failClosed(state);
+    if (!sent) {
+      const stalled = await maybeHandleStall(state);
+      if (!stalled) await failClosed(state);
+      return;
+    }
     await saveState({
       nextAt: Date.now() + project.continueAfterSeconds * 1000,
       sentCount: Number(state.sentCount || 0) + 1,
@@ -321,7 +325,15 @@
 
   async function maybeHandleStall(state) {
     if (project.autoContinueMode !== "on_completion") return false;
-    if (!state.watchdogAt || Date.now() < Number(state.watchdogAt)) return false;
+    const now = Date.now();
+    if (!state.watchdogAt) {
+      await saveState({
+        watchdogAt: now + project.watchdogSeconds * 1000,
+        watchdogNotified: false
+      });
+      return false;
+    }
+    if (now < Number(state.watchdogAt)) return false;
     if (Policy.shouldAutoRolloverForStall({
       autoRollover: project.autoRollover,
       pausedForUser: Boolean(state.pausedForUser),
@@ -498,17 +510,20 @@
           await saveState({ failures: 0, lastStatus: "starting" });
           return;
         }
+        const stalled = await maybeHandleStall(state);
+        if (stalled) return;
         return failClosed(state);
       }
-      if (["wait_generating", "wait_assistant", "wait_completion"].includes(action)) {
+      if (Policy.shouldCheckRecoveryWatchdog(action)) {
         const stalled = await maybeHandleStall(state);
         if (!stalled) {
-          await saveState({ failures: 0, lastStatus: action === "wait_assistant" ? "waiting_assistant" : "working" });
+          const lastStatus = action === "wait_assistant"
+            ? "waiting_assistant"
+            : (action === "wait_next_turn" ? "waiting_next_turn" : "working");
+          await saveState({ failures: 0, lastStatus });
         }
       } else if (action === "wait_settle") {
         await saveState({ failures: 0, lastStatus: "settling" });
-      } else if (action === "wait_next_turn") {
-        await saveState({ failures: 0, lastStatus: "waiting_next_turn" });
       } else if (action === "paused_for_user") {
         await saveState({ lastStatus: "user_action_required" });
       } else if (state.failures) {

@@ -10,6 +10,7 @@ const {
   isConversationCapacityReached,
   isStartupGraceActive,
   refreshedWatchdogAt,
+  shouldCheckRecoveryWatchdog,
   shouldAutoRolloverForStall
 } = globalThis.AutopilotPolicy;
 
@@ -171,4 +172,19 @@ test("stalled Project chat rolls over only after deadline and never across a use
   assert.equal(shouldAutoRolloverForStall({ ...baseRollover, pausedForUser: true }), false);
   assert.equal(shouldAutoRolloverForStall({ ...baseRollover, rolloverInProgress: true }), false);
   assert.equal(shouldAutoRolloverForStall({ ...baseRollover, autoRollover: false }), false);
+});
+
+test("recovery watchdog covers post-continuation and fail-closed stalls", () => {
+  for (const action of [
+    "wait_generating",
+    "wait_assistant",
+    "wait_completion",
+    "wait_next_turn",
+    "fail_closed"
+  ]) {
+    assert.equal(shouldCheckRecoveryWatchdog(action), true, action);
+  }
+  for (const action of ["wait_settle", "paused_for_user", "send_continue", "disabled"]) {
+    assert.equal(shouldCheckRecoveryWatchdog(action), false, action);
+  }
 });
