@@ -5,6 +5,10 @@ function statusType(status) {
   return String(status?.type || "unknown");
 }
 
+function isMissingRolloutError(error) {
+  return /no rollout found for thread id/i.test(String(error?.message || error || ""));
+}
+
 function progressKey(message) {
   const { method, params = {} } = message;
   if (method === "turn/started" || method === "turn/completed") {
@@ -85,10 +89,18 @@ export class CodexProjectBackend {
     const state = loadCodexState(this.stateDir, this.project.id);
     let result;
     if (state.threadId) {
-      result = await this.client.request("thread/resume", {
-        threadId: state.threadId,
-        ...this.threadOptions()
-      });
+      try {
+        result = await this.client.request("thread/resume", {
+          threadId: state.threadId,
+          ...this.threadOptions()
+        });
+      } catch (error) {
+        if (!isMissingRolloutError(error)) throw error;
+        this.logger.info("codex_thread_resume_missing_rollout", {
+          project: this.project.name
+        });
+        result = await this.client.request("thread/start", this.threadOptions());
+      }
     } else {
       result = await this.client.request("thread/start", this.threadOptions());
     }
