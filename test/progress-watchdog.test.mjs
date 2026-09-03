@@ -74,3 +74,20 @@ test("legacy extension stall event shares the same dedupe latch", async () => {
   await f.watchdog.notifyStall("demo", "no_progress");
   assert.equal(f.sent.length, 1);
 });
+
+
+test("watchdog opt-out suppresses scheduled and explicit stall alerts", async () => {
+  const f = fixture();
+  f.project.watchdogEnabled = false;
+  const watchdog = new SupervisorProgressWatchdog({
+    projects: [f.project],
+    notifier: { send: async (text) => { f.sent.push(text); return true; } },
+    logger: { info: (message, data) => f.logs.push({ message, data }) },
+    now: () => 1_000_000 + 24 * 60 * 60_000
+  });
+  watchdog.observe("demo", { progressKey: "idle", status: "idle" });
+  await watchdog.check();
+  const explicit = await watchdog.notifyStall("demo", "no_progress");
+  assert.equal(f.sent.length, 0);
+  assert.equal(explicit.disabled, true);
+});

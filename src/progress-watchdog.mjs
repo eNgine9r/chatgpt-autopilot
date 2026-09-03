@@ -48,6 +48,9 @@ export class SupervisorProgressWatchdog {
   async notifyStall(projectId, reason = "no_progress") {
     const project = this.projects.get(projectId);
     if (!project) return { ok: false, delivered: false, error: "unknown_project" };
+    if (project.watchdogEnabled === false) {
+      return { ok: true, delivered: false, suppressed: true, disabled: true };
+    }
     const record = this.record(projectId);
     if (record.alerted) return { ok: true, delivered: false, suppressed: true };
     const minutes = Math.max(1, Math.round(this.thresholdMs(project) / 60000));
@@ -67,6 +70,7 @@ export class SupervisorProgressWatchdog {
   async check() {
     const at = this.now();
     for (const [projectId, project] of this.projects) {
+      if (project.watchdogEnabled === false) continue;
       const threshold = this.thresholdMs(project);
       const record = this.record(projectId);
       if (!record.lastSeenAt) {
