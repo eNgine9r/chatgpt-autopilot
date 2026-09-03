@@ -7,6 +7,7 @@ const {
   normalizeChatUrl,
   fingerprint,
   shouldResumeFromTurns,
+  shouldResumeFromLatestAssistant,
   isConversationCapacityReached,
   isStartupGraceActive,
   refreshedWatchdogAt,
@@ -49,6 +50,18 @@ test("paused recovery detects a user turn after the stored gate", () => {
   assert.equal(shouldResumeFromTurns(turns, "gate"), true);
   assert.equal(shouldResumeFromTurns(turns.slice(0, 2), "gate"), false);
   assert.equal(shouldResumeFromTurns(turns, "missing"), false);
+});
+
+
+
+test("paused recovery accepts a newer assistant turn after user intervention", () => {
+  const gateMarker = "[[USER_ACTION_REQUIRED]]";
+  const baseResume = { pausedForUser: true, gateTurnId: "gate", latestTurnRole: "assistant", latestTurnId: "new-assistant", latestAssistantText: "Safe work continues", gateMarker };
+  assert.equal(shouldResumeFromLatestAssistant(baseResume), true);
+  assert.equal(shouldResumeFromLatestAssistant({ ...baseResume, latestTurnId: "gate" }), false);
+  assert.equal(shouldResumeFromLatestAssistant({ ...baseResume, latestAssistantText: `Still blocked ${gateMarker}` }), false);
+  assert.equal(shouldResumeFromLatestAssistant({ ...baseResume, latestTurnRole: "user" }), false);
+  assert.equal(shouldResumeFromLatestAssistant({ ...baseResume, pausedForUser: false }), false);
 });
 
 test("unknown or empty assistant state fails closed", () => {

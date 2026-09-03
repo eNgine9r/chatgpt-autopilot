@@ -82,6 +82,17 @@
   }
 
 
+  function shouldResumeFromLatestAssistant({ pausedForUser, gateTurnId, latestTurnRole, latestTurnId, latestAssistantText, gateMarker }) {
+    return Boolean(
+      pausedForUser
+      && gateTurnId
+      && latestTurnRole === "assistant"
+      && latestTurnId
+      && latestTurnId !== gateTurnId
+      && !String(latestAssistantText || "").includes(String(gateMarker || ""))
+    );
+  }
+
   function isStartupGraceActive(nowMs, startedAtMs, graceMs) {
     const now = Number(nowMs || 0);
     const started = Number(startedAtMs || 0);
@@ -158,6 +169,7 @@
     normalizeChatUrl,
     decideAction,
     shouldResumeFromTurns,
+    shouldResumeFromLatestAssistant,
     fingerprint,
     isConversationCapacityReached,
     isStartupGraceActive,
