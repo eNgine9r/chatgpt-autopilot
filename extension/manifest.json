@@ -1,26 +1,41 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Project Autopilot",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Local per-chat continuation and USER_ACTION_REQUIRED safety gate.",
-  "permissions": ["storage", "alarms", "tabs"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
   "host_permissions": [
     "https://chatgpt.com/*",
     "http://127.0.0.1:8765/*"
   ],
   "background": {
-    "service_worker": "service-worker.js"
+    "service_worker": "service-worker-v3.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
-      "js": ["message-extractor.js", "page-bridge.js"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "message-extractor.js",
+        "page-bridge.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://chatgpt.com/*"],
-      "js": ["policy.js", "content.js", "session-watch.js"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "policy.js",
+        "content.js",
+        "session-watch.js"
+      ],
       "run_at": "document_idle",
       "world": "ISOLATED"
     }
