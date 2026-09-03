@@ -104,6 +104,30 @@
     return Number(nowMs || 0) + Number(watchdogMs || 0);
   }
 
+  function recoveryWatchdogDeadline({
+    watchdogAtMs,
+    lastProgressAtMs,
+    nowMs,
+    watchdogMs
+  }) {
+    const existing = Number(watchdogAtMs || 0);
+    if (existing > 0) return existing;
+    const now = Number(nowMs || 0);
+    const lastProgress = Number(lastProgressAtMs || 0);
+    const anchor = lastProgress > 0 ? lastProgress : now;
+    return anchor + Number(watchdogMs || 0);
+  }
+
+  function shouldCheckRecoveryWatchdog(action) {
+    return [
+      "wait_generating",
+      "wait_assistant",
+      "wait_completion",
+      "wait_next_turn",
+      "fail_closed"
+    ].includes(String(action || ""));
+  }
+
   function shouldAutoRolloverForStall({
     autoRollover,
     pausedForUser,
@@ -138,6 +162,8 @@
     isConversationCapacityReached,
     isStartupGraceActive,
     refreshedWatchdogAt,
+    recoveryWatchdogDeadline,
+    shouldCheckRecoveryWatchdog,
     shouldAutoRolloverForStall
   });
 })();
