@@ -429,11 +429,13 @@
       }
       await reportHeartbeat(progressKey, generating ? "working" : String(latest.role || "unknown"));
 
-      if (
-        project.autoRollover
-        && !generating
-        && Policy.isConversationCapacityReached(`${latest.text}\n${capacitySurfaceText()}`)
-      ) {
+      if (Policy.shouldRequestCapacityRollover({
+        autoRollover: project.autoRollover,
+        generating,
+        latestTurnRole: latest.role,
+        latestTurnText: latest.text,
+        capacitySurfaceText: capacitySurfaceText()
+      })) {
         await requestRollover(state);
         return;
       }

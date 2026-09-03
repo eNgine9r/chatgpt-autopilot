@@ -9,6 +9,7 @@ const {
   shouldResumeFromTurns,
   shouldResumeFromLatestAssistant,
   isConversationCapacityReached,
+  shouldRequestCapacityRollover,
   isStartupGraceActive,
   refreshedWatchdogAt,
   recoveryWatchdogDeadline,
@@ -91,6 +92,24 @@ test("capacity detection accepts only strong explicit platform-style signals", (
   assert.equal(isConversationCapacityReached("Достигнута максимальная длина этого чата."), true);
   assert.equal(isConversationCapacityReached("We should probably start a new chat sometime."), false);
   assert.equal(isConversationCapacityReached("Context windows are an interesting topic."), false);
+});
+
+test("capacity rollover ignores user handoff text but accepts assistant or platform evidence", () => {
+  const baseCapacity = {
+    autoRollover: true,
+    generating: false,
+    latestTurnRole: "user",
+    latestTurnText: "Це handoff, бо попередня розмова досягла максимальної довжини.",
+    capacitySurfaceText: ""
+  };
+  assert.equal(shouldRequestCapacityRollover(baseCapacity), false);
+  assert.equal(shouldRequestCapacityRollover({ ...baseCapacity, latestTurnRole: "assistant", latestTurnText: "Ця розмова досягла максимальної довжини. Розпочніть новий чат." }), true);
+  assert.equal(shouldRequestCapacityRollover({
+    ...baseCapacity,
+    latestTurnText: "normal user message",
+    capacitySurfaceText: "You’ve reached the maximum length for this conversation."
+  }), true);
+  assert.equal(shouldRequestCapacityRollover({ ...baseCapacity, generating: true, latestTurnRole: "assistant" }), false);
 });
 
 

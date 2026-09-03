@@ -27,6 +27,13 @@
     return CAPACITY_PATTERNS.some((pattern) => pattern.test(value));
   }
 
+  function shouldRequestCapacityRollover({ autoRollover, generating, latestTurnRole, latestTurnText, capacitySurfaceText }) {
+    if (!autoRollover || generating) return false;
+    const assistantCapacity = latestTurnRole === "assistant" && isConversationCapacityReached(latestTurnText);
+    const surfaceCapacity = isConversationCapacityReached(capacitySurfaceText);
+    return assistantCapacity || surfaceCapacity;
+  }
+
   function decideAction({
     enabled,
     generating,
@@ -172,6 +179,7 @@
     shouldResumeFromLatestAssistant,
     fingerprint,
     isConversationCapacityReached,
+    shouldRequestCapacityRollover,
     isStartupGraceActive,
     refreshedWatchdogAt,
     recoveryWatchdogDeadline,
