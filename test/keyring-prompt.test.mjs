@@ -68,6 +68,24 @@ test("startup policy can dismiss an already-open prompt by using an empty baseli
   assert.deepEqual(cancelled, [55]);
 });
 
+test("zero timeout keeps the keyring guard alive until the browser stops", async () => {
+  let clock = 0;
+  let scans = 0;
+  const killed = [];
+  const cancelled = await watchAndDismissNewGcrPrompters({
+    baselinePids: [],
+    listPids: () => { scans += 1; return scans >= 2 ? [77] : []; },
+    killProcess: (pid, signal) => killed.push([pid, signal]),
+    pollMs: 10,
+    timeoutMs: 0,
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; },
+    shouldStop: () => scans >= 3
+  });
+  assert.deepEqual(killed, [[77, "SIGTERM"]]);
+  assert.deepEqual(cancelled, [77]);
+});
+
 test("watchAndDismissNewGcrPrompters never cancels a baseline prompt", async () => {
   let clock = 0;
   const killed = [];
