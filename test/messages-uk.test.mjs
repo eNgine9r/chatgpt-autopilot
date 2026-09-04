@@ -30,7 +30,8 @@ test("all supported notification events have Ukrainian user-facing text", () => 
     "SESSION_ATTENTION_REQUIRED",
     "AUTOMATION_ERROR",
     "AUTOMATION_STALLED",
-    "RECOVERED"
+    "RECOVERED",
+    "CHAT_ADOPTED"
   ];
   for (const event of events) {
     const text = telegramEventMessage(project, event);

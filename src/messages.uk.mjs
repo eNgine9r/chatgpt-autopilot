@@ -20,6 +20,8 @@ export function telegramEventMessage(project, event) {
       return `🟢 ${project.name}: Autopilot відновив безпечну роботу.\nАвтопродовження знову активне.`;
     case "CONVERSATION_ROLLED_OVER":
       return `🔄 ${project.name}: попередній чат досяг максимальної довжини.\nAutopilot створив новий чат у тому самому проєкті та продовжив роботу там.\n${project.chatUrl}`;
+    case "CHAT_ADOPTED":
+      return `🔗 ${project.name}: Autopilot безпечно переприв’язався до нового чату в тому самому ChatGPT Project.\nPlan Anchor і durable checkpoint збережені.\n${project.chatUrl}`;
     default:
       throw new Error(`Непідтримувана подія: ${event}`);
   }

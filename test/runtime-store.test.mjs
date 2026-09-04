@@ -33,3 +33,19 @@ test("heartbeat stores bounded durable checkpoint only on meaningful changes", (
   const periodic = store.observe("demo", { progressKey: "a", status: "assistant" });
   assert.equal(periodic.state.runtime.status, "assistant");
 });
+
+test("discovery candidate and adoption history persist durably", () => {
+  const { store, stateDir, tick } = fixture();
+  store.recordDiscovery("demo", { url: "https://chatgpt.com/g/g-p-demo/c/new", title: "New chat", preview: "preview" }, { eligible: true, reason: "pattern" });
+  let state = store.snapshot("demo");
+  assert.equal(state.discovery.candidateEligible, true);
+  assert.equal(state.discovery.candidateReason, "pattern");
+  tick(3000);
+  store.recordAdoption("demo", { url: state.discovery.candidateUrl, title: state.discovery.candidateTitle, mode: "manual" });
+  const reloaded = new ProjectRuntimeStore({ stateDir, projects: [{ id: "demo" }] });
+  state = reloaded.snapshot("demo");
+  assert.equal(state.discovery.candidateUrl, "");
+  assert.equal(state.discovery.lastAdoptedTitle, "New chat");
+  assert.equal(state.discovery.lastAdoptionMode, "manual");
+  assert.equal(state.discovery.lastAdoptedAt, 3000);
+});

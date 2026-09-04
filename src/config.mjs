@@ -179,6 +179,21 @@ export function loadProjects(projectsFile) {
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
     const planAnchor = String(project.planAnchor || "").trim();
     const planVersion = String(project.planVersion || "v1").trim().slice(0, 64) || "v1";
+    const discoveryRaw = project.chatDiscovery || {};
+    const chatDiscovery = {
+      enabled: backend === "browser" && discoveryRaw.enabled === true,
+      autoAdopt: backend === "browser" && discoveryRaw.autoAdopt === true,
+      intervalSeconds: Number(discoveryRaw.intervalSeconds ?? 300),
+      includeTitlePatterns: Array.isArray(discoveryRaw.includeTitlePatterns)
+        ? discoveryRaw.includeTitlePatterns.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
+        : []
+    };
+    if (!Number.isFinite(chatDiscovery.intervalSeconds) || chatDiscovery.intervalSeconds < 60 || chatDiscovery.intervalSeconds > 86400) {
+      throw new Error(`${project.id}: chatDiscovery.intervalSeconds must be between 60 and 86400`);
+    }
+    if (chatDiscovery.autoAdopt && !chatDiscovery.enabled) {
+      throw new Error(`${project.id}: chatDiscovery.autoAdopt requires chatDiscovery.enabled`);
+    }
 
     const chatUrl = backend === "browser" ? normalizeChatUrl(project.chatUrl) : "";
     const autoRollover = backend === "browser" && project.autoRollover === true;
@@ -215,6 +230,7 @@ export function loadProjects(projectsFile) {
       continuationPrompt,
       planAnchor,
       planVersion,
+      chatDiscovery,
       startImmediately: project.startImmediately === true,
       autoRollover,
       projectRootUrl,
@@ -233,8 +249,9 @@ export function publicProjects(projects, runtimeStore = null) {
         codex: undefined,
         continuationPrompt: composeContinuationPrompt(project),
         rolloverPrompt: `${project.rolloverPrompt}${planAnchorBlock(project)}`.slice(0, 15000),
-        control: snapshot?.control || { paused: false, restartGeneration: 0, rolloverGeneration: 0 },
-        runtimeCheckpoint: snapshot?.runtime || null
+        control: snapshot?.control || { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
+        runtimeCheckpoint: snapshot?.runtime || null,
+        discovery: snapshot?.discovery || null
       };
     });
 }

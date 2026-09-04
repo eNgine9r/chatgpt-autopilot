@@ -61,6 +61,7 @@ export function createControlServer({
         name: project.name,
         chatUrl: project.chatUrl,
         planVersion: project.planVersion,
+        chatDiscovery: project.chatDiscovery || { enabled: false, autoAdopt: false },
         state: runtimeStore.snapshot(project.id),
         watchdog: progressWatchdog?.snapshot?.(project.id) || null
       }))
@@ -94,7 +95,15 @@ export function createControlServer({
         else if (action === "resume") runtimeStore.setPaused(projectId, false);
         else if (action === "restart") runtimeStore.bump(projectId, "restartGeneration");
         else if (action === "rollover") runtimeStore.bump(projectId, "rolloverGeneration");
-        else return json(res, 400, { ok: false, error: "unsupported_action" });
+        else if (action === "scan_chats") {
+          if (!projectById.get(projectId).chatDiscovery?.enabled) return json(res, 409, { ok: false, error: "chat_discovery_disabled" });
+          runtimeStore.bump(projectId, "discoveryScanGeneration");
+        } else if (action === "adopt_candidate") {
+          if (!projectById.get(projectId).chatDiscovery?.enabled) return json(res, 409, { ok: false, error: "chat_discovery_disabled" });
+          const candidate = runtimeStore.snapshot(projectId).discovery?.candidateUrl || "";
+          if (!candidate) return json(res, 409, { ok: false, error: "no_discovery_candidate" });
+          runtimeStore.bump(projectId, "adoptGeneration");
+        } else return json(res, 400, { ok: false, error: "unsupported_action" });
         logger.info("control_action", { project: projectById.get(projectId).name, action });
         return json(res, 200, { ok: true, projectId, action, state: runtimeStore.snapshot(projectId) });
       }

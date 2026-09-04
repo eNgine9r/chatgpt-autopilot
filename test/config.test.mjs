@@ -114,3 +114,30 @@ test("validates startup priority", () => {
   assert.throws(() => loadProjects(tempConfig([{ ...project, startupPriority: -1 }])), /startupPriority/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, startupPriority: 10.5 }])), /startupPriority/);
 });
+
+test("normalizes safe ChatGPT Project discovery settings", () => {
+  const id = "g-p-0123456789abcdef0123456789abcdef";
+  const loaded = loadProjects(tempConfig([{ ...project,
+    chatUrl: `https://chatgpt.com/g/${id}/c/current`,
+    projectRootUrl: `https://chatgpt.com/g/${id}/project`,
+    chatDiscovery: { enabled: true, autoAdopt: true, intervalSeconds: 120, includeTitlePatterns: [" BTC Radar "] }
+  }]));
+  assert.equal(loaded[0].chatDiscovery.enabled, true);
+  assert.equal(loaded[0].chatDiscovery.autoAdopt, true);
+  assert.equal(loaded[0].chatDiscovery.intervalSeconds, 120);
+  assert.deepEqual(loaded[0].chatDiscovery.includeTitlePatterns, ["BTC Radar"]);
+});
+
+test("automatic discovery may rely only on explicit Autopilot marker", () => {
+  const id = "g-p-0123456789abcdef0123456789abcdef";
+  const loaded = loadProjects(tempConfig([{ ...project,
+    chatUrl: `https://chatgpt.com/g/${id}/c/current`,
+    chatDiscovery: { enabled: true, autoAdopt: true, includeTitlePatterns: [] }
+  }]));
+  assert.equal(loaded[0].chatDiscovery.autoAdopt, true);
+});
+
+test("rejects unsafe discovery timing and auto-adopt without discovery", () => {
+  assert.throws(() => loadProjects(tempConfig([{ ...project, chatDiscovery: { enabled: true, intervalSeconds: 30 } }])), /chatDiscovery.intervalSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, chatDiscovery: { enabled: false, autoAdopt: true } }])), /autoAdopt/);
+});
