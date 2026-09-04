@@ -1,11 +1,14 @@
-importScripts("lease-policy.js");
+importScripts("lease-policy.js", "discovery-policy.js");
 const BRIDGE = "http://127.0.0.1:8765";
 const PULSE_ALARM = "autopilot-pulse";
 const MONITOR_STARTED_KEY = "monitor:startedAt";
 const MISSING_PREFIX = "missing:";
 const ROLLOVER_PREFIX = "rollover:";
+const DISCOVERY_PREFIX = "discovery:";
+const DISCOVERY_LAST_PREFIX = "discovery-last:";
 const STARTUP_GRACE_MS = 90000;
 const ROLLOVER_TIMEOUT_MS = 120000;
+const DISCOVERY_TIMEOUT_MS = 90000;
 const LEASE_TTL_MS = 90000;
 const claimChains = new Map();
 
@@ -127,6 +130,125 @@ async function heartbeatBridge(projectId, progressKey, status, detail = {}) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ projectId, progressKey, status, ...detail })
   });
+}
+
+async function tabRuntimeStatus(tabId) {
+  try {
+    const result = await chrome.tabs.sendMessage(tabId, { type: "GET_RUNTIME_STATUS" });
+    return result?.ok ? result : null;
+  } catch { return null; }
+}
+
+async function configuredProjectTab(project) {
+  const target = normalizeChatUrl(project.chatUrl || "");
+  const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
+  return tabs.find((tab) => normalizeChatUrl(tab.url || "") === target) || null;
+}
+
+async function discoveryEntries() {
+  const all = await chrome.storage.session.get(null);
+  return Object.entries(all)
+    .filter(([key]) => key.startsWith(DISCOVERY_PREFIX) && !key.startsWith(DISCOVERY_LAST_PREFIX))
+    .map(([key, value]) => ({ key, projectId: key.slice(DISCOVERY_PREFIX.length), ...value }));
+}
+
+async function closeDiscoveryEntry(entry) {
+  await chrome.storage.session.remove(entry.key);
+  try { await chrome.tabs.remove(entry.tabId); } catch {}
+}
+
+async function performAdoption(project, sourceTabId, candidate, mode) {
+  if (!candidate?.url) return { ok: false, error: "no_candidate" };
+  const status = await tabRuntimeStatus(sourceTabId);
+  if (!status || !AutopilotDiscoveryPolicy.shouldAdopt({
+    mode, generating: Boolean(status.generating), paused: Boolean(project.control?.paused), candidate: candidate.url
+  })) return { ok: false, error: "adoption_blocked" };
+  const result = await bridge("/adopt-chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectId: project.id, mode, chatUrl: candidate.url,
+      title: candidate.title || "", preview: candidate.preview || ""
+    })
+  });
+  await setProjectState(project.id, {
+    lastAdoptGeneration: Number(project.control?.adoptGeneration || 0),
+    lastStatus: "chat_adopted", failures: 0, rolloverInProgress: false
+  });
+  await releaseLeasesForTab(sourceTabId);
+  await chrome.tabs.update(sourceTabId, { url: result.chatUrl });
+  return result;
+}
+
+async function maybeStartDiscoveryScans() {
+  const projects = await getProjects();
+  const pending = new Set((await discoveryEntries()).map((entry) => entry.projectId));
+  const now = Date.now();
+  for (const project of projects) {
+    if (!project.chatDiscovery?.enabled || !project.projectRootUrl || pending.has(project.id)) continue;
+    const lastKey = `${DISCOVERY_LAST_PREFIX}${project.id}`;
+    const last = (await chrome.storage.session.get(lastKey))[lastKey] || {};
+    const scanGeneration = Number(project.control?.discoveryScanGeneration || 0);
+    const forced = scanGeneration > Number(last.scanGeneration || 0);
+    const due = now - Number(last.lastScanAt || 0) >= Number(project.chatDiscovery.intervalSeconds || 300) * 1000;
+    const sourceTab = await configuredProjectTab(project);
+    if (!Number.isInteger(sourceTab?.id)) continue;
+    const status = await tabRuntimeStatus(sourceTab.id);
+    if (!status || !AutopilotDiscoveryPolicy.shouldStartScan({
+      enabled: true, pending: false, generating: Boolean(status.generating), paused: Boolean(project.control?.paused), forced, due
+    })) continue;
+    const tab = await chrome.tabs.create({ url: project.projectRootUrl, active: false });
+    if (!Number.isInteger(tab.id)) continue;
+    const key = `${DISCOVERY_PREFIX}${project.id}`;
+    await chrome.storage.session.set({
+      [key]: { tabId: tab.id, sourceTabId: sourceTab.id, startedAt: now },
+      [lastKey]: { lastScanAt: now, scanGeneration }
+    });
+  }
+}
+
+async function processPendingDiscoveries() {
+  const entries = await discoveryEntries();
+  if (!entries.length) return;
+  const projects = await getProjects();
+  const byId = new Map(projects.map((project) => [project.id, project]));
+  for (const entry of entries) {
+    const project = byId.get(entry.projectId);
+    if (!project?.chatDiscovery?.enabled || Date.now() - Number(entry.startedAt || 0) > DISCOVERY_TIMEOUT_MS) {
+      await closeDiscoveryEntry(entry);
+      continue;
+    }
+    let tab;
+    try { tab = await chrome.tabs.get(entry.tabId); } catch { await closeDiscoveryEntry(entry); continue; }
+    if (tab.status !== "complete" || projectIdFromRoot(tab.url || "") !== projectIdFromRoot(project.projectRootUrl)) continue;
+    let scan;
+    try {
+      scan = await chrome.tabs.sendMessage(entry.tabId, { type: "DISCOVERY_SCAN", projectRootUrl: project.projectRootUrl });
+    } catch { continue; }
+    if (!scan?.ok || !Array.isArray(scan.candidates)) continue;
+    const result = await bridge("/discovery-candidates", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, candidates: scan.candidates })
+    });
+    if (result.shouldAdopt && result.candidate) {
+      await performAdoption(project, entry.sourceTabId, result.candidate, "auto").catch(() => {});
+    }
+    await closeDiscoveryEntry(entry);
+  }
+}
+
+async function adoptCandidate(message, sender) {
+  const tabId = sender.tab?.id;
+  const projectId = String(message.projectId || "");
+  if (!Number.isInteger(tabId) || !projectId) return { ok: false, error: "invalid_sender" };
+  const projects = await getProjects();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project?.chatDiscovery?.enabled) return { ok: false, error: "chat_discovery_disabled" };
+  const sourceUrl = normalizeChatUrl(sender.tab?.url || "");
+  if (!sameProjectChat(project.projectRootUrl, sourceUrl) || sourceUrl !== normalizeChatUrl(project.chatUrl)) {
+    return { ok: false, error: "source_not_configured_chat" };
+  }
+  return performAdoption(project, tabId, project.discovery, "manual");
 }
 
 async function rolloverEntries() {
@@ -307,6 +429,8 @@ async function handleMessage(message, sender) {
       })) };
     case "ROLLOVER":
       return startRollover(message, sender);
+    case "ADOPT_CANDIDATE":
+      return adoptCandidate(message, sender);
     default:
       return { ok: false, error: "unsupported_message" };
   }
@@ -328,6 +452,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
   monitorConfiguredTabs().catch(() => {});
   processPendingRollovers().catch(() => {});
+  processPendingDiscoveries().catch(() => {});
+  maybeStartDiscoveryScans().catch(() => {});
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -339,6 +465,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) releaseLeasesForTab(tabId).catch(() => {});
   if (changeInfo.url || changeInfo.status === "complete") {
     processPendingRollovers().catch(() => {});
+    processPendingDiscoveries().catch(() => {});
   }
 });
 

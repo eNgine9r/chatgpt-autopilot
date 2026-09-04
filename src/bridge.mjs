@@ -2,6 +2,7 @@ import http from "node:http";
 import { publicProjects, normalizeChatUrl, sameProjectChatUrl } from "./config.mjs";
 import { persistProjectChatUrl } from "./project-store.mjs";
 import { telegramEventMessage } from "./messages.uk.mjs";
+import { candidateEligibility, selectDiscoveryCandidate, selectManualDiscoveryCandidate } from "./chat-discovery.mjs";
 
 export const ALLOWED_EVENTS = new Set([
   "USER_ACTION_REQUIRED",
@@ -9,7 +10,8 @@ export const ALLOWED_EVENTS = new Set([
   "AUTOMATION_ERROR",
   "AUTOMATION_STALLED",
   "RECOVERED",
-  "CONVERSATION_ROLLED_OVER"
+  "CONVERSATION_ROLLED_OVER",
+  "CHAT_ADOPTED"
 ]);
 
 export const eventMessage = telegramEventMessage;
@@ -93,6 +95,59 @@ export function createBridgeServer({ host, port, projects, projectsFile, notifie
         const delivered = await notifier.send(eventMessage(project, event));
         logger.info("extension_event", { project: project.name, event, delivered });
         return json(res, 200, { ok: true, delivered });
+      }
+      if (req.method === "POST" && req.url === "/discovery-candidates") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!project.chatDiscovery?.enabled || !project.projectRootUrl) {
+          return json(res, 409, { error: "chat_discovery_disabled" });
+        }
+        const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+        const auto = selectDiscoveryCandidate(project, candidates);
+        const manual = auto.candidate || selectManualDiscoveryCandidate(project, candidates);
+        runtimeStore?.recordDiscovery(project.id, manual, { eligible: auto.eligible, reason: auto.reason });
+        logger.info("chat_discovery_scan", {
+          project: project.name, candidateUrl: manual?.url || "", eligible: Boolean(auto.eligible), reason: auto.reason
+        });
+        return json(res, 200, {
+          ok: true, candidate: manual, autoEligible: Boolean(auto.eligible), reason: auto.reason,
+          shouldAdopt: Boolean(auto.eligible && project.chatDiscovery.autoAdopt)
+        });
+      }
+      if (req.method === "POST" && req.url === "/adopt-chat") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!project.chatDiscovery?.enabled || !project.projectRootUrl) {
+          return json(res, 409, { error: "chat_discovery_disabled" });
+        }
+        const mode = String(payload.mode || "manual");
+        if (!["manual", "auto"].includes(mode)) return json(res, 400, { error: "invalid_adoption_mode" });
+        const candidate = { url: String(payload.chatUrl || ""), title: String(payload.title || ""), preview: String(payload.preview || "") };
+        const eligibility = candidateEligibility(project, candidate);
+        if (!eligibility.candidate?.url || !sameProjectChatUrl(project.projectRootUrl, eligibility.candidate.url)) {
+          return json(res, 400, { error: "adoption_chat_outside_project" });
+        }
+        const stateCandidate = runtimeStore?.snapshot(project.id)?.discovery?.candidateUrl || "";
+        if (!stateCandidate || normalizeChatUrl(stateCandidate) !== eligibility.candidate.url) {
+          return json(res, 409, { error: "adoption_candidate_not_confirmed" });
+        }
+        if (mode === "auto" && (!project.chatDiscovery.autoAdopt || !eligibility.eligible)) {
+          return json(res, 409, { error: "auto_adoption_not_eligible" });
+        }
+        const persisted = persistProjectChatUrl(projectsFile, project.id, project.projectRootUrl, eligibility.candidate.url);
+        project.chatUrl = persisted;
+        runtimeStore?.recordAdoption(project.id, { url: persisted, title: eligibility.candidate.title, mode });
+        const delivered = await notifier.send(eventMessage(project, "CHAT_ADOPTED"));
+        logger.info("chat_adopted", { project: project.name, chatUrl: persisted, mode, delivered });
+        return json(res, 200, { ok: true, chatUrl: persisted, mode, delivered });
       }
       if (req.method === "POST" && req.url === "/rollover-complete") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {

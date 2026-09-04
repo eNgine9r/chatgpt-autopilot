@@ -114,7 +114,7 @@ curl -fsS http://127.0.0.1:8765/health
 
 The health response should show `"telegram":true`. See `docs/TELEGRAM_SETUP.md` for the complete flow.
 
-Telegram is notifications-only. There is no Telegram command, shell, GitHub or product-control channel in this release.
+Telegram remains isolated from product runtimes, shell, trading and hardware execution. The owner-authenticated Mini App controls only Autopilot lifecycle/state and safe ChatGPT Project navigation.
 
 ## Verification
 
@@ -189,7 +189,20 @@ Browser projects may define a durable `planAnchor` plus `planVersion`. The ancho
 
 The local control plane listens on `CONTROL_HOST` / `CONTROL_PORT` (default `127.0.0.1:8766`). It serves a Telegram Mini App and owner-authenticated API. Telegram WebApp `initData` is validated server-side with the bot token and restricted to `TELEGRAM_OWNER_USER_ID` before any write action is accepted.
 
-Supported Mini App actions are per-project pause/resume, safe tab restart, forced same-Project rollover, plus a full Autopilot supervisor restart. A paused project keeps lightweight heartbeat/status reporting but suppresses continuation and no-progress alerts.
+Supported Mini App actions are per-project pause/resume, safe tab restart, forced same-Project rollover, chat discovery/rebind, plus a full Autopilot supervisor restart. A paused project keeps lightweight heartbeat/status reporting but suppresses continuation and no-progress alerts.
+
+Browser projects can optionally enable `chatDiscovery`. Autopilot scans only the configured ChatGPT Project root, rejects global or cross-Project conversations, and never switches chats while the assistant is generating. Automatic adoption requires either a configured `includeTitlePatterns` match or an explicit `[AUTOPILOT]` marker in the candidate surface. A same-Project candidate without an automatic signal is shown in the Mini App for manual review/rebind.
+
+```json
+"chatDiscovery": {
+  "enabled": true,
+  "autoAdopt": false,
+  "intervalSeconds": 300,
+  "includeTitlePatterns": ["NexoLab", "BTC Radar"]
+}
+```
+
+Manual or automatic adoption preserves the same project ID, Plan Anchor and durable checkpoint. The selected URL is persisted atomically to local `config/projects.json`, and Telegram receives a rebind event.
 
 For Telegram deployment, expose only the control plane through an HTTPS reverse proxy or Tailscale Funnel, set `TELEGRAM_MINIAPP_URL`, then run:
 

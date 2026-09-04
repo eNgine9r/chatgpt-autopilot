@@ -21,8 +21,13 @@ export class ProjectRuntimeStore {
     return {
       version: 1,
       projectId,
-      control: { paused: false, restartGeneration: 0, rolloverGeneration: 0 },
+      control: { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
       runtime: { lastSeenAt: 0, lastProgressAt: 0, progressKey: "", status: "unknown" },
+      discovery: {
+        lastScanAt: 0, candidateUrl: "", candidateTitle: "", candidatePreview: "", candidateSeenAt: 0,
+        candidateEligible: false, candidateReason: "",
+        lastAdoptedUrl: "", lastAdoptedTitle: "", lastAdoptedAt: 0, lastAdoptionMode: ""
+      },
       updatedAt: 0
     };
   }
@@ -33,7 +38,8 @@ export class ProjectRuntimeStore {
       const parsed = JSON.parse(fs.readFileSync(this.file(projectId), "utf8"));
       return { ...this.empty(projectId), ...parsed,
         control: { ...this.empty(projectId).control, ...(parsed.control || {}) },
-        runtime: { ...this.empty(projectId).runtime, ...(parsed.runtime || {}) }
+        runtime: { ...this.empty(projectId).runtime, ...(parsed.runtime || {}) },
+        discovery: { ...this.empty(projectId).discovery, ...(parsed.discovery || {}) }
       };
     } catch (error) {
       if (error?.code === "ENOENT") return this.empty(projectId);
@@ -83,6 +89,31 @@ export class ProjectRuntimeStore {
     };
     if (!changed && at - Number(current.updatedAt || 0) < 15000) return { state: current, changed };
     return { state: this.write(projectId, { ...current, runtime, updatedAt: at }), changed };
+  }
+
+  recordDiscovery(projectId, candidate = null, meta = {}) {
+    const at = this.now();
+    return this.patch(projectId, "discovery", {
+      lastScanAt: at,
+      candidateUrl: String(candidate?.url || "").slice(0, 2048),
+      candidateTitle: String(candidate?.title || "").slice(0, 300),
+      candidatePreview: String(candidate?.preview || "").slice(0, 800),
+      candidateSeenAt: candidate?.url ? at : 0,
+      candidateEligible: Boolean(candidate?.url && meta.eligible),
+      candidateReason: String(meta.reason || "").slice(0, 64)
+    });
+  }
+
+  recordAdoption(projectId, { url, title = "", mode = "manual" } = {}) {
+    const at = this.now();
+    return this.patch(projectId, "discovery", {
+      lastAdoptedUrl: String(url || "").slice(0, 2048),
+      lastAdoptedTitle: String(title || "").slice(0, 300),
+      lastAdoptedAt: at,
+      lastAdoptionMode: String(mode || "manual").slice(0, 32),
+      candidateUrl: "", candidateTitle: "", candidatePreview: "", candidateSeenAt: 0,
+      candidateEligible: false, candidateReason: ""
+    });
   }
 
   control(projectId) { return this.read(projectId).control; }

@@ -20,7 +20,13 @@
       "watchdogSeconds": 1800,
       "noProgressAlertSeconds": 1800,
       "planVersion": "v1",
-      "planAnchor": "Виконуй лише затверджений план цього ChatGPT Project. Не змінюй продуктову стратегію самостійно. Перед кожною наступною дією звіряйся з Project instructions, фактичним GitHub/runtime evidence і останнім durable checkpoint. Не повторюй завершене."
+      "planAnchor": "Виконуй лише затверджений план цього ChatGPT Project. Не змінюй продуктову стратегію самостійно. Перед кожною наступною дією звіряйся з Project instructions, фактичним GitHub/runtime evidence і останнім durable checkpoint. Не повторюй завершене.",
+      "chatDiscovery": {
+        "enabled": false,
+        "autoAdopt": false,
+        "intervalSeconds": 300,
+        "includeTitlePatterns": ["Example Project"]
+      }
     },
     {
       "id": "example-codex-project",

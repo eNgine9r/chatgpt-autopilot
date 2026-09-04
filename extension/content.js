@@ -163,6 +163,45 @@
     return Boolean(first(SELECTORS.stop));
   }
 
+  function canonicalProjectSegment(value) {
+    const match = String(value || "").match(/^(g-p-[a-f0-9]{32})(?:-[^/]+)?$/i);
+    return match?.[1] || String(value || "");
+  }
+
+  function projectIdFromRootUrl(raw) {
+    try {
+      const url = new URL(raw);
+      const match = url.pathname.replace(/\/+$/, "").match(/^\/g\/([^/]+)(?:\/project)?$/);
+      return match ? canonicalProjectSegment(match[1]) : "";
+    } catch { return ""; }
+  }
+
+  function projectIdFromCandidateUrl(raw) {
+    try {
+      const url = new URL(raw, location.origin);
+      const match = url.pathname.replace(/\/+$/, "").match(/^\/g\/([^/]+)\/c\/[^/]+$/);
+      return match ? canonicalProjectSegment(match[1]) : "";
+    } catch { return ""; }
+  }
+
+  function discoveryCandidates(projectRootUrl) {
+    const rootId = projectIdFromRootUrl(projectRootUrl);
+    if (!rootId) return [];
+    const seen = new Set();
+    const candidates = [];
+    for (const anchor of document.querySelectorAll('a[href*="/c/"]')) {
+      const url = new URL(anchor.getAttribute("href") || "", location.origin);
+      const normalized = `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+      if (projectIdFromCandidateUrl(normalized) !== rootId || seen.has(normalized)) continue;
+      seen.add(normalized);
+      const surface = String(anchor.innerText || anchor.textContent || "").replace(/\s+/g, " ").trim();
+      const title = surface.split(" · ")[0].trim().slice(0, 300);
+      candidates.push({ url: normalized, title, preview: surface.slice(0, 800) });
+      if (candidates.length >= 40) break;
+    }
+    return candidates;
+  }
+
   function capacitySurfaceText() {
     const nodes = document.querySelectorAll(
       '[role="alert"], [aria-live="assertive"], [aria-live="polite"], [data-testid*="toast"]'
@@ -251,6 +290,7 @@
       lastProgressAt: 0,
       lastRestartGeneration: 0,
       lastControlRolloverGeneration: 0,
+      lastAdoptGeneration: 0,
       operatorPaused: false,
       lastStatus: "armed"
     };
@@ -454,6 +494,21 @@
         return;
       }
 
+      const adoptGeneration = Number(project.control?.adoptGeneration || 0);
+      if (adoptGeneration > Number(state.lastAdoptGeneration || 0)) {
+        if (generating) {
+          await saveState({ lastStatus: "operator_adopt_waiting" });
+          return;
+        }
+        const adopted = await message({ type: "ADOPT_CANDIDATE", projectId: project.id });
+        if (adopted?.ok) {
+          await saveState({ lastAdoptGeneration: adoptGeneration, lastStatus: "chat_adopted" });
+        } else {
+          await saveState({ lastStatus: "chat_adopt_failed" });
+        }
+        return;
+      }
+
       if (project.control?.paused) {
         if (!state.operatorPaused || state.lastStatus !== "operator_paused") {
           await saveState({ operatorPaused: true, failures: 0, watchdogAt: 0, watchdogNotified: false, lastStatus: "operator_paused" });
@@ -606,6 +661,14 @@
   chrome.runtime.onMessage.addListener((payload, _sender, sendResponse) => {
     if (payload?.type === "PULSE") {
       inspect();
+      return false;
+    }
+    if (payload?.type === "GET_RUNTIME_STATUS") {
+      sendResponse({ ok: true, generating: isGenerating(), projectId: project?.id || "", url: Policy.normalizeChatUrl(location.href) });
+      return false;
+    }
+    if (payload?.type === "DISCOVERY_SCAN") {
+      sendResponse({ ok: true, candidates: discoveryCandidates(String(payload.projectRootUrl || "")) });
       return false;
     }
     if (payload?.type === "ROLLOVER_SEND") {
