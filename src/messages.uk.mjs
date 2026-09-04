@@ -3,7 +3,7 @@ export const TELEGRAM_TEST_MESSAGE = "✅ ChatGPT Autopilot: сповіщенн�
 export const TELEGRAM_BOT_PROFILE_UK = Object.freeze({
   name: "Autopilot — помічник розробки",
   shortDescription: "Автоматично продовжує роботу в ChatGPT та сповіщає, коли потрібна ваша дія.",
-  description: "Autopilot працює у фоновому режимі на Raspberry Pi, автоматично продовжує вибрані чати ChatGPT і надсилає сповіщення, коли потрібне ваше втручання. Бот використовується лише для сповіщень і не виконує віддалених команд."
+  description: "Autopilot працює у фоновому режимі на Raspberry Pi, продовжує вибрані ChatGPT Projects, контролює зависання та rollover. Через захищений Mini App власник може переглядати статуси, ставити проєкт на паузу, відновлювати та перезапускати Autopilot."
 });
 
 export function telegramEventMessage(project, event) {

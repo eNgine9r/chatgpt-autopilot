@@ -11,6 +11,8 @@ import { buildStartupPlan } from "./startup.mjs";
 import { buildChromiumEnvironment, chromiumPlatformArgs } from "./chromium-session.mjs";
 import { waitForStartupReadiness } from "./connect-preflight.mjs";
 import { listOwnedGcrPrompterPids, watchAndDismissNewGcrPrompters } from "./keyring-prompt.mjs";
+import { ProjectRuntimeStore } from "./runtime-store.mjs";
+import { createControlServer } from "./control-server.mjs";
 
 loadDotEnv();
 const config = loadRuntimeConfig();
@@ -27,7 +29,7 @@ const enabled = projects.filter((project) => project.enabled && project.backend 
 if (!enabled.length) throw new Error("No enabled projects in config/projects.json");
 const startupPlan = buildStartupPlan(enabled, config.projectStartupStaggerSeconds);
 
-for (const dir of [config.browserProfileDir, config.logDir]) {
+for (const dir of [config.browserProfileDir, config.logDir, config.stateDir]) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
@@ -43,7 +45,8 @@ const notifier = new TelegramNotifier({
   logger
 });
 
-const progressWatchdog = new SupervisorProgressWatchdog({ projects: enabled, notifier, logger });
+const runtimeStore = new ProjectRuntimeStore({ stateDir: config.stateDir, projects: enabled });
+const progressWatchdog = new SupervisorProgressWatchdog({ projects: enabled, notifier, logger, runtimeStore });
 const bridge = await createBridgeServer({
   host: config.bridgeHost,
   port: config.bridgePort,
@@ -51,8 +54,26 @@ const bridge = await createBridgeServer({
   projectsFile: config.projectsFile,
   notifier,
   logger,
-  progressWatchdog
+  progressWatchdog,
+  runtimeStore
 });
+
+let controlServer = null;
+if (config.telegramBotToken && config.telegramOwnerUserId) {
+  controlServer = await createControlServer({
+    host: config.controlHost,
+    port: config.controlPort,
+    projects: enabled,
+    runtimeStore,
+    progressWatchdog,
+    logger,
+    telegramBotToken: config.telegramBotToken,
+    telegramOwnerUserId: config.telegramOwnerUserId,
+    miniappDir: config.miniappDir,
+    onServiceRestart: () => shutdown("control_restart", 1)
+  });
+  logger.info("control_server_started", { host: config.controlHost, port: config.controlPort });
+}
 
 const progressWatchdogTimer = setInterval(() => {
   progressWatchdog.check().catch((error) => {
@@ -149,6 +170,7 @@ async function shutdown(signal, exitCode = 0) {
   clearInterval(progressWatchdogTimer);
   logger.info("shutdown", { signal });
   await new Promise((resolve) => bridge.close(resolve));
+  if (controlServer) await new Promise((resolve) => controlServer.close(resolve));
   if (browser.exitCode == null) {
     browser.kill("SIGTERM");
     setTimeout(() => {
@@ -169,6 +191,7 @@ browser.on("exit", async (code, signal) => {
   logger.error("chromium_exited", { code, signal });
   await notifier.send(`🔴 ChatGPT Autopilot: Chromium exited unexpectedly (${code ?? signal ?? "unknown"}).`);
   await new Promise((resolve) => bridge.close(resolve));
+  if (controlServer) await new Promise((resolve) => controlServer.close(resolve));
   process.exit(1);
 });
 

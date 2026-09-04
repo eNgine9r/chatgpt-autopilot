@@ -1,8 +1,9 @@
 export class SupervisorProgressWatchdog {
-  constructor({ projects, notifier, logger, now = () => Date.now() }) {
+  constructor({ projects, notifier, logger, runtimeStore = null, now = () => Date.now() }) {
     this.projects = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
     this.notifier = notifier;
     this.logger = logger;
+    this.runtimeStore = runtimeStore;
     this.now = now;
     this.startedAt = now();
     this.records = new Map();
@@ -48,6 +49,9 @@ export class SupervisorProgressWatchdog {
   async notifyStall(projectId, reason = "no_progress") {
     const project = this.projects.get(projectId);
     if (!project) return { ok: false, delivered: false, error: "unknown_project" };
+    if (this.runtimeStore?.control(projectId)?.paused) {
+      return { ok: true, delivered: false, suppressed: true, paused: true };
+    }
     if (project.watchdogEnabled === false) {
       return { ok: true, delivered: false, suppressed: true, disabled: true };
     }
@@ -67,10 +71,15 @@ export class SupervisorProgressWatchdog {
     return { ok: true, delivered, suppressed: false };
   }
 
+  snapshot(projectId) {
+    const record = this.record(projectId);
+    return { ...record, startedAt: this.startedAt };
+  }
+
   async check() {
     const at = this.now();
     for (const [projectId, project] of this.projects) {
-      if (project.watchdogEnabled === false) continue;
+      if (project.watchdogEnabled === false || this.runtimeStore?.control(projectId)?.paused) continue;
       const threshold = this.thresholdMs(project);
       const record = this.record(projectId);
       if (!record.lastSeenAt) {
