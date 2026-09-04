@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { composeContinuationPrompt, planAnchorBlock } from "./prompt-compose.mjs";
+import { composeContinuationPrompt, composeRolloverPrompt } from "./prompt-compose.mjs";
 
 export function resolveFromCwd(value) {
   return path.resolve(process.cwd(), value);
@@ -179,6 +179,42 @@ export function loadProjects(projectsFile) {
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
     const planAnchor = String(project.planAnchor || "").trim();
     const planVersion = String(project.planVersion || "v1").trim().slice(0, 64) || "v1";
+    const checkpointRaw = project.checkpointLedger || {};
+    const evidenceRaw = checkpointRaw.evidence || {};
+    const githubEvidenceRaw = evidenceRaw.github || {};
+    const checkpointLedger = {
+      enabled: backend === "browser" && checkpointRaw.enabled === true,
+      evidenceCheckSeconds: Number(checkpointRaw.evidenceCheckSeconds ?? 120),
+      evidence: {
+        repoPath: String(evidenceRaw.repoPath || "").trim(),
+        requireCleanWorktree: evidenceRaw.requireCleanWorktree === true,
+        requireHeadAdvanceFrom: String(evidenceRaw.requireHeadAdvanceFrom || "").trim().slice(0, 128),
+        github: {
+          repository: String(githubEvidenceRaw.repository || "").trim().slice(0, 256),
+          requireMergedPr: githubEvidenceRaw.requireMergedPr === true,
+          matchLocalHead: githubEvidenceRaw.matchLocalHead === true
+        }
+      }
+    };
+    if (!Number.isFinite(checkpointLedger.evidenceCheckSeconds) || checkpointLedger.evidenceCheckSeconds < 30 || checkpointLedger.evidenceCheckSeconds > 3600) {
+      throw new Error(`${project.id}: checkpointLedger.evidenceCheckSeconds must be between 30 and 3600`);
+    }
+    if (checkpointLedger.evidence.repoPath && !path.isAbsolute(checkpointLedger.evidence.repoPath)) {
+      throw new Error(`${project.id}: checkpointLedger.evidence.repoPath must be absolute`);
+    }
+    if (checkpointLedger.evidence.requireHeadAdvanceFrom && !checkpointLedger.evidence.repoPath) {
+      throw new Error(`${project.id}: requireHeadAdvanceFrom requires repoPath`);
+    }
+    if (checkpointLedger.evidence.requireHeadAdvanceFrom && !/^[a-f0-9]{7,64}$/i.test(checkpointLedger.evidence.requireHeadAdvanceFrom)) {
+      throw new Error(`${project.id}: requireHeadAdvanceFrom must be a commit SHA`);
+    }
+    if (checkpointLedger.evidence.github.matchLocalHead && !checkpointLedger.evidence.repoPath) {
+      throw new Error(`${project.id}: matchLocalHead requires repoPath`);
+    }
+    if (checkpointLedger.evidence.github.requireMergedPr && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(checkpointLedger.evidence.github.repository)) {
+      throw new Error(`${project.id}: requireMergedPr requires github.repository owner/name`);
+    }
+
     const recoveryRaw = project.browserRecovery || {};
     const browserRecovery = {
       enabled: backend === "browser" && recoveryRaw.enabled === true,
@@ -242,6 +278,7 @@ export function loadProjects(projectsFile) {
       planVersion,
       chatDiscovery,
       browserRecovery,
+      checkpointLedger,
       startImmediately: project.startImmediately === true,
       autoRollover,
       projectRootUrl,
@@ -259,11 +296,21 @@ export function publicProjects(projects, runtimeStore = null) {
         ...project,
         codex: undefined,
         continuationPrompt: composeContinuationPrompt(project),
-        rolloverPrompt: `${project.rolloverPrompt}${planAnchorBlock(project)}`.slice(0, 15000),
+        rolloverPrompt: composeRolloverPrompt(project, "", snapshot),
         control: snapshot?.control || { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
         runtimeCheckpoint: snapshot?.runtime || null,
         discovery: snapshot?.discovery || null,
-        recovery: snapshot?.recovery || null
+        recovery: snapshot?.recovery || null,
+        checkpointLedger: {
+          enabled: project.checkpointLedger?.enabled === true,
+          evidenceCheckSeconds: Number(project.checkpointLedger?.evidenceCheckSeconds || 120),
+          evidenceConfigured: Boolean(
+            project.checkpointLedger?.evidence?.requireCleanWorktree
+            || project.checkpointLedger?.evidence?.requireHeadAdvanceFrom
+            || project.checkpointLedger?.evidence?.github?.requireMergedPr
+          )
+        },
+        checkpoint: snapshot?.checkpoint || null
       };
     });
 }

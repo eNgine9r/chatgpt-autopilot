@@ -23,3 +23,16 @@ test("rollover composes plan anchor, checkpoint and bounded tail", () => {
   assert.match(prompt, /done A, next B/);
   assert.match(prompt, /last conversation/);
 });
+
+test("checkpoint-enabled continuation and rollover preserve structured project state", () => {
+  const checkpointProject={...project,checkpointLedger:{enabled:true}};
+  const continuation=composeContinuationPrompt(checkpointProject);
+  assert.match(continuation,/AUTOPILOT CHECKPOINT CONTRACT/);
+  const prompt=composeRolloverPrompt(checkpointProject,"tail",{
+    checkpoint:{fingerprint:"fp",planVersion:"2026-09-04",goal:"Finish Autopilot v2",currentTask:"Issue 64",completed:["#62","#63"],decisions:["fail closed"],evidence:["PR #67"],blockers:[],nextAction:"test #64",doNotRepeat:["redo #62"],stage:"active",completionStatus:"active"}
+  });
+  assert.match(prompt,/DURABLE PROJECT CHECKPOINT/);
+  assert.match(prompt,/Finish Autopilot v2/);
+  assert.match(prompt,/redo #62/);
+  assert.match(prompt,/AUTOPILOT CHECKPOINT CONTRACT/);
+});

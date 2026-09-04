@@ -3,6 +3,8 @@ import { publicProjects, normalizeChatUrl, sameProjectChatUrl } from "./config.m
 import { persistProjectChatUrl } from "./project-store.mjs";
 import { telegramEventMessage } from "./messages.uk.mjs";
 import { candidateEligibility, selectDiscoveryCandidate, selectManualDiscoveryCandidate } from "./chat-discovery.mjs";
+import { normalizeCheckpoint, checkpointFingerprint, checkpointDisplayStatus } from "./checkpoint-ledger.mjs";
+import { verifyProjectEvidence, evidenceConfigured } from "./evidence-verifier.mjs";
 
 export const ALLOWED_EVENTS = new Set([
   "USER_ACTION_REQUIRED",
@@ -45,7 +47,8 @@ function json(res, status, body) {
 }
 
 export function createBridgeServer({
-  host, port, projects, projectsFile, notifier, logger, progressWatchdog = null, runtimeStore = null, onBrowserRestart = null
+  host, port, projects, projectsFile, notifier, logger, progressWatchdog = null, runtimeStore = null,
+  onBrowserRestart = null, evidenceVerifier = verifyProjectEvidence
 }) {
   const projectById = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
 
@@ -64,9 +67,10 @@ export function createBridgeServer({
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
           return json(res, 415, { error: "application_json_required" });
         }
-        const payload = await readJson(req);
+        const payload = await readJson(req, 32768);
         const projectId = String(payload.projectId || "");
-        if (!projectById.has(projectId)) return json(res, 404, { error: "unknown_project" });
+        const project = projectById.get(projectId);
+        if (!project) return json(res, 404, { error: "unknown_project" });
         if (!progressWatchdog) return json(res, 503, { error: "watchdog_unavailable" });
         const detail = {
           progressKey: String(payload.progressKey || ""),
@@ -78,7 +82,31 @@ export function createBridgeServer({
         };
         const result = progressWatchdog.observe(projectId, detail);
         runtimeStore?.observe(projectId, detail);
-        return json(res, 200, result);
+        let checkpointStatus = null;
+        if (runtimeStore && project.checkpointLedger?.enabled === true && payload.checkpoint) {
+          try {
+            const normalized = normalizeCheckpoint(payload.checkpoint, { planVersion: project.planVersion || "v1" });
+            const fingerprint = checkpointFingerprint(normalized);
+            const current = runtimeStore.snapshot(projectId).checkpoint || {};
+            const same = fingerprint === current.fingerprint;
+            const checkMs = Number(project.checkpointLedger.evidenceCheckSeconds || 120) * 1000;
+            const dueEvidence = normalized.stage === "complete" && (!same || Date.now() - Number(current.evidenceHealth?.checkedAt || 0) >= checkMs);
+            let evidenceHealth = current.evidenceHealth || null;
+            if (dueEvidence) evidenceHealth = await evidenceVerifier(project, normalized);
+            else if (!same) evidenceHealth = {
+              configured: evidenceConfigured(project.checkpointLedger.evidence), ok: false, checkedAt: 0, reasons: [], localGit: null, github: null
+            };
+            const completionStatus = checkpointDisplayStatus({ ...normalized, fingerprint }, evidenceHealth);
+            const recorded = same
+              ? (dueEvidence ? runtimeStore.updateCheckpointEvidence(projectId, evidenceHealth, completionStatus) : { state: runtimeStore.snapshot(projectId), changed: false })
+              : runtimeStore.recordCheckpoint(projectId, normalized, { fingerprint, sourceTurnId: detail.lastTurnId, completionStatus, evidenceHealth });
+            checkpointStatus = recorded.state.checkpoint.completionStatus;
+            if (recorded.changed) logger.info("checkpoint_updated", { project: project.name, revision: recorded.state.checkpoint.revision, completionStatus });
+          } catch (error) {
+            logger.info("checkpoint_rejected", { project: project.name, error: String(error?.message || error) });
+          }
+        }
+        return json(res, 200, { ...result, checkpointStatus });
       }
       if (req.method === "POST" && req.url === "/event") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {

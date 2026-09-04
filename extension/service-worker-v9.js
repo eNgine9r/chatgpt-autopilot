@@ -1,4 +1,4 @@
-importScripts("lease-policy.js", "discovery-policy.js", "recovery-policy.js");
+importScripts("lease-policy.js", "discovery-policy.js", "recovery-policy.js", "rollover-policy.js");
 const BRIDGE = "http://127.0.0.1:8765";
 const PULSE_ALARM = "autopilot-pulse";
 const MONITOR_STARTED_KEY = "monitor:startedAt";
@@ -442,15 +442,7 @@ async function startRollover(message, sender) {
   }
 
   const handoff = String(message.handoff || "").slice(-12000);
-  const checkpoint = project.runtimeCheckpoint || {};
-  const checkpointText = [
-    "=== DURABLE CHECKPOINT ===",
-    `Last status: ${checkpoint.status || "unknown"}`,
-    checkpoint.latestUserExcerpt ? `Latest user: ${checkpoint.latestUserExcerpt}` : "",
-    checkpoint.latestAssistantExcerpt ? `Latest assistant: ${checkpoint.latestAssistantExcerpt}` : "",
-    "=== END CHECKPOINT ==="
-  ].filter(Boolean).join("\n");
-  const prompt = `${project.rolloverPrompt}\n\n${checkpointText}\n\n=== BOUNDED CHAT TAIL ===\n${handoff}\n=== END CHAT TAIL ===`.slice(0, 20000);
+  const prompt = AutopilotRolloverPolicy.composeHandoff({ preamble: project.rolloverPrompt, handoff });
   const key = `${ROLLOVER_PREFIX}${projectId}`;
   await chrome.storage.session.set({
     [key]: {
@@ -658,7 +650,8 @@ async function handleMessage(message, sender) {
         lastTurnRole: message.lastTurnRole,
         lastTurnId: message.lastTurnId,
         latestAssistantExcerpt: message.latestAssistantExcerpt,
-        latestUserExcerpt: message.latestUserExcerpt
+        latestUserExcerpt: message.latestUserExcerpt,
+        checkpoint: message.checkpoint || null
       })) };
     case "ROLLOVER":
       return startRollover(message, sender);

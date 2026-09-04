@@ -158,3 +158,23 @@ test("rejects unsafe browser recovery heartbeat windows", () => {
   assert.throws(() => loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:30 } }])), /browserRecovery.staleHeartbeatSeconds/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:4000 } }])), /browserRecovery.staleHeartbeatSeconds/);
 });
+
+test("normalizes checkpoint ledger and keeps evidence hooks private", () => {
+  const loaded=loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidenceCheckSeconds:90,evidence:{repoPath:"/repo",requireCleanWorktree:true,github:{repository:"eNgine9r/chatgpt-autopilot",requireMergedPr:true}}}}]));
+  assert.equal(loaded[0].checkpointLedger.enabled,true);
+  assert.equal(loaded[0].checkpointLedger.evidenceCheckSeconds,90);
+  assert.equal(loaded[0].checkpointLedger.evidence.repoPath,"/repo");
+  const publicProject=publicProjects(loaded)[0];
+  assert.equal(publicProject.checkpointLedger.enabled,true);
+  assert.equal(publicProject.checkpointLedger.evidenceConfigured,true);
+  assert.equal(publicProject.checkpointLedger.evidence,undefined);
+});
+
+test("rejects unsafe checkpoint evidence configuration", () => {
+  assert.throws(()=>loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidenceCheckSeconds:10}}])),/evidenceCheckSeconds/);
+  assert.throws(()=>loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidence:{repoPath:"relative/repo",requireCleanWorktree:true}}}])),/repoPath must be absolute/);
+  assert.throws(()=>loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidence:{requireHeadAdvanceFrom:"abc"}}}])),/requires repoPath/);
+  assert.throws(()=>loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidence:{repoPath:"/repo",requireHeadAdvanceFrom:"--help"}}}])),/commit SHA/);
+  assert.throws(()=>loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidence:{github:{repository:"eNgine9r/chatgpt-autopilot",requireMergedPr:true,matchLocalHead:true}}}}])),/matchLocalHead requires repoPath/);
+  assert.throws(()=>loadProjects(tempConfig([{...project,checkpointLedger:{enabled:true,evidence:{github:{repository:"bad",requireMergedPr:true}}}}])),/github.repository/);
+});
