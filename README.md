@@ -214,6 +214,31 @@ Browser self-healing is an explicit per-project opt-in via `browserRecovery.enab
 
 Manual or automatic adoption preserves the same project ID, Plan Anchor and durable checkpoint. The selected URL is persisted atomically to local `config/projects.json`, and Telegram receives a rebind event.
 
+### Structured checkpoint ledger and evidence-aware completion
+
+`checkpointLedger.enabled` makes every continuation/rollover carry a compact machine checkpoint contract. The accepted durable ledger contains `goal`, `completed`, `currentTask`, `decisions`, `evidence`, `blockers`, `nextAction`, `doNotRepeat`, `planVersion`, stage and optional `githubPr`. Unchanged fingerprints do not create new revisions. A checkpoint with a different `planVersion` is rejected instead of replacing the approved project state.
+
+Completion status is deliberately conservative: `active`, `complete_claimed`, `complete_pending_evidence`, or `complete_verified`. Assistant prose alone never becomes `complete_verified`. When evidence requirements are configured, Autopilot periodically rechecks them until they pass. Local Git checks use read-only `git rev-parse`, `git status` and `git merge-base`; optional GitHub PR verification uses read-only `gh pr view`. No commit, push, merge, product write, trading action or hardware write is performed by the verifier.
+
+```json
+"checkpointLedger": {
+  "enabled": true,
+  "evidenceCheckSeconds": 120,
+  "evidence": {
+    "repoPath": "/absolute/path/to/repo",
+    "requireCleanWorktree": true,
+    "requireHeadAdvanceFrom": "BASELINE_SHA",
+    "github": {
+      "repository": "owner/repo",
+      "requireMergedPr": true,
+      "matchLocalHead": false
+    }
+  }
+}
+```
+
+The Telegram Mini App shows the current checkpoint revision, goal/current task/next action, blockers, completion status and evidence health. Evidence paths and repository verification settings stay server-side and are not exposed to the browser extension.
+
 For Telegram deployment, expose only the control plane through an HTTPS reverse proxy or Tailscale Funnel, set `TELEGRAM_MINIAPP_URL`, then run:
 
 ```bash

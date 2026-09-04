@@ -33,6 +33,7 @@
       ],
       "js": [
         "policy.js",
+        "checkpoint-policy.js",
         "content.js",
         "session-watch.js"
       ],

@@ -16,6 +16,15 @@ async function api(path, options={}) {
   const r=await fetch(path,{...options,headers:{...headers(),...(options.headers||{})}});
   const j=await r.json(); if(!r.ok) throw new Error(j.error||`HTTP ${r.status}`); return j;
 }
+function checkpointBlock(p) {
+  if (!p.checkpointLedger?.enabled) return "";
+  const c=p.state.checkpoint||{};
+  if(!c.fingerprint) return `<div class="checkpoint"><b>Project checkpoint:</b> ще не отримано.</div>`;
+  const ev=c.evidenceHealth||{};
+  const evidenceLabel=!ev.configured?'не налаштовано':(ev.ok?'✅ verified':`⚠ ${esc((ev.reasons||[]).join(', ')||'pending')}`);
+  const blockers=(c.blockers||[]).length?`<br><small><b>Blockers:</b> ${esc(c.blockers.join(' • '))}</small>`:"";
+  return `<div class="checkpoint"><b>Checkpoint #${Number(c.revision||0)} • ${esc(c.completionStatus||c.stage||'active')}</b><br><b>Ціль:</b> ${esc(c.goal||'—')}<br><b>Поточна задача:</b> ${esc(c.currentTask||'—')}<br><b>Далі:</b> ${esc(c.nextAction||'—')}<br><small>Evidence: ${evidenceLabel} • оновлено ${ago(c.updatedAt)}</small>${blockers}</div>`;
+}
 function recoveryBlock(p) {
   if (!p.browserRecovery?.enabled) return "";
   const r=p.state.recovery||{}; const stage=r.stage||"idle";
@@ -32,7 +41,7 @@ function discoveryBlock(p) {
 function card(p) {
   const [label,kind]=stateLabel(p); const paused=p.state.control.paused;
   const excerpt=p.state.runtime.latestAssistantExcerpt||"Ще немає checkpoint від активної вкладки.";
-  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div></div><a href="${esc(p.chatUrl)}">Відкрити чат ↗</a></div><div class="meta"><div>Останній heartbeat<b>${ago(p.state.runtime.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state.runtime.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}">${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart">↻ Вкладка</button><button data-id="${p.id}" data-action="rollover">＋ Новий чат</button></div>${recoveryBlock(p)}${discoveryBlock(p)}</article>`;
+  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div></div><a href="${esc(p.chatUrl)}">Відкрити чат ↗</a></div><div class="meta"><div>Останній heartbeat<b>${ago(p.state.runtime.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state.runtime.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}">${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart">↻ Вкладка</button><button data-id="${p.id}" data-action="rollover">＋ Новий чат</button></div>${checkpointBlock(p)}${recoveryBlock(p)}${discoveryBlock(p)}</article>`;
 }
 async function load() {
   try {

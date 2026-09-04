@@ -25,12 +25,28 @@
         "enabled": false,
         "autoAdopt": false,
         "intervalSeconds": 300,
-        "includeTitlePatterns": ["Example Project"]
+        "includeTitlePatterns": [
+          "Example Project"
+        ]
       },
       "browserRecovery": {
         "enabled": false,
         "staleHeartbeatSeconds": 90,
         "allowSessionRestart": false
+      },
+      "checkpointLedger": {
+        "enabled": false,
+        "evidenceCheckSeconds": 120,
+        "evidence": {
+          "repoPath": "",
+          "requireCleanWorktree": false,
+          "requireHeadAdvanceFrom": "",
+          "github": {
+            "repository": "",
+            "requireMergedPr": false,
+            "matchLocalHead": false
+          }
+        }
       }
     },
     {

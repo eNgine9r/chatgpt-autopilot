@@ -152,7 +152,8 @@
     for (const turn of turns) {
       const role = turn.getAttribute("data-turn") || "unknown";
       if (role !== "user" && role !== "assistant") continue;
-      const text = await turnText(turn, role);
+      const rawText = await turnText(turn, role);
+      const text = role === "assistant" ? (globalThis.AutopilotCheckpointPolicy?.strip?.(rawText) || rawText) : rawText;
       if (!text || Policy.isConversationCapacityReached(text)) continue;
       parts.push(`${role === "user" ? "КОРИСТУВАЧ" : "АСИСТЕНТ"}:\n${text.slice(0, 3500)}`);
     }
@@ -261,6 +262,9 @@
     if (progressKey === lastHeartbeatKey && now - lastHeartbeatAt < 15000) return;
     lastHeartbeatKey = progressKey;
     lastHeartbeatAt = now;
+    const checkpoint = project.checkpointLedger?.enabled === true && latest?.role === "assistant"
+      ? globalThis.AutopilotCheckpointPolicy?.parse?.(latest.text || "") || null
+      : null;
     await message({
       type: "HEARTBEAT",
       projectId: project.id,
@@ -268,8 +272,11 @@
       status,
       lastTurnRole: latest?.role || "",
       lastTurnId: latest?.turnId || "",
-      latestAssistantExcerpt: latest?.role === "assistant" ? String(latest.text || "").slice(-3000) : "",
-      latestUserExcerpt: latest?.role === "user" ? String(latest.text || "").slice(-2000) : ""
+      latestAssistantExcerpt: latest?.role === "assistant"
+        ? String(globalThis.AutopilotCheckpointPolicy?.strip?.(latest.text || "") || latest.text || "").slice(-3000)
+        : "",
+      latestUserExcerpt: latest?.role === "user" ? String(latest.text || "").slice(-2000) : "",
+      checkpoint
     });
   }
 

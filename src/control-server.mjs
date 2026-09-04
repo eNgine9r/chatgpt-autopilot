@@ -63,6 +63,15 @@ export function createControlServer({
         planVersion: project.planVersion,
         chatDiscovery: project.chatDiscovery || { enabled: false, autoAdopt: false },
         browserRecovery: project.browserRecovery || { enabled: false, allowSessionRestart: false },
+        checkpointLedger: {
+          enabled: project.checkpointLedger?.enabled === true,
+          evidenceCheckSeconds: Number(project.checkpointLedger?.evidenceCheckSeconds || 120),
+          evidenceConfigured: Boolean(
+            project.checkpointLedger?.evidence?.requireCleanWorktree
+            || project.checkpointLedger?.evidence?.requireHeadAdvanceFrom
+            || project.checkpointLedger?.evidence?.github?.requireMergedPr
+          )
+        },
         state: runtimeStore.snapshot(project.id),
         watchdog: progressWatchdog?.snapshot?.(project.id) || null
       }))

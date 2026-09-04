@@ -32,6 +32,12 @@ export class ProjectRuntimeStore {
         stage: "idle", reason: "", attempts: 0, softReloads: 0, tabRecreates: 0, browserRestarts: 0,
         lastAttemptAt: 0, nextCheckAt: 0, cooldownUntil: 0, lastRecoveredAt: 0, alerted: false, lastError: ""
       },
+      checkpoint: {
+        revision: 0, fingerprint: "", planVersion: "", goal: "", completed: [], currentTask: "", decisions: [],
+        evidence: [], blockers: [], nextAction: "", doNotRepeat: [], stage: "active", githubPr: 0,
+        sourceTurnId: "", updatedAt: 0, completionStatus: "missing",
+        evidenceHealth: { configured: false, ok: false, checkedAt: 0, reasons: [], localGit: null, github: null }
+      },
       updatedAt: 0
     };
   }
@@ -44,7 +50,10 @@ export class ProjectRuntimeStore {
         control: { ...this.empty(projectId).control, ...(parsed.control || {}) },
         runtime: { ...this.empty(projectId).runtime, ...(parsed.runtime || {}) },
         discovery: { ...this.empty(projectId).discovery, ...(parsed.discovery || {}) },
-        recovery: { ...this.empty(projectId).recovery, ...(parsed.recovery || {}) }
+        recovery: { ...this.empty(projectId).recovery, ...(parsed.recovery || {}) },
+        checkpoint: { ...this.empty(projectId).checkpoint, ...(parsed.checkpoint || {}),
+          evidenceHealth: { ...this.empty(projectId).checkpoint.evidenceHealth, ...(parsed.checkpoint?.evidenceHealth || {}) }
+        }
       };
     } catch (error) {
       if (error?.code === "ENOENT") return this.empty(projectId);
@@ -134,6 +143,36 @@ export class ProjectRuntimeStore {
       recovery: { ...this.empty(projectId).recovery, lastRecoveredAt: this.now() },
       updatedAt: this.now()
     });
+  }
+
+
+  recordCheckpoint(projectId, checkpoint, { fingerprint, sourceTurnId = "", completionStatus = "active", evidenceHealth = null } = {}) {
+    const current = this.read(projectId);
+    if (!fingerprint || fingerprint === current.checkpoint.fingerprint) return { state: current, changed: false };
+    const at = this.now();
+    const nextCheckpoint = {
+      ...current.checkpoint, ...checkpoint, fingerprint: String(fingerprint).slice(0, 64),
+      revision: Number(current.checkpoint.revision || 0) + 1, sourceTurnId: String(sourceTurnId || "").slice(0, 256),
+      updatedAt: at, completionStatus: String(completionStatus || "active").slice(0, 64),
+      evidenceHealth: evidenceHealth ? { ...current.checkpoint.evidenceHealth, ...evidenceHealth } : current.checkpoint.evidenceHealth
+    };
+    const state = this.write(projectId, { ...current, checkpoint: nextCheckpoint, updatedAt: at });
+    return { state, changed: true };
+  }
+
+  updateCheckpointEvidence(projectId, evidenceHealth, completionStatus) {
+    const current = this.read(projectId);
+    if (!current.checkpoint.fingerprint) return { state: current, changed: false };
+    const at = this.now();
+    const next = {
+      ...current,
+      checkpoint: {
+        ...current.checkpoint, completionStatus: String(completionStatus || current.checkpoint.completionStatus).slice(0, 64),
+        evidenceHealth: { ...current.checkpoint.evidenceHealth, ...(evidenceHealth || {}) }
+      },
+      updatedAt: at
+    };
+    return { state: this.write(projectId, next), changed: true };
   }
 
   control(projectId) { return this.read(projectId).control; }
