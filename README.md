@@ -193,6 +193,16 @@ Supported Mini App actions are per-project pause/resume, safe tab restart, force
 
 Browser projects can optionally enable `chatDiscovery`. Autopilot scans only the configured ChatGPT Project root, rejects global or cross-Project conversations, and never switches chats while the assistant is generating. Automatic adoption requires either a configured `includeTitlePatterns` match or an explicit `[AUTOPILOT]` marker in the candidate surface. A same-Project candidate without an automatic signal is shown in the Mini App for manual review/rebind.
 
+Browser self-healing is an explicit per-project opt-in via `browserRecovery.enabled`. Its bounded ladder is `soft reload → recreate affected tab → optional full Chromium restart → Telegram escalation`. Browser mutations require a proven non-generating state; unknown generation state, login/authentication surfaces, rate limits, CAPTCHA/Cloudflare and safety gates fail closed. Recovery stage, attempts and cooldown survive supervisor restarts and are visible in the Telegram Mini App. Keep `allowSessionRestart: false` during the first live rollout.
+
+```json
+"browserRecovery": {
+  "enabled": true,
+  "staleHeartbeatSeconds": 90,
+  "allowSessionRestart": false
+}
+```
+
 ```json
 "chatDiscovery": {
   "enabled": true,

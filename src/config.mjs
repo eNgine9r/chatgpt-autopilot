@@ -179,6 +179,16 @@ export function loadProjects(projectsFile) {
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
     const planAnchor = String(project.planAnchor || "").trim();
     const planVersion = String(project.planVersion || "v1").trim().slice(0, 64) || "v1";
+    const recoveryRaw = project.browserRecovery || {};
+    const browserRecovery = {
+      enabled: backend === "browser" && recoveryRaw.enabled === true,
+      staleHeartbeatSeconds: Number(recoveryRaw.staleHeartbeatSeconds ?? 90),
+      allowSessionRestart: recoveryRaw.allowSessionRestart === true
+    };
+    if (!Number.isFinite(browserRecovery.staleHeartbeatSeconds) || browserRecovery.staleHeartbeatSeconds < 60 || browserRecovery.staleHeartbeatSeconds > 3600) {
+      throw new Error(`${project.id}: browserRecovery.staleHeartbeatSeconds must be between 60 and 3600`);
+    }
+
     const discoveryRaw = project.chatDiscovery || {};
     const chatDiscovery = {
       enabled: backend === "browser" && discoveryRaw.enabled === true,
@@ -231,6 +241,7 @@ export function loadProjects(projectsFile) {
       planAnchor,
       planVersion,
       chatDiscovery,
+      browserRecovery,
       startImmediately: project.startImmediately === true,
       autoRollover,
       projectRootUrl,
@@ -251,7 +262,8 @@ export function publicProjects(projects, runtimeStore = null) {
         rolloverPrompt: `${project.rolloverPrompt}${planAnchorBlock(project)}`.slice(0, 15000),
         control: snapshot?.control || { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
         runtimeCheckpoint: snapshot?.runtime || null,
-        discovery: snapshot?.discovery || null
+        discovery: snapshot?.discovery || null,
+        recovery: snapshot?.recovery || null
       };
     });
 }

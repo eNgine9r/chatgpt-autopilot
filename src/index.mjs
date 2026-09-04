@@ -55,7 +55,11 @@ const bridge = await createBridgeServer({
   notifier,
   logger,
   progressWatchdog,
-  runtimeStore
+  runtimeStore,
+  onBrowserRestart: ({ projectId, reason }) => {
+    logger.info("browser_recovery_supervisor_restart", { projectId, reason });
+    shutdown("browser_recovery_restart", 1);
+  }
 });
 
 let controlServer = null;

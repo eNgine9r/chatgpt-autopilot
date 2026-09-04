@@ -62,6 +62,7 @@ export function createControlServer({
         chatUrl: project.chatUrl,
         planVersion: project.planVersion,
         chatDiscovery: project.chatDiscovery || { enabled: false, autoAdopt: false },
+        browserRecovery: project.browserRecovery || { enabled: false, allowSessionRestart: false },
         state: runtimeStore.snapshot(project.id),
         watchdog: progressWatchdog?.snapshot?.(project.id) || null
       }))

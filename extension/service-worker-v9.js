@@ -1,4 +1,4 @@
-importScripts("lease-policy.js", "discovery-policy.js");
+importScripts("lease-policy.js", "discovery-policy.js", "recovery-policy.js");
 const BRIDGE = "http://127.0.0.1:8765";
 const PULSE_ALARM = "autopilot-pulse";
 const MONITOR_STARTED_KEY = "monitor:startedAt";
@@ -9,6 +9,9 @@ const DISCOVERY_LAST_PREFIX = "discovery-last:";
 const STARTUP_GRACE_MS = 90000;
 const ROLLOVER_TIMEOUT_MS = 120000;
 const DISCOVERY_TIMEOUT_MS = 90000;
+const RECOVERY_GRACE_MS = 45000;
+const RECOVERY_WAIT_GENERATION_MS = 15000;
+const RECOVERY_COOLDOWN_MS = 300000;
 const LEASE_TTL_MS = 90000;
 const claimChains = new Map();
 
@@ -143,6 +146,83 @@ async function configuredProjectTab(project) {
   const target = normalizeChatUrl(project.chatUrl || "");
   const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
   return tabs.find((tab) => normalizeChatUrl(tab.url || "") === target) || null;
+}
+
+async function recoveryReport(projectId, patch) {
+  return bridge("/recovery-report", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId, ...patch })
+  });
+}
+
+async function recoveryClear(projectId) {
+  return bridge("/recovery-clear", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId })
+  });
+}
+
+async function recoveryFailed(projectId, reason, lastError = "") {
+  return bridge("/recovery-failed", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId, reason, lastError, cooldownUntil: Date.now() + RECOVERY_COOLDOWN_MS })
+  });
+}
+
+function recoveryCanMutate(status) {
+  return AutopilotRecoveryPolicy.mayMutateTab({
+    generatingKnown: Boolean(status?.generatingKnown), generating: Boolean(status?.generating),
+    authBlocked: Boolean(status?.authBlocked), rateLimited: Boolean(status?.rateLimited),
+    safetyBlocked: Boolean(status?.safetyBlocked)
+  });
+}
+
+function recoveryBlocked(status) {
+  return Boolean(status?.authBlocked || status?.rateLimited || status?.safetyBlocked);
+}
+
+async function openConfiguredTab(project) {
+  return chrome.tabs.create({ url: project.chatUrl, active: false });
+}
+
+async function startRecovery(project, { tab = null, reason = "unknown", status = null } = {}) {
+  const current = project.recovery || {};
+  const now = Date.now();
+  if (Number(current.cooldownUntil || 0) > now) return { ok: true, suppressed: true, cooldown: true };
+  if (status?.composerPresent) {
+    if (current.stage && current.stage !== "idle") await recoveryClear(project.id);
+    return { ok: true, healthy: true };
+  }
+  if (current.stage && !["idle", "failed"].includes(String(current.stage))) {
+    return { ok: true, suppressed: true, activeStage: current.stage };
+  }
+  if (recoveryBlocked(status)) return recoveryFailed(project.id, reason, "auth_rate_or_safety_gate");
+  if (status?.generating) {
+    await recoveryReport(project.id, {
+      stage: "blocked", reason, attempts: Number(current.attempts || 0),
+      nextCheckAt: now + RECOVERY_WAIT_GENERATION_MS, lastAttemptAt: now, lastError: "generation_active"
+    });
+    return { ok: true, waitingForGeneration: true };
+  }
+  const canMutate = tab ? recoveryCanMutate(status) : true;
+  const stage = AutopilotRecoveryPolicy.nextStage({ stage: "idle", tabPresent: Boolean(tab), canMutate });
+  if (stage === "blocked") return recoveryFailed(project.id, reason, "generation_state_unknown");
+  if (stage === "soft_reload") {
+    await recoveryReport(project.id, {
+      stage, reason, attempts: Number(current.attempts || 0) + 1,
+      softReloads: Number(current.softReloads || 0) + 1, lastAttemptAt: now, nextCheckAt: now + RECOVERY_GRACE_MS,
+      alerted: false, lastError: ""
+    });
+    await chrome.tabs.reload(tab.id);
+    return { ok: true, stage };
+  }
+  const created = await openConfiguredTab(project);
+  await recoveryReport(project.id, {
+    stage: "tab_recreate", reason, attempts: Number(current.attempts || 0) + 1,
+    tabRecreates: Number(current.tabRecreates || 0) + 1, lastAttemptAt: now, nextCheckAt: now + RECOVERY_GRACE_MS,
+    alerted: false, lastError: ""
+  });
+  return { ok: true, stage: "tab_recreate", tabId: created.id };
 }
 
 async function discoveryEntries() {
@@ -388,28 +468,181 @@ async function startRollover(message, sender) {
   return { ok: true };
 }
 
+async function sessionHealthSummary(projects) {
+  let enabledCount = 0;
+  let unhealthyCount = 0;
+  let activeGenerationCount = 0;
+  let unknownGenerationCount = 0;
+  for (const project of projects.filter((item) => item.enabled !== false && item.backend === "browser")) {
+    enabledCount += 1;
+    const tab = await configuredProjectTab(project);
+    if (!tab) { unhealthyCount += 1; continue; }
+    const status = await tabRuntimeStatus(tab.id);
+    if (!status?.generatingKnown) unknownGenerationCount += 1;
+    if (status?.generating) activeGenerationCount += 1;
+    if (!status?.composerPresent) unhealthyCount += 1;
+  }
+  return { enabledCount, unhealthyCount, activeGenerationCount, unknownGenerationCount };
+}
+
+async function recreateProjectTab(project, oldTab = null, recovery = {}) {
+  const created = await openConfiguredTab(project);
+  await recoveryReport(project.id, {
+    stage: "tab_recreate", reason: recovery.reason || "tab_unhealthy",
+    attempts: Number(recovery.attempts || 0) + 1, tabRecreates: Number(recovery.tabRecreates || 0) + 1,
+    softReloads: Number(recovery.softReloads || 0), browserRestarts: Number(recovery.browserRestarts || 0),
+    lastAttemptAt: Date.now(), nextCheckAt: Date.now() + RECOVERY_GRACE_MS, alerted: false, lastError: ""
+  });
+  if (Number.isInteger(oldTab?.id)) {
+    try { await chrome.tabs.remove(oldTab.id); } catch {}
+  }
+  return created;
+}
+
+async function processRecoveries() {
+  const projects = await getProjects();
+  const now = Date.now();
+  for (const project of projects) {
+    const recovery = project.recovery || {};
+    const stage = String(recovery.stage || "idle");
+    if (stage === "idle") continue;
+    const tab = await configuredProjectTab(project);
+    const status = tab ? await tabRuntimeStatus(tab.id) : null;
+    if (status?.composerPresent) {
+      const wasAlerted = Boolean(recovery.alerted);
+      await recoveryClear(project.id);
+      if (wasAlerted) await notifyBridge(project.id, "RECOVERED").catch(() => {});
+      continue;
+    }
+    if (stage === "failed") {
+      if (Number(recovery.cooldownUntil || 0) <= now) {
+        await startRecovery(project, { tab, reason: recovery.reason || "retry_after_cooldown", status });
+      }
+      continue;
+    }
+    if (Number(recovery.nextCheckAt || 0) > now) continue;
+    if (status?.generating) {
+      await recoveryReport(project.id, { ...recovery, stage: "blocked", nextCheckAt: now + RECOVERY_WAIT_GENERATION_MS, lastError: "generation_active" });
+      continue;
+    }
+    if (recoveryBlocked(status)) {
+      await recoveryFailed(project.id, recovery.reason || "session_blocked", "auth_rate_or_safety_gate");
+      continue;
+    }
+    if (stage === "blocked") {
+      if (tab && status && recoveryCanMutate(status)) {
+        await recoveryReport(project.id, { ...recovery, stage: "soft_reload", attempts: Number(recovery.attempts || 0) + 1, softReloads: Number(recovery.softReloads || 0) + 1, lastAttemptAt: now, nextCheckAt: now + RECOVERY_GRACE_MS, lastError: "" });
+        await chrome.tabs.reload(tab.id);
+      } else if (!tab) {
+        await recreateProjectTab(project, null, recovery);
+      } else {
+        await recoveryFailed(project.id, recovery.reason || "status_unknown", "generation_state_unknown");
+      }
+      continue;
+    }
+    if (stage === "soft_reload") {
+      if (!tab) { await recreateProjectTab(project, null, recovery); continue; }
+      if (!status || !recoveryCanMutate(status)) {
+        await recoveryFailed(project.id, recovery.reason || "soft_reload_failed", "unsafe_after_soft_reload");
+        continue;
+      }
+      await recreateProjectTab(project, tab, recovery);
+      continue;
+    }
+    if (stage === "tab_recreate") {
+      const health = await sessionHealthSummary(projects);
+      const restart = project.browserRecovery?.allowSessionRestart !== false
+        && AutopilotRecoveryPolicy.shouldRestartBrowser(health)
+        && Number(recovery.browserRestarts || 0) < 1;
+      if (!restart) {
+        await recoveryFailed(project.id, recovery.reason || "tab_recreate_failed", "bounded_recovery_exhausted");
+        continue;
+      }
+      await recoveryReport(project.id, { ...recovery, stage: "browser_restart", attempts: Number(recovery.attempts || 0) + 1, browserRestarts: Number(recovery.browserRestarts || 0) + 1, lastAttemptAt: now, nextCheckAt: now + STARTUP_GRACE_MS, lastError: "" });
+      await bridge("/browser-restart-request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, reason: recovery.reason || "session_unhealthy" }) });
+      return;
+    }
+    if (stage === "browser_restart") {
+      await recoveryFailed(project.id, recovery.reason || "browser_restart_failed", "browser_restart_did_not_recover");
+    }
+  }
+}
+
 async function monitorConfiguredTabs() {
   const startedAt = Number((await chrome.storage.session.get(MONITOR_STARTED_KEY))[MONITOR_STARTED_KEY] || 0);
   if (!startedAt || Date.now() - startedAt < STARTUP_GRACE_MS) return;
 
   const projects = await getProjects();
   const pending = new Set((await rolloverEntries()).map((entry) => entry.projectId));
-  const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
-  const openUrls = new Set(tabs.map((tab) => normalizeChatUrl(tab.url || "")).filter(Boolean));
+  const tabs = await chrome.tabs.query({});
+  const now = Date.now();
 
   for (const project of projects) {
     if (pending.has(project.id)) continue;
-    const key = `${MISSING_PREFIX}${project.id}`;
-    const missing = !openUrls.has(normalizeChatUrl(project.chatUrl));
-    const wasMissing = Boolean((await chrome.storage.session.get(key))[key]);
-    if (missing && !wasMissing) {
-      await chrome.storage.session.set({ [key]: true });
-      await notifyBridge(project.id, "SESSION_ATTENTION_REQUIRED");
-    } else if (!missing && wasMissing) {
-      await chrome.storage.session.remove(key);
-      await notifyBridge(project.id, "RECOVERED");
+    const tab = tabs.find((item) => normalizeChatUrl(item.url || "") === normalizeChatUrl(project.chatUrl));
+    const recoveryEnabled = project.browserRecovery?.enabled === true;
+    const authGate = tabs.some((item) => /chatgpt\.com\/(?:auth|login)(?:\/|\?|$)/i.test(String(item.url || "")));
+    const challengeGate = tabs.some((item) => /challenges\.cloudflare\.com/i.test(String(item.url || "")));
+    const heartbeatAt = Number(project.runtimeCheckpoint?.lastSeenAt || 0);
+    const staleMs = Number(project.browserRecovery?.staleHeartbeatSeconds || 90) * 1000;
+    const stale = Boolean(tab && heartbeatAt && now - heartbeatAt >= staleMs);
+    if (tab && !stale) continue;
+
+    if (recoveryEnabled && (authGate || challengeGate)) {
+      await recoveryFailed(project.id, "session_gate", authGate ? "auth_gate_detected" : "cloudflare_gate_detected");
+      continue;
     }
+    if (!recoveryEnabled) {
+      const key = `${MISSING_PREFIX}${project.id}`;
+      const already = Boolean((await chrome.storage.session.get(key))[key]);
+      if (!already) {
+        await chrome.storage.session.set({ [key]: true });
+        await notifyBridge(project.id, "SESSION_ATTENTION_REQUIRED");
+      }
+      continue;
+    }
+
+    const sameProjectOther = tabs.find((item) => {
+      const url = normalizeChatUrl(item.url || "");
+      return url !== normalizeChatUrl(project.chatUrl) && sameProjectChat(project.projectRootUrl, url);
+    });
+    if (!tab && sameProjectOther) {
+      await recoveryFailed(project.id, "configured_chat_missing", "same_project_chat_requires_rebind_review");
+      continue;
+    }
+    const status = tab ? await tabRuntimeStatus(tab.id) : null;
+    await startRecovery(project, { tab, reason: stale ? "heartbeat_stale" : "tab_missing", status });
   }
+}
+
+async function handleRecoverySignal(message, sender) {
+  const projectId = String(message.projectId || "");
+  const projects = await getProjects();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) return { ok: false, error: "unknown_project" };
+  if (project.browserRecovery?.enabled !== true) {
+    await notifyBridge(project.id, "SESSION_ATTENTION_REQUIRED");
+    return { ok: true, recoveryDisabled: true };
+  }
+  const tabId = sender.tab?.id;
+  if (!Number.isInteger(tabId)) return { ok: false, error: "invalid_sender" };
+  const sourceUrl = normalizeChatUrl(sender.tab?.url || "");
+  if (sourceUrl !== normalizeChatUrl(project.chatUrl)) return { ok: false, error: "source_not_configured_chat" };
+  const status = await tabRuntimeStatus(tabId) || {
+    ok: Boolean(message.generatingKnown), generatingKnown: Boolean(message.generatingKnown), generating: Boolean(message.generating), composerPresent: false
+  };
+  return startRecovery(project, { tab: sender.tab, reason: String(message.reason || "composer_missing"), status });
+}
+
+async function handleRecoveryHealthy(message) {
+  const projectId = String(message.projectId || "");
+  const projects = await getProjects();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) return { ok: false, error: "unknown_project" };
+  const wasAlerted = Boolean(project.recovery?.alerted);
+  await recoveryClear(project.id);
+  if (wasAlerted) await notifyBridge(project.id, "RECOVERED").catch(() => {});
+  return { ok: true };
 }
 
 async function handleMessage(message, sender) {
@@ -431,6 +664,10 @@ async function handleMessage(message, sender) {
       return startRollover(message, sender);
     case "ADOPT_CANDIDATE":
       return adoptCandidate(message, sender);
+    case "RECOVERY_SIGNAL":
+      return handleRecoverySignal(message, sender);
+    case "RECOVERY_HEALTHY":
+      return handleRecoveryHealthy(message);
     default:
       return { ok: false, error: "unsupported_message" };
   }
@@ -451,6 +688,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     chrome.tabs.sendMessage(tab.id, { type: "PULSE" }).catch(() => {});
   }
   monitorConfiguredTabs().catch(() => {});
+  processRecoveries().catch(() => {});
   processPendingRollovers().catch(() => {});
   processPendingDiscoveries().catch(() => {});
   maybeStartDiscoveryScans().catch(() => {});

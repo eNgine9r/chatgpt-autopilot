@@ -11,7 +11,8 @@ export const ALLOWED_EVENTS = new Set([
   "AUTOMATION_STALLED",
   "RECOVERED",
   "CONVERSATION_ROLLED_OVER",
-  "CHAT_ADOPTED"
+  "CHAT_ADOPTED",
+  "RECOVERY_FAILED"
 ]);
 
 export const eventMessage = telegramEventMessage;
@@ -43,7 +44,9 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-export function createBridgeServer({ host, port, projects, projectsFile, notifier, logger, progressWatchdog = null, runtimeStore = null }) {
+export function createBridgeServer({
+  host, port, projects, projectsFile, notifier, logger, progressWatchdog = null, runtimeStore = null, onBrowserRestart = null
+}) {
   const projectById = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
 
   const server = http.createServer(async (req, res) => {
@@ -95,6 +98,73 @@ export function createBridgeServer({ host, port, projects, projectsFile, notifie
         const delivered = await notifier.send(eventMessage(project, event));
         logger.info("extension_event", { project: project.name, event, delivered });
         return json(res, 200, { ok: true, delivered });
+      }
+      if (req.method === "POST" && req.url === "/recovery-report") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!runtimeStore) return json(res, 503, { error: "runtime_store_unavailable" });
+        const allowedStages = new Set(["idle", "soft_reload", "tab_recreate", "browser_restart", "blocked", "failed"]);
+        const stage = String(payload.stage || "");
+        if (!allowedStages.has(stage)) return json(res, 400, { error: "invalid_recovery_stage" });
+        const current = runtimeStore.snapshot(project.id).recovery || {};
+        const patch = {
+          stage,
+          reason: String(payload.reason || current.reason || "").slice(0, 128),
+          attempts: Math.max(0, Number(payload.attempts ?? current.attempts ?? 0)),
+          softReloads: Math.max(0, Number(payload.softReloads ?? current.softReloads ?? 0)),
+          tabRecreates: Math.max(0, Number(payload.tabRecreates ?? current.tabRecreates ?? 0)),
+          browserRestarts: Math.max(0, Number(payload.browserRestarts ?? current.browserRestarts ?? 0)),
+          lastAttemptAt: Math.max(0, Number(payload.lastAttemptAt ?? current.lastAttemptAt ?? 0)),
+          nextCheckAt: Math.max(0, Number(payload.nextCheckAt ?? current.nextCheckAt ?? 0)),
+          cooldownUntil: Math.max(0, Number(payload.cooldownUntil ?? current.cooldownUntil ?? 0)),
+          alerted: Boolean(payload.alerted ?? current.alerted),
+          lastError: String(payload.lastError || "").slice(0, 512)
+        };
+        const state = runtimeStore.recordRecovery(project.id, patch);
+        logger.info("browser_recovery_state", { project: project.name, stage, reason: patch.reason, attempts: patch.attempts });
+        return json(res, 200, { ok: true, recovery: state.recovery });
+      }
+      if (req.method === "POST" && req.url === "/recovery-clear") {
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!runtimeStore) return json(res, 503, { error: "runtime_store_unavailable" });
+        const state = runtimeStore.clearRecovery(project.id);
+        logger.info("browser_recovery_complete", { project: project.name });
+        return json(res, 200, { ok: true, recovery: state.recovery });
+      }
+      if (req.method === "POST" && req.url === "/recovery-failed") {
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!runtimeStore) return json(res, 503, { error: "runtime_store_unavailable" });
+        const current = runtimeStore.snapshot(project.id).recovery || {};
+        if (current.alerted && Number(current.cooldownUntil || 0) > Date.now()) {
+          return json(res, 200, { ok: true, delivered: false, suppressed: true, recovery: current });
+        }
+        const cooldownUntil = Math.max(Date.now() + 300000, Number(payload.cooldownUntil || 0));
+        const state = runtimeStore.recordRecovery(project.id, {
+          stage: "failed", alerted: true, cooldownUntil, nextCheckAt: 0,
+          reason: String(payload.reason || current.reason || "unknown").slice(0, 128),
+          lastError: String(payload.lastError || current.lastError || "").slice(0, 512)
+        });
+        const delivered = await notifier.send(eventMessage(project, "RECOVERY_FAILED"));
+        logger.info("browser_recovery_failed", { project: project.name, delivered, cooldownUntil });
+        return json(res, 200, { ok: true, delivered, suppressed: false, recovery: state.recovery });
+      }
+      if (req.method === "POST" && req.url === "/browser-restart-request") {
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!onBrowserRestart) return json(res, 503, { error: "browser_restart_unavailable" });
+        logger.info("browser_recovery_restart_requested", { project: project.name, reason: String(payload.reason || "") });
+        json(res, 202, { ok: true, restarting: true });
+        setTimeout(() => onBrowserRestart({ projectId: project.id, reason: String(payload.reason || "") }), 250).unref();
+        return;
       }
       if (req.method === "POST" && req.url === "/discovery-candidates") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {

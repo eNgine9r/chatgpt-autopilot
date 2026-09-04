@@ -28,6 +28,10 @@ export class ProjectRuntimeStore {
         candidateEligible: false, candidateReason: "",
         lastAdoptedUrl: "", lastAdoptedTitle: "", lastAdoptedAt: 0, lastAdoptionMode: ""
       },
+      recovery: {
+        stage: "idle", reason: "", attempts: 0, softReloads: 0, tabRecreates: 0, browserRestarts: 0,
+        lastAttemptAt: 0, nextCheckAt: 0, cooldownUntil: 0, lastRecoveredAt: 0, alerted: false, lastError: ""
+      },
       updatedAt: 0
     };
   }
@@ -39,7 +43,8 @@ export class ProjectRuntimeStore {
       return { ...this.empty(projectId), ...parsed,
         control: { ...this.empty(projectId).control, ...(parsed.control || {}) },
         runtime: { ...this.empty(projectId).runtime, ...(parsed.runtime || {}) },
-        discovery: { ...this.empty(projectId).discovery, ...(parsed.discovery || {}) }
+        discovery: { ...this.empty(projectId).discovery, ...(parsed.discovery || {}) },
+        recovery: { ...this.empty(projectId).recovery, ...(parsed.recovery || {}) }
       };
     } catch (error) {
       if (error?.code === "ENOENT") return this.empty(projectId);
@@ -113,6 +118,21 @@ export class ProjectRuntimeStore {
       lastAdoptionMode: String(mode || "manual").slice(0, 32),
       candidateUrl: "", candidateTitle: "", candidatePreview: "", candidateSeenAt: 0,
       candidateEligible: false, candidateReason: ""
+    });
+  }
+
+  recordRecovery(projectId, patch = {}) {
+    const current = this.read(projectId);
+    const recovery = { ...current.recovery, ...patch };
+    return this.write(projectId, { ...current, recovery, updatedAt: this.now() });
+  }
+
+  clearRecovery(projectId) {
+    const current = this.read(projectId);
+    return this.write(projectId, {
+      ...current,
+      recovery: { ...this.empty(projectId).recovery, lastRecoveredAt: this.now() },
+      updatedAt: this.now()
     });
   }
 

@@ -6,13 +6,26 @@
     'div.ProseMirror[contenteditable="true"]',
     '[contenteditable="true"][data-lexical-editor="true"]'
   ];
+  const STOP_SELECTORS = [
+    'button[data-testid="stop-button"]', '#composer-stop-button',
+    'button[aria-label*="Stop"]', 'button[title*="Stop"]',
+    'button[aria-label*="Зупин"]', 'button[title*="Зупин"]'
+  ];
   const ISSUE_DELAY_MS = 30000;
   let issueSince = null;
-  let alerted = false;
+  let signaled = false;
   let running = false;
 
-  function hasComposer() {
-    return COMPOSER_SELECTORS.some((selector) => document.querySelector(selector));
+  function hasAny(selectors) { return selectors.some((selector) => document.querySelector(selector)); }
+  function hasComposer() { return hasAny(COMPOSER_SELECTORS); }
+  function isGenerating() { return hasAny(STOP_SELECTORS); }
+  function generationStateKnown() {
+    if (document.readyState !== "complete") return false;
+    return Boolean(
+      document.querySelector('[data-testid^="conversation-turn-"][data-turn]')
+      || document.querySelector('[data-message-author-role="assistant"], [data-message-author-role="user"]')
+      || hasComposer()
+    );
   }
 
   async function send(payload) {
@@ -34,31 +47,24 @@
     running = true;
     try {
       const project = await configuredProject();
-      if (!project) {
-        issueSince = null;
-        alerted = false;
-        return;
-      }
+      if (!project) { issueSince = null; signaled = false; return; }
       if (hasComposer()) {
         issueSince = null;
-        if (alerted) {
-          alerted = false;
-          await send({ type: "NOTIFY", projectId: project.id, event: "RECOVERED" });
+        if (signaled) {
+          signaled = false;
+          await send({ type: "RECOVERY_HEALTHY", projectId: project.id });
         }
         return;
       }
       if (!issueSince) issueSince = Date.now();
-      if (!alerted && Date.now() - issueSince >= ISSUE_DELAY_MS) {
-        alerted = true;
+      if (!signaled && Date.now() - issueSince >= ISSUE_DELAY_MS) {
+        signaled = true;
         await send({
-          type: "NOTIFY",
-          projectId: project.id,
-          event: "SESSION_ATTENTION_REQUIRED"
+          type: "RECOVERY_SIGNAL", projectId: project.id,
+          reason: "composer_missing", generatingKnown: generationStateKnown(), generating: isGenerating()
         });
       }
-    } finally {
-      running = false;
-    }
+    } finally { running = false; }
   }
 
   setInterval(check, 5000);
