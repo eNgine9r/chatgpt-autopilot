@@ -163,6 +163,16 @@
     return Boolean(first(SELECTORS.stop));
   }
 
+  function generationStateKnown() {
+    if (document.readyState !== "complete") return false;
+    const hasConversationSurface = Boolean(
+      document.querySelector('[data-testid^="conversation-turn-"][data-turn]')
+      || document.querySelector('[data-message-author-role="assistant"], [data-message-author-role="user"]')
+      || first(SELECTORS.composer)
+    );
+    return hasConversationSurface;
+  }
+
   function canonicalProjectSegment(value) {
     const match = String(value || "").match(/^(g-p-[a-f0-9]{32})(?:-[^/]+)?$/i);
     return match?.[1] || String(value || "");
@@ -211,6 +221,16 @@
       .filter(Boolean)
       .join("\n")
       .slice(-6000);
+  }
+
+  function recoveryBlockers() {
+    const path = String(location.pathname || "").toLowerCase();
+    const surface = capacitySurfaceText().toLowerCase();
+    return {
+      authBlocked: /\/(auth|login)(?:\/|$)/.test(path) || /sign in|log in|увійти|вхід/.test(surface),
+      rateLimited: /rate limit|too many requests|usage limit|try again later|ліміт/.test(surface),
+      safetyBlocked: /verify you are human|captcha|unusual activity|cloudflare/.test(surface)
+    };
   }
 
   function latestActivityFingerprint() {
@@ -664,7 +684,11 @@
       return false;
     }
     if (payload?.type === "GET_RUNTIME_STATUS") {
-      sendResponse({ ok: true, generating: isGenerating(), projectId: project?.id || "", url: Policy.normalizeChatUrl(location.href) });
+      sendResponse({
+        ok: generationStateKnown(), generatingKnown: generationStateKnown(), generating: isGenerating(),
+        composerPresent: Boolean(first(SELECTORS.composer)), projectId: project?.id || "",
+        url: Policy.normalizeChatUrl(location.href), ...recoveryBlockers()
+      });
       return false;
     }
     if (payload?.type === "DISCOVERY_SCAN") {

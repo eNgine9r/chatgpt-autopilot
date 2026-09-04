@@ -49,3 +49,27 @@ test("discovery candidate and adoption history persist durably", () => {
   assert.equal(state.discovery.lastAdoptionMode, "manual");
   assert.equal(state.discovery.lastAdoptedAt, 3000);
 });
+
+test("browser recovery stage and cooldown persist across supervisor restarts", () => {
+  const { store, stateDir, tick } = fixture();
+  store.recordRecovery("demo", { stage:"soft_reload", reason:"composer_missing", attempts:1, softReloads:1, nextCheckAt:46000 });
+  let reloaded = new ProjectRuntimeStore({ stateDir, projects: [{ id:"demo" }] });
+  assert.equal(reloaded.snapshot("demo").recovery.stage, "soft_reload");
+  assert.equal(reloaded.snapshot("demo").recovery.softReloads, 1);
+  tick(50000);
+  store.recordRecovery("demo", { stage:"failed", alerted:true, cooldownUntil:350000 });
+  reloaded = new ProjectRuntimeStore({ stateDir, projects: [{ id:"demo" }] });
+  assert.equal(reloaded.snapshot("demo").recovery.alerted, true);
+  assert.equal(reloaded.snapshot("demo").recovery.cooldownUntil, 350000);
+});
+
+test("successful browser recovery clears episode counters", () => {
+  const { store, tick } = fixture();
+  store.recordRecovery("demo", { stage:"tab_recreate", attempts:2, tabRecreates:1, alerted:true });
+  tick(9000);
+  const state = store.clearRecovery("demo");
+  assert.equal(state.recovery.stage, "idle");
+  assert.equal(state.recovery.attempts, 0);
+  assert.equal(state.recovery.alerted, false);
+  assert.equal(state.recovery.lastRecoveredAt, 9000);
+});

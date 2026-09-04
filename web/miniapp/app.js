@@ -16,6 +16,13 @@ async function api(path, options={}) {
   const r=await fetch(path,{...options,headers:{...headers(),...(options.headers||{})}});
   const j=await r.json(); if(!r.ok) throw new Error(j.error||`HTTP ${r.status}`); return j;
 }
+function recoveryBlock(p) {
+  if (!p.browserRecovery?.enabled) return "";
+  const r=p.state.recovery||{}; const stage=r.stage||"idle";
+  if(stage==="idle") return `<div class="checkpoint"><b>Self-healing:</b> готовий • останнє відновлення ${ago(r.lastRecoveredAt)}</div>`;
+  const cooldown=r.cooldownUntil>Date.now()?` • cooldown ${ago(Date.now()-(r.cooldownUntil-Date.now()))}`:"";
+  return `<div class="checkpoint"><b>Self-healing:</b> ${esc(stage)}<br><small>${esc(r.reason||'')} • спроби ${Number(r.attempts||0)}${cooldown}${r.lastError?` • ${esc(r.lastError)}`:""}</small></div>`;
+}
 function discoveryBlock(p) {
   if (!p.chatDiscovery?.enabled) return "";
   const d=p.state.discovery||{};
@@ -25,7 +32,7 @@ function discoveryBlock(p) {
 function card(p) {
   const [label,kind]=stateLabel(p); const paused=p.state.control.paused;
   const excerpt=p.state.runtime.latestAssistantExcerpt||"Ще немає checkpoint від активної вкладки.";
-  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div></div><a href="${esc(p.chatUrl)}">Відкрити чат ↗</a></div><div class="meta"><div>Останній heartbeat<b>${ago(p.state.runtime.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state.runtime.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}">${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart">↻ Вкладка</button><button data-id="${p.id}" data-action="rollover">＋ Новий чат</button></div>${discoveryBlock(p)}</article>`;
+  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div></div><a href="${esc(p.chatUrl)}">Відкрити чат ↗</a></div><div class="meta"><div>Останній heartbeat<b>${ago(p.state.runtime.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state.runtime.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}">${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart">↻ Вкладка</button><button data-id="${p.id}" data-action="rollover">＋ Новий чат</button></div>${recoveryBlock(p)}${discoveryBlock(p)}</article>`;
 }
 async function load() {
   try {

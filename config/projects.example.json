@@ -26,6 +26,11 @@
         "autoAdopt": false,
         "intervalSeconds": 300,
         "includeTitlePatterns": ["Example Project"]
+      },
+      "browserRecovery": {
+        "enabled": false,
+        "staleHeartbeatSeconds": 90,
+        "allowSessionRestart": false
       }
     },
     {
