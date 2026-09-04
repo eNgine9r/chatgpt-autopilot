@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { composeContinuationPrompt, planAnchorBlock } from "./prompt-compose.mjs";
 
 export function resolveFromCwd(value) {
   return path.resolve(process.cwd(), value);
@@ -31,8 +32,12 @@ export function loadRuntimeConfig() {
     extensionDir: resolveFromCwd("./extension"),
     bridgeHost: "127.0.0.1",
     bridgePort: 8765,
+    controlHost: process.env.CONTROL_HOST || "127.0.0.1",
+    controlPort: Number(process.env.CONTROL_PORT || 8766),
+    miniappDir: resolveFromCwd(process.env.MINIAPP_DIR || "./web/miniapp"),
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || "",
-    telegramChatId: process.env.TELEGRAM_CHAT_ID || ""
+    telegramChatId: process.env.TELEGRAM_CHAT_ID || "",
+    telegramOwnerUserId: process.env.TELEGRAM_OWNER_USER_ID || (Number(process.env.TELEGRAM_CHAT_ID) > 0 ? process.env.TELEGRAM_CHAT_ID : "")
   };
 }
 
@@ -172,6 +177,8 @@ export function loadProjects(projectsFile) {
 
     const continuationPrompt = String(project.continuationPrompt || "").trim();
     if (!continuationPrompt) throw new Error(`${project.id}: continuationPrompt is required`);
+    const planAnchor = String(project.planAnchor || "").trim();
+    const planVersion = String(project.planVersion || "v1").trim().slice(0, 64) || "v1";
 
     const chatUrl = backend === "browser" ? normalizeChatUrl(project.chatUrl) : "";
     const autoRollover = backend === "browser" && project.autoRollover === true;
@@ -206,6 +213,8 @@ export function loadProjects(projectsFile) {
       noProgressAlertSeconds,
       userGateMarker: String(project.userGateMarker || "[[USER_ACTION_REQUIRED]]"),
       continuationPrompt,
+      planAnchor,
+      planVersion,
       startImmediately: project.startImmediately === true,
       autoRollover,
       projectRootUrl,
@@ -214,8 +223,18 @@ export function loadProjects(projectsFile) {
   });
 }
 
-export function publicProjects(projects) {
+export function publicProjects(projects, runtimeStore = null) {
   return projects
     .filter((project) => project.enabled && project.backend === "browser")
-    .map((project) => ({ ...project, codex: undefined }));
+    .map((project) => {
+      const snapshot = runtimeStore ? runtimeStore.snapshot(project.id) : null;
+      return {
+        ...project,
+        codex: undefined,
+        continuationPrompt: composeContinuationPrompt(project),
+        rolloverPrompt: `${project.rolloverPrompt}${planAnchorBlock(project)}`.slice(0, 15000),
+        control: snapshot?.control || { paused: false, restartGeneration: 0, rolloverGeneration: 0 },
+        runtimeCheckpoint: snapshot?.runtime || null
+      };
+    });
 }

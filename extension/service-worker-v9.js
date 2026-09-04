@@ -121,11 +121,11 @@ async function notifyBridge(projectId, event) {
   });
 }
 
-async function heartbeatBridge(projectId, progressKey, status) {
+async function heartbeatBridge(projectId, progressKey, status, detail = {}) {
   return bridge("/heartbeat", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ projectId, progressKey, status })
+    body: JSON.stringify({ projectId, progressKey, status, ...detail })
   });
 }
 
@@ -240,7 +240,15 @@ async function startRollover(message, sender) {
   }
 
   const handoff = String(message.handoff || "").slice(-12000);
-  const prompt = `${project.rolloverPrompt}\n\nОстанній доступний фрагмент попередньої розмови для handoff:\n${handoff}`.slice(0, 15000);
+  const checkpoint = project.runtimeCheckpoint || {};
+  const checkpointText = [
+    "=== DURABLE CHECKPOINT ===",
+    `Last status: ${checkpoint.status || "unknown"}`,
+    checkpoint.latestUserExcerpt ? `Latest user: ${checkpoint.latestUserExcerpt}` : "",
+    checkpoint.latestAssistantExcerpt ? `Latest assistant: ${checkpoint.latestAssistantExcerpt}` : "",
+    "=== END CHECKPOINT ==="
+  ].filter(Boolean).join("\n");
+  const prompt = `${project.rolloverPrompt}\n\n${checkpointText}\n\n=== BOUNDED CHAT TAIL ===\n${handoff}\n=== END CHAT TAIL ===`.slice(0, 20000);
   const key = `${ROLLOVER_PREFIX}${projectId}`;
   await chrome.storage.session.set({
     [key]: {
@@ -291,7 +299,12 @@ async function handleMessage(message, sender) {
     case "NOTIFY":
       return { ok: true, ...(await notifyBridge(message.projectId, message.event)) };
     case "HEARTBEAT":
-      return { ok: true, ...(await heartbeatBridge(message.projectId, message.progressKey, message.status)) };
+      return { ok: true, ...(await heartbeatBridge(message.projectId, message.progressKey, message.status, {
+        lastTurnRole: message.lastTurnRole,
+        lastTurnId: message.lastTurnId,
+        latestAssistantExcerpt: message.latestAssistantExcerpt,
+        latestUserExcerpt: message.latestUserExcerpt
+      })) };
     case "ROLLOVER":
       return startRollover(message, sender);
     default:

@@ -18,7 +18,9 @@
       "completionSettleSeconds": 10,
       "startupGraceSeconds": 30,
       "watchdogSeconds": 1800,
-      "noProgressAlertSeconds": 1800
+      "noProgressAlertSeconds": 1800,
+      "planVersion": "v1",
+      "planAnchor": "Виконуй лише затверджений план цього ChatGPT Project. Не змінюй продуктову стратегію самостійно. Перед кожною наступною дією звіряйся з Project instructions, фактичним GitHub/runtime evidence і останнім durable checkpoint. Не повторюй завершене."
     },
     {
       "id": "example-codex-project",

@@ -41,7 +41,7 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-export function createBridgeServer({ host, port, projects, projectsFile, notifier, logger, progressWatchdog = null }) {
+export function createBridgeServer({ host, port, projects, projectsFile, notifier, logger, progressWatchdog = null, runtimeStore = null }) {
   const projectById = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
 
   const server = http.createServer(async (req, res) => {
@@ -53,7 +53,7 @@ export function createBridgeServer({ host, port, projects, projectsFile, notifie
         return json(res, 200, { ok: true, projects: projectById.size, telegram: notifier.enabled });
       }
       if (req.method === "GET" && req.url === "/config") {
-        return json(res, 200, { projects: publicProjects(projects) });
+        return json(res, 200, { projects: publicProjects(projects, runtimeStore) });
       }
       if (req.method === "POST" && req.url === "/heartbeat") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
@@ -63,10 +63,16 @@ export function createBridgeServer({ host, port, projects, projectsFile, notifie
         const projectId = String(payload.projectId || "");
         if (!projectById.has(projectId)) return json(res, 404, { error: "unknown_project" });
         if (!progressWatchdog) return json(res, 503, { error: "watchdog_unavailable" });
-        const result = progressWatchdog.observe(projectId, {
+        const detail = {
           progressKey: String(payload.progressKey || ""),
-          status: String(payload.status || "")
-        });
+          status: String(payload.status || ""),
+          lastTurnRole: String(payload.lastTurnRole || ""),
+          lastTurnId: String(payload.lastTurnId || ""),
+          latestAssistantExcerpt: String(payload.latestAssistantExcerpt || ""),
+          latestUserExcerpt: String(payload.latestUserExcerpt || "")
+        };
+        const result = progressWatchdog.observe(projectId, detail);
+        runtimeStore?.observe(projectId, detail);
         return json(res, 200, result);
       }
       if (req.method === "POST" && req.url === "/event") {

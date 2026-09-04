@@ -182,3 +182,19 @@ Modern ChatGPT can keep a completed response in page React state while the visib
 ## Resource model
 
 One normal Chromium process tree serves all configured chat tabs. Chromium is the dominant RAM consumer; the Node supervisor is small. Keep enabled chats bounded and measure resource use on the target Raspberry Pi before scaling concurrent tabs.
+
+## Autopilot v2 control plane
+
+Browser projects may define a durable `planAnchor` plus `planVersion`. The anchor is injected into every continuation and rollover prompt so a long chain of chats remains tied to the approved project direction. Runtime heartbeat excerpts and operator controls are persisted under `STATE_DIR/projects/` with private permissions and survive browser/Raspberry Pi restarts.
+
+The local control plane listens on `CONTROL_HOST` / `CONTROL_PORT` (default `127.0.0.1:8766`). It serves a Telegram Mini App and owner-authenticated API. Telegram WebApp `initData` is validated server-side with the bot token and restricted to `TELEGRAM_OWNER_USER_ID` before any write action is accepted.
+
+Supported Mini App actions are per-project pause/resume, safe tab restart, forced same-Project rollover, plus a full Autopilot supervisor restart. A paused project keeps lightweight heartbeat/status reporting but suppresses continuation and no-progress alerts.
+
+For Telegram deployment, expose only the control plane through an HTTPS reverse proxy or Tailscale Funnel, set `TELEGRAM_MINIAPP_URL`, then run:
+
+```bash
+npm run telegram:miniapp
+```
+
+The browser extension bridge remains loopback-only on port 8765 and must not be exposed publicly.

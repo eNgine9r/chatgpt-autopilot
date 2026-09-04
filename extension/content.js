@@ -197,17 +197,25 @@
     }
   }
 
-  async function reportHeartbeat(progressKey, status) {
+  async function reportHeartbeat(progressKey, status, latest = null) {
     const now = Date.now();
     if (progressKey === lastHeartbeatKey && now - lastHeartbeatAt < 15000) return;
     lastHeartbeatKey = progressKey;
     lastHeartbeatAt = now;
-    await message({ type: "HEARTBEAT", projectId: project.id, progressKey, status });
+    await message({
+      type: "HEARTBEAT",
+      projectId: project.id,
+      progressKey,
+      status,
+      lastTurnRole: latest?.role || "",
+      lastTurnId: latest?.turnId || "",
+      latestAssistantExcerpt: latest?.role === "assistant" ? String(latest.text || "").slice(-3000) : "",
+      latestUserExcerpt: latest?.role === "user" ? String(latest.text || "").slice(-2000) : ""
+    });
   }
 
   async function refreshProject() {
     const current = Policy.normalizeChatUrl(location.href);
-    if (current === lastUrl && project) return project;
     lastUrl = current;
     const response = await message({ type: "GET_CONFIG" });
     if (!response?.ok || !Array.isArray(response.projects)) {
@@ -241,6 +249,9 @@
       watchdogNotified: false,
       lastProgressKey: "",
       lastProgressAt: 0,
+      lastRestartGeneration: 0,
+      lastControlRolloverGeneration: 0,
+      operatorPaused: false,
       lastStatus: "armed"
     };
     await chrome.storage.local.set({ [key]: initial });
@@ -427,7 +438,47 @@
             : Boolean(state.watchdogNotified)
         });
       }
-      await reportHeartbeat(progressKey, generating ? "working" : String(latest.role || "unknown"));
+      const heartbeatStatus = project.control?.paused
+        ? "operator_paused"
+        : (generating ? "working" : String(latest.role || "unknown"));
+      await reportHeartbeat(progressKey, heartbeatStatus, latest);
+
+      const restartGeneration = Number(project.control?.restartGeneration || 0);
+      if (restartGeneration > Number(state.lastRestartGeneration || 0)) {
+        if (generating) {
+          await saveState({ lastStatus: "operator_restart_waiting" });
+          return;
+        }
+        await saveState({ lastRestartGeneration: restartGeneration, lastStatus: "operator_restart" });
+        location.reload();
+        return;
+      }
+
+      if (project.control?.paused) {
+        if (!state.operatorPaused || state.lastStatus !== "operator_paused") {
+          await saveState({ operatorPaused: true, failures: 0, watchdogAt: 0, watchdogNotified: false, lastStatus: "operator_paused" });
+        }
+        return;
+      }
+      if (state.operatorPaused) {
+        state = await saveState({
+          operatorPaused: false,
+          failures: 0,
+          nextAt: Date.now() + project.continueAfterSeconds * 1000,
+          lastStatus: "operator_resumed"
+        });
+      }
+
+      const rolloverGeneration = Number(project.control?.rolloverGeneration || 0);
+      if (rolloverGeneration > Number(state.lastControlRolloverGeneration || 0)) {
+        if (generating) {
+          await saveState({ lastStatus: "operator_rollover_waiting" });
+          return;
+        }
+        state = await saveState({ lastControlRolloverGeneration: rolloverGeneration, lastStatus: "operator_rollover" });
+        await requestRollover(state);
+        return;
+      }
 
       if (Policy.shouldRequestCapacityRollover({
         autoRollover: project.autoRollover,
