@@ -17,5 +17,13 @@
     return hasAlternative ? "finalize" : "wait";
   }
 
-  globalThis.AutopilotDiscoveryPolicy = Object.freeze({ shouldStartScan, shouldAdopt, scanDisposition });
+  function durableCandidate(discovery = {}) {
+    return {
+      url: String(discovery.candidateUrl || ""),
+      title: String(discovery.candidateTitle || ""),
+      preview: String(discovery.candidatePreview || "")
+    };
+  }
+
+  globalThis.AutopilotDiscoveryPolicy = Object.freeze({ shouldStartScan, shouldAdopt, scanDisposition, durableCandidate });
 })();
