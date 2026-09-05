@@ -31,6 +31,13 @@ test("mirror lifecycle is driven by the pulse alarm and cleaned with tab removal
   assert.match(worker, /MIRROR_SETTLE_MS = 30000/);
 });
 
+test("mirror timeout starts the retry interval from timeout completion", () => {
+  const timeoutAt = worker.indexOf('result: "timeout"');
+  const cooldownAt = worker.lastIndexOf('[lastKey]: { ...last, lastProbeAt: now, lastTimeoutAt: now }', timeoutAt);
+  assert.ok(cooldownAt >= 0 && cooldownAt < timeoutAt);
+  assert.match(worker, /const due = now - Number\(last\.lastProbeAt \|\| 0\) >= intervalMs/);
+});
+
 test("mirror refresh revalidates the owning tab immediately before mutation", () => {
   assert.match(worker, /chrome\.tabs\.sendMessage\(sourceTab\.id, \{ type: "MIRROR_SNAPSHOT" \}\)/);
   assert.match(worker, /source_changed_or_unsafe_before_refresh/);

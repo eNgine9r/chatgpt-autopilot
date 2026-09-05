@@ -56,8 +56,8 @@ test("hidden styles and unrelated Stop buttons fail closed as non-generation con
 test("manifest rotates the background worker for cache-safe deployment", async () => {
   const fs = await import("node:fs");
   const manifest = JSON.parse(fs.readFileSync(new URL("../extension/manifest.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "0.3.18");
-  assert.equal(manifest.background.service_worker, "service-worker-v16.js");
+  assert.equal(manifest.version, "0.3.19");
+  assert.equal(manifest.background.service_worker, "service-worker-v17.js");
   const worker = fs.readFileSync(new URL(`../extension/${manifest.background.service_worker}`, import.meta.url), "utf8");
   const version = manifest.background.service_worker.match(/service-worker-(v\d+)\.js$/)?.[1] || "";
   assert.ok(version);
