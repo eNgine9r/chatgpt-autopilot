@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadProjects } from "../src/config.mjs";
 import { ProjectRuntimeStore } from "../src/runtime-store.mjs";
-import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
+import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits, withExtensionsDeveloperMode } from "../src/dedicated-cutover.mjs";
 
 const execFileAsync = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -19,6 +19,8 @@ const stateDir = path.resolve(process.env.AUTOPILOT_DEV_STATE_DIR || path.join(a
 const serviceDir = path.resolve(process.env.XDG_CONFIG_HOME || path.join(homeDir, ".config"), "systemd/user");
 const bridgeService = path.join(serviceDir, "chatgpt-autopilot-dev-bridge.service");
 const browserService = path.join(serviceDir, "chatgpt-autopilot-dev-browser.service");
+const browserProfileDir = path.resolve(process.env.AUTOPILOT_DEV_BROWSER_PROFILE_DIR || path.join(appDir, "browser-profile-autopilot-dev"));
+const browserPreferences = path.join(browserProfileDir, "Default", "Preferences");
 const lockFile = path.join(appDir, "runtime/cutover-autopilot-dev-v2.lock");
 const execute = process.argv.includes("--execute");
 const idleTimeoutMs = Number(process.env.AUTOPILOT_DEV_IDLE_TIMEOUT_MS || 2 * 60 * 60 * 1000);
@@ -70,11 +72,18 @@ const projects = loadProjects(projectsFile);
 const project = validateDedicatedV2Project(projects.find((item) => item.id === "autopilot-development"));
 const store = new ProjectRuntimeStore({ stateDir, projects: [project] });
 const units = renderDedicatedWorkerUnits({ appDir, nodeBin: process.execPath, projectsFile, stateDir, homeDir, runtimeDir, chatUrl: project.chatUrl });
+let browserPreferencesParsed = {};
+try {
+  if (fs.existsSync(browserPreferences)) browserPreferencesParsed = JSON.parse(fs.readFileSync(browserPreferences, "utf8"));
+} catch (error) {
+  throw new Error(`invalid_browser_preferences:${String(error.message || error)}`);
+}
 const preflight = {
   ok: true, mode: execute ? "execute" : "dry-run", projectId: project.id,
-  projectsFile, stateDir, bridgeService, browserService,
+  projectsFile, stateDir, bridgeService, browserService, browserProfileDir, browserPreferences,
   policy: { browserRecovery: project.browserRecovery, checkpointLedgerEnabled: project.checkpointLedger.enabled, chatDiscovery: project.chatDiscovery },
-  currentStateSafe: isFreshPausedIdleState(store.snapshot(project.id))
+  currentStateSafe: isFreshPausedIdleState(store.snapshot(project.id)),
+  browserDeveloperMode: browserPreferencesParsed.extensions?.ui?.developer_mode === true
 };
 if (!execute) {
   console.log(JSON.stringify(preflight, null, 2));
@@ -85,6 +94,8 @@ let lockFd;
 let mutated = false;
 let previousBridge = "";
 let previousBrowser = "";
+let previousPreferences = "";
+let preferencesExisted = false;
 let backupDir = "";
 try {
   lockFd = fs.openSync(lockFile, "wx", 0o600);
@@ -101,6 +112,12 @@ try {
   fs.mkdirSync(backupDir, { mode: 0o700 });
   fs.writeFileSync(path.join(backupDir, path.basename(bridgeService)), previousBridge, { mode: 0o600 });
   fs.writeFileSync(path.join(backupDir, path.basename(browserService)), previousBrowser, { mode: 0o600 });
+  preferencesExisted = fs.existsSync(browserPreferences);
+  if (preferencesExisted) {
+    previousPreferences = fs.readFileSync(browserPreferences, "utf8");
+    JSON.parse(previousPreferences);
+    fs.writeFileSync(path.join(backupDir, "browser-Preferences.json"), previousPreferences, { mode: 0o600 });
+  }
 
   // First production mutation happens only after a fresh paused-idle heartbeat.
   writeAtomic(bridgeService, units.bridge);
@@ -112,7 +129,16 @@ try {
     const response = await fetch("http://127.0.0.1:8767/health", { signal: AbortSignal.timeout(3000) });
     return response.ok;
   }, 30000, "bridge_health");
-  await systemctl("restart", "chatgpt-autopilot-dev-browser.service");
+
+  // Chromium 131+ can disable unpacked extensions while profile Developer Mode is off.
+  // Stop the dedicated browser first so Preferences can be updated atomically without a write race.
+  await systemctl("stop", "chatgpt-autopilot-dev-browser.service");
+  fs.mkdirSync(path.dirname(browserPreferences), { recursive: true, mode: 0o700 });
+  const currentPreferences = fs.existsSync(browserPreferences)
+    ? JSON.parse(fs.readFileSync(browserPreferences, "utf8"))
+    : {};
+  writeAtomic(browserPreferences, `${JSON.stringify(withExtensionsDeveloperMode(currentPreferences))}\n`, 0o600);
+  await systemctl("start", "chatgpt-autopilot-dev-browser.service");
 
   const accepted = await waitFor(async () => {
     const payload = await readOperatorStatus();
@@ -133,11 +159,14 @@ try {
   const canRollback = mutated && isFreshPausedIdleState(current);
   if (canRollback) {
     try {
+      await systemctl("stop", "chatgpt-autopilot-dev-browser.service");
       writeAtomic(bridgeService, previousBridge);
       writeAtomic(browserService, previousBrowser);
+      if (preferencesExisted) writeAtomic(browserPreferences, previousPreferences, 0o600);
+      else { try { fs.unlinkSync(browserPreferences); } catch (unlinkError) { if (unlinkError?.code !== "ENOENT") throw unlinkError; } }
       await systemctl("daemon-reload");
       await systemctl("restart", "chatgpt-autopilot-dev-bridge.service");
-      await systemctl("restart", "chatgpt-autopilot-dev-browser.service");
+      await systemctl("start", "chatgpt-autopilot-dev-browser.service");
     } catch (rollbackError) {
       console.error(`rollback_failed:${String(rollbackError.message || rollbackError)}`);
     }
