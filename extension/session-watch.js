@@ -1,15 +1,11 @@
 (() => {
   const Policy = globalThis.AutopilotPolicy;
+  const GenerationPolicy = globalThis.AutopilotGenerationPolicy;
   const COMPOSER_SELECTORS = [
     "#prompt-textarea",
     'textarea[data-testid="prompt-textarea"]',
     'div.ProseMirror[contenteditable="true"]',
     '[contenteditable="true"][data-lexical-editor="true"]'
-  ];
-  const STOP_SELECTORS = [
-    'button[data-testid="stop-button"]', '#composer-stop-button',
-    'button[aria-label*="Stop"]', 'button[title*="Stop"]',
-    'button[aria-label*="Зупин"]', 'button[title*="Зупин"]'
   ];
   const ISSUE_DELAY_MS = 30000;
   let issueSince = null;
@@ -18,7 +14,7 @@
 
   function hasAny(selectors) { return selectors.some((selector) => document.querySelector(selector)); }
   function hasComposer() { return hasAny(COMPOSER_SELECTORS); }
-  function isGenerating() { return hasAny(STOP_SELECTORS); }
+  function isGenerating() { return GenerationPolicy?.isGenerating ? GenerationPolicy.isGenerating(document, window) : true; }
   function generationStateKnown() {
     if (document.readyState !== "complete") return false;
     return Boolean(
