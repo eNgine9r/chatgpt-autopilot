@@ -1,0 +1,21 @@
+[Unit]
+Description=ChatGPT Autopilot Telegram Control Hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+Environment=CONTROL_WORKERS_FILE=__APP_DIR__/config/control-workers.json
+Environment=CONTROL_HUB_HOST=127.0.0.1
+Environment=CONTROL_HUB_PORT=8769
+Environment=XDG_RUNTIME_DIR=__RUNTIME_DIR__
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=__RUNTIME_DIR__/bus
+ExecStart=__NODE__ __APP_DIR__/src/control-hub.mjs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

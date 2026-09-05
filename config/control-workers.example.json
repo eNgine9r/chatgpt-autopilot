@@ -1,0 +1,26 @@
+{
+  "workers": [
+    {
+      "id": "shared-browser",
+      "name": "NexoLab + BTC Radar",
+      "baseUrl": "http://127.0.0.1:8765",
+      "projects": [
+        { "id": "btc-radar-development", "name": "BTC Radar" },
+        { "id": "nexolab-development", "name": "NexoLab" }
+      ],
+      "restartServices": ["chatgpt-project-autopilot.service"]
+    },
+    {
+      "id": "autopilot-dev",
+      "name": "Autopilot Development",
+      "baseUrl": "http://127.0.0.1:8767",
+      "projects": [
+        { "id": "autopilot-development", "name": "Розробка Autopilot" }
+      ],
+      "restartServices": [
+        "chatgpt-autopilot-dev-bridge.service",
+        "chatgpt-autopilot-dev-browser.service"
+      ]
+    }
+  ]
+}

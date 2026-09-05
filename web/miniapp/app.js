@@ -6,8 +6,9 @@ const headers = () => ({ Authorization: `tma ${initData}`, "content-type": "appl
 const esc = (value) => String(value || "").replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ago = (ms) => { if (!ms) return "—"; const s=Math.max(0,Math.round((Date.now()-ms)/1000)); return s<60?`${s} с`:s<3600?`${Math.round(s/60)} хв`:`${Math.round(s/3600)} год`; };
 function stateLabel(p) {
-  const s=p.state; if(s.control.paused) return ["Пауза","warn"];
-  const st=s.runtime.status||"unknown";
+  if(p.worker?.online===false) return ["Worker offline","bad"];
+  const s=p.state||{}; if(s.control?.paused) return ["Пауза","warn"];
+  const st=s.runtime?.status||"unknown";
   if(["working","assistant"].includes(st)) return ["Працює",""];
   if(st.includes("error")||st.includes("failed")) return [st,"bad"];
   return [st,"warn"];
@@ -39,18 +40,21 @@ function discoveryBlock(p) {
   return `${candidate}<div class="actions"><button data-id="${p.id}" data-action="scan_chats">⌕ Перевірити чати</button>${d.candidateUrl?`<button data-id="${p.id}" data-action="adopt_candidate" class="primary">↪ Переприв’язати</button>`:""}</div>`;
 }
 function card(p) {
-  const [label,kind]=stateLabel(p); const paused=p.state.control.paused;
-  const excerpt=p.state.runtime.latestAssistantExcerpt||"Ще немає checkpoint від активної вкладки.";
-  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div></div><a href="${esc(p.chatUrl)}">Відкрити чат ↗</a></div><div class="meta"><div>Останній heartbeat<b>${ago(p.state.runtime.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state.runtime.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}">${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart">↻ Вкладка</button><button data-id="${p.id}" data-action="rollover">＋ Новий чат</button></div>${checkpointBlock(p)}${recoveryBlock(p)}${discoveryBlock(p)}</article>`;
+  const [label,kind]=stateLabel(p); const paused=Boolean(p.state?.control?.paused); const online=p.worker?.online!==false;
+  const excerpt=p.state?.runtime?.latestAssistantExcerpt||"Ще немає checkpoint від активної вкладки.";
+  const worker=p.worker?`<small>Worker: ${esc(p.worker.name||p.worker.id)} • ${online?'online':'offline'}</small>`:"";
+  const link=p.chatUrl?`<a href="${esc(p.chatUrl)}">Відкрити чат ↗</a>`:`<span>Chat unavailable</span>`;
+  const disabled=online?'':' disabled';
+  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div>${worker}</div>${link}</div><div class="meta"><div>Останній heartbeat<b>${ago(p.state?.runtime?.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state?.runtime?.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}"${disabled}>${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart"${disabled}>↻ Вкладка</button><button data-id="${p.id}" data-action="rollover"${disabled}>＋ Новий чат</button></div>${checkpointBlock(p)}${recoveryBlock(p)}${discoveryBlock(p)}</article>`;
 }
 async function load() {
   try {
     const data=await api('./api/status');
-    $('summary').textContent=`${data.projects.length} проєкти • ${new Date(data.generatedAt).toLocaleTimeString()}`;
+    const online=(data.workers||[]).filter(w=>w.online).length; const workerText=data.workers?` • workers ${online}/${data.workers.length}`:''; $('summary').textContent=`${data.projects.length} проєкти${workerText} • ${new Date(data.generatedAt).toLocaleTimeString()}`;
     $('projects').innerHTML=data.projects.map(card).join(''); $('message').textContent='';
   } catch(e) { $('message').textContent=`Помилка: ${e.message}`; }
 }
 $('projects').addEventListener('click',async e=>{ const b=e.target.closest('button[data-action]'); if(!b)return; b.disabled=true; try{ await api(`./api/projects/${b.dataset.id}/action`,{method:'POST',body:JSON.stringify({action:b.dataset.action})}); tg?.HapticFeedback?.impactOccurred('medium'); await load(); }catch(err){$('message').textContent=`Помилка: ${err.message}`;}finally{b.disabled=false;} });
 $('refresh').onclick=load;
-$('restartService').onclick=async()=>{ if(!confirm('Перезапустити весь Autopilot supervisor?'))return; try{await api('./api/service/restart',{method:'POST',body:'{}'});$('message').textContent='Restart запущено…';}catch(e){$('message').textContent=e.message;} };
+$('restartService').onclick=async()=>{ if(!confirm('Перезапустити всі Autopilot workers? Перед restart проєкти будуть безпечно поставлені на паузу.'))return; try{const r=await api('./api/service/restart',{method:'POST',body:'{}'}); $('message').textContent=r.projectsRemainPaused?'Workers перезапущено. Проєкти залишені на паузі — відновіть потрібні вручну.':'Restart запущено…'; await load();}catch(e){$('message').textContent=e.message;} };
 load(); setInterval(load,15000);
