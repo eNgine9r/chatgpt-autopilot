@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadProjects } from "../src/config.mjs";
 import { ProjectRuntimeStore } from "../src/runtime-store.mjs";
-import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
+import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, acceptsDedicatedV2CurrentStatus, matchesDedicatedWorkerUnits, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
 import { withExtensionsDeveloperMode } from "../src/chromium-profile.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +24,8 @@ const browserProfileDir = path.resolve(process.env.AUTOPILOT_DEV_BROWSER_PROFILE
 const browserPreferences = path.join(browserProfileDir, "Default", "Preferences");
 const lockFile = path.join(appDir, "runtime/cutover-autopilot-dev-v2.lock");
 const execute = process.argv.includes("--execute");
+const acceptExisting = process.argv.includes("--accept-existing");
+if (execute && acceptExisting) throw new Error("choose_execute_or_accept_existing");
 const idleTimeoutMs = Number(process.env.AUTOPILOT_DEV_IDLE_TIMEOUT_MS || 2 * 60 * 60 * 1000);
 const acceptTimeoutMs = Number(process.env.AUTOPILOT_DEV_ACCEPT_TIMEOUT_MS || 120000);
 
@@ -81,15 +83,49 @@ try {
   throw new Error(`invalid_browser_preferences:${String(error.message || error)}`);
 }
 const preflight = {
-  ok: true, mode: execute ? "execute" : "dry-run", projectId: project.id,
+  ok: true, mode: execute ? "execute" : (acceptExisting ? "accept-existing" : "dry-run"), projectId: project.id,
   projectsFile, stateDir, bridgeService, browserService, browserProfileDir, browserPreferences,
   policy: { browserRecovery: project.browserRecovery, checkpointLedgerEnabled: project.checkpointLedger.enabled, chatDiscovery: project.chatDiscovery },
   currentStateSafe: isFreshPausedIdleState(store.snapshot(project.id)),
   browserDeveloperMode: browserPreferencesParsed.extensions?.ui?.developer_mode === true
 };
-if (!execute) {
+if (!execute && !acceptExisting) {
   console.log(JSON.stringify(preflight, null, 2));
   process.exit(0);
+}
+
+if (acceptExisting) {
+  let attestLockFd;
+  try {
+    attestLockFd = fs.openSync(lockFile, "wx", 0o600);
+    const actualUnits = { bridge: fs.readFileSync(bridgeService, "utf8"), browser: fs.readFileSync(browserService, "utf8") };
+    if (!matchesDedicatedWorkerUnits(actualUnits, units)) throw new Error("installed_units_not_canonical");
+    if (browserPreferencesParsed.extensions?.ui?.developer_mode !== true) throw new Error("browser_developer_mode_required");
+    const response = await fetch("http://127.0.0.1:8767/health", { signal: AbortSignal.timeout(3000) });
+    if (!response.ok) throw new Error(`bridge_health_http_${response.status}`);
+    const accepted = await waitFor(async () => {
+      const payload = await readOperatorStatus();
+      return acceptsDedicatedV2CurrentStatus(payload) ? payload : null;
+    }, acceptTimeoutMs, "existing_v2_acceptance");
+    const acceptedProject = accepted.projects.find((item) => item.id === project.id);
+    if (acceptedProject.chatUrl !== project.chatUrl) throw new Error("operator_chat_url_mismatch");
+    const evidence = {
+      acceptedAt: Date.now(), acceptanceMode: "existing", head: await gitHead(), projectId: project.id,
+      beforeSeen: null, afterSeen: Number(acceptedProject.state.runtime.lastSeenAt || 0),
+      state: { control: acceptedProject.state.control, runtime: acceptedProject.state.runtime, recovery: acceptedProject.state.recovery },
+      features: { browserRecovery: acceptedProject.browserRecovery, checkpointLedger: acceptedProject.checkpointLedger, chatDiscovery: acceptedProject.chatDiscovery },
+      backupDir: "", canonicalUnitsInstalled: true, projectRemainsPaused: true
+    };
+    writeAtomic(path.join(appDir, "runtime/cutover-autopilot-dev-v2.accepted.json"), `${JSON.stringify(evidence, null, 2)}\n`, 0o600);
+    console.log(JSON.stringify({ ok: true, stage: "v2_existing_boot_accepted", projectRemainsPaused: true, head: evidence.head }, null, 2));
+  } catch (error) {
+    console.error(JSON.stringify({ ok: false, error: String(error.message || error), mutated: false, rollbackAttempted: false, projectRemainsPaused: true }, null, 2));
+    process.exitCode = 1;
+  } finally {
+    try { if (attestLockFd != null) fs.closeSync(attestLockFd); } catch {}
+    try { fs.unlinkSync(lockFile); } catch {}
+  }
+  process.exit(process.exitCode || 0);
 }
 
 let lockFd;
