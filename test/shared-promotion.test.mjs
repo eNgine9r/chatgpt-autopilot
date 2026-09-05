@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateSharedTargets, validateSharedV2Projects, isFreshPausedIdleState, allFreshPausedIdle, acceptsSharedV2Status } from "../src/shared-promotion.mjs";
+import { validateSharedTargets, validateSharedV2Projects, isFreshPausedIdleState, allFreshPausedIdle, allFreshPausedIdleAfter, acceptsSharedV2Status } from "../src/shared-promotion.mjs";
 
 function project(id, overrides = {}) {
   return {
@@ -47,6 +47,16 @@ test("promotion barrier requires every target to be fresh paused idle", () => {
   states.nexo = state(100000, { runtime: { lastSeenAt: 100000, progressKey: "assistant|x|unknown|generating|y", status: "working" } });
   assert.equal(allFreshPausedIdle(states, ["btc", "nexo"], { now: 100001 }), false);
   assert.equal(isFreshPausedIdleState(state(100000), { now: 140001 }), false);
+});
+
+test("post-pause barrier requires a heartbeat newer than the pause request", () => {
+  const states = { btc: state(100001), nexo: state(100002) };
+  const floors = new Map([["btc", 100001], ["nexo", 100001]]);
+  assert.equal(allFreshPausedIdleAfter(states, ["btc", "nexo"], floors, { now: 100002 }), false);
+  states.btc = state(100003);
+  assert.equal(allFreshPausedIdleAfter(states, ["btc", "nexo"], floors, { now: 100003 }), true);
+  states.nexo = state(100004, { runtime: { lastSeenAt: 100004, progressKey: "assistant|x|unknown|generating|y", status: "working" } });
+  assert.equal(allFreshPausedIdleAfter(states, ["btc", "nexo"], floors, { now: 100004 }), false);
 });
 test("shared acceptance requires newer heartbeat and v2 feature proof for every target", () => {
   const payload = {

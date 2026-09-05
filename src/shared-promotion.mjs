@@ -40,6 +40,13 @@ export function allFreshPausedIdle(states, targetIds, options = {}) {
   return targetIds.every((id) => isFreshPausedIdleState(states[id], options));
 }
 
+export function allFreshPausedIdleAfter(states, targetIds, minimumSeen, options = {}) {
+  return targetIds.every((id) => {
+    const floor = minimumSeen instanceof Map ? Number(minimumSeen.get(id) || 0) : Number(minimumSeen?.[id] || 0);
+    return Number(states[id]?.runtime?.lastSeenAt || 0) > floor && isFreshPausedIdleState(states[id], options);
+  });
+}
+
 export function acceptsSharedV2Status(payload, { targetIds, beforeSeen, now = Date.now(), maxAgeMs = 30000 } = {}) {
   const byId = new Map((payload?.projects || []).map((project) => [project.id, project]));
   return targetIds.every((id) => {
