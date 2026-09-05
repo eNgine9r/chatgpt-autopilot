@@ -32,7 +32,7 @@ export function validateDedicatedV2Project(project) {
   return project;
 }
 
-export function acceptsDedicatedV2Status(payload, { beforeSeen = 0, now = Date.now(), maxAgeMs = 30000 } = {}) {
+export function acceptsDedicatedV2CurrentStatus(payload, { now = Date.now(), maxAgeMs = 30000 } = {}) {
   const project = (payload?.projects || []).find((item) => item?.id === "autopilot-development");
   if (!project) return false;
   return project.browserRecovery?.enabled === true
@@ -40,8 +40,20 @@ export function acceptsDedicatedV2Status(payload, { beforeSeen = 0, now = Date.n
     && project.checkpointLedger?.enabled === true
     && project.chatDiscovery?.enabled === true
     && project.chatDiscovery?.autoAdopt === false
-    && Number(project.state?.runtime?.lastSeenAt || 0) > Number(beforeSeen || 0)
     && isFreshPausedIdleState(project.state, { now, maxAgeMs });
+}
+
+export function acceptsDedicatedV2Status(payload, { beforeSeen = 0, now = Date.now(), maxAgeMs = 30000 } = {}) {
+  const project = (payload?.projects || []).find((item) => item?.id === "autopilot-development");
+  return acceptsDedicatedV2CurrentStatus(payload, { now, maxAgeMs })
+    && Number(project?.state?.runtime?.lastSeenAt || 0) > Number(beforeSeen || 0);
+}
+
+export function matchesDedicatedWorkerUnits(actual, expected) {
+  return typeof actual?.bridge === "string"
+    && typeof actual?.browser === "string"
+    && actual.bridge === expected?.bridge
+    && actual.browser === expected?.browser;
 }
 
 export function renderDedicatedWorkerUnits({ appDir, nodeBin, projectsFile, stateDir, homeDir, runtimeDir }) {

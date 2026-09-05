@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
+import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, acceptsDedicatedV2CurrentStatus, matchesDedicatedWorkerUnits, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
 import { withExtensionsDeveloperMode } from "../src/chromium-profile.mjs";
 
 function project(overrides = {}) {
@@ -45,6 +45,13 @@ test("post-cutover acceptance requires a newer fresh paused heartbeat and v2 fea
   assert.equal(acceptsDedicatedV2Status(payload, { beforeSeen: 100000, now: 100001 }), false);
 });
 
+test("existing-cutover attestation accepts only fresh paused-idle v2 status", () => {
+  const payload = { projects: [{ ...project(), state: state({ runtime: { lastSeenAt: 100001, progressKey: "assistant|x|finished|idle|y", status: "operator_paused" } }) }] };
+  assert.equal(acceptsDedicatedV2CurrentStatus(payload, { now: 100001 }), true);
+  payload.projects[0].state.runtime.progressKey = "assistant|x|finished|generating|y";
+  assert.equal(acceptsDedicatedV2CurrentStatus(payload, { now: 100001 }), false);
+});
+
 test("rendered units pin the private project config, canonical extension, and loopback bridge launcher", () => {
   const units = renderDedicatedWorkerUnits({ appDir: "/srv/autopilot", nodeBin: "/opt/node/bin/node", projectsFile: "/srv/autopilot/runtime/projects-autopilot-dev-v2.json", stateDir: "/srv/autopilot/state-autopilot-dev", homeDir: "/home/u", runtimeDir: "/run/user/1000" });
   assert.match(units.bridge, /PROJECTS_FILE=\/srv\/autopilot\/runtime\/projects-autopilot-dev-v2\.json/);
@@ -56,4 +63,6 @@ test("rendered units pin the private project config, canonical extension, and lo
   assert.doesNotMatch(units.browser, /chatgpt\.com\/g\//);
   assert.doesNotMatch(units.browser, /--new-window/);
   assert.doesNotMatch(units.browser, /extension-autopilot-dev-v2/);
+  assert.equal(matchesDedicatedWorkerUnits({ bridge: units.bridge, browser: units.browser }, units), true);
+  assert.equal(matchesDedicatedWorkerUnits({ bridge: units.bridge, browser: `${units.browser}# drift\n` }, units), false);
 });
