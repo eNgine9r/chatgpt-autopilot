@@ -67,7 +67,9 @@ export function createControlServer({
       const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
       const pathname = url.pathname.replace(/^\/autopilot(?=\/|$)/, "") || "/";
       if (req.method === "GET" && pathname === "/health") {
-        return json(res, 200, { ok: true, projects: projects.length });
+        return json(res, 200, controlRegistry
+          ? { ok: true, mode: "control_hub", workers: controlRegistry.workers?.length || 0 }
+          : { ok: true, mode: "worker", projects: projects.length });
       }
       if (req.method === "GET" && staticFiles.has(pathname)) {
         const [name, type] = staticFiles.get(pathname);

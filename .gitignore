@@ -4,5 +4,6 @@ browser-profile/
 state/
 logs/
 config/projects.json
+config/control-workers.json
 *.log
 .DS_Store
