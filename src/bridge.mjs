@@ -93,13 +93,18 @@ export function createBridgeServer({
         const project = projectById.get(projectId);
         if (!project) return json(res, 404, { error: "unknown_project" });
         if (!progressWatchdog) return json(res, 503, { error: "watchdog_unavailable" });
+        const progressParts = String(payload.progressKey || "").split("|");
+        const progressRole = ["assistant", "user"].includes(progressParts[0]) ? progressParts[0] : "";
+        const progressTurnId = String(progressParts[1] || "");
         const detail = {
           progressKey: String(payload.progressKey || ""),
           status: String(payload.status || ""),
-          lastTurnRole: String(payload.lastTurnRole || ""),
-          lastTurnId: String(payload.lastTurnId || ""),
+          lastTurnRole: String(payload.lastTurnRole || progressRole || ""),
+          lastTurnId: String(payload.lastTurnId || progressTurnId || ""),
           latestAssistantExcerpt: String(payload.latestAssistantExcerpt || ""),
-          latestUserExcerpt: String(payload.latestUserExcerpt || "")
+          latestUserExcerpt: String(payload.latestUserExcerpt || ""),
+          extensionVersion: String(payload.extensionVersion || ""),
+          backgroundWorker: String(payload.backgroundWorker || "")
         };
         const result = progressWatchdog.observe(projectId, detail);
         runtimeStore?.observe(projectId, detail);

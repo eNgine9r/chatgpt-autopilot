@@ -22,7 +22,7 @@ export class ProjectRuntimeStore {
       version: 1,
       projectId,
       control: { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
-      runtime: { lastSeenAt: 0, lastProgressAt: 0, progressKey: "", status: "unknown" },
+      runtime: { lastSeenAt: 0, lastProgressAt: 0, progressKey: "", status: "unknown", extensionVersion: "", backgroundWorker: "" },
       discovery: {
         lastScanAt: 0, candidateUrl: "", candidateTitle: "", candidatePreview: "", candidateSeenAt: 0,
         candidateEligible: false, candidateReason: "",
@@ -99,7 +99,9 @@ export class ProjectRuntimeStore {
       lastTurnRole: String(detail.lastTurnRole || current.runtime.lastTurnRole || "").slice(0, 32),
       lastTurnId: String(detail.lastTurnId || current.runtime.lastTurnId || "").slice(0, 256),
       latestAssistantExcerpt: String(detail.latestAssistantExcerpt || current.runtime.latestAssistantExcerpt || "").slice(-3000),
-      latestUserExcerpt: String(detail.latestUserExcerpt || current.runtime.latestUserExcerpt || "").slice(-2000)
+      latestUserExcerpt: String(detail.latestUserExcerpt || current.runtime.latestUserExcerpt || "").slice(-2000),
+      extensionVersion: String(detail.extensionVersion || current.runtime.extensionVersion || "").slice(0, 64),
+      backgroundWorker: String(detail.backgroundWorker || current.runtime.backgroundWorker || "").slice(0, 64)
     };
     if (!changed && at - Number(current.updatedAt || 0) < 15000) return { state: current, changed };
     return { state: this.write(projectId, { ...current, runtime, updatedAt: at }), changed };
