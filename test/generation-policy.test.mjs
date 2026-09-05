@@ -58,4 +58,8 @@ test("manifest rotates the background worker for cache-safe deployment", async (
   const manifest = JSON.parse(fs.readFileSync(new URL("../extension/manifest.json", import.meta.url), "utf8"));
   assert.equal(manifest.version, "0.3.15");
   assert.equal(manifest.background.service_worker, "service-worker-v13.js");
+  const worker = fs.readFileSync(new URL(`../extension/${manifest.background.service_worker}`, import.meta.url), "utf8");
+  const version = manifest.background.service_worker.match(/service-worker-(v\d+)\.js$/)?.[1] || "";
+  assert.ok(version);
+  assert.match(worker, new RegExp(`backgroundWorker:\\s*["']${version}["']`));
 });
