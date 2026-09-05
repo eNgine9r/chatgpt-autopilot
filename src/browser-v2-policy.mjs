@@ -39,6 +39,7 @@ export function applyBrowserV2PolicyDocument(document, repositoryByProject) {
         ...(project.browserRecovery || {}),
         enabled: true,
         staleHeartbeatSeconds: Number(project.browserRecovery?.staleHeartbeatSeconds || 90),
+        mirrorSyncSeconds: Number(project.browserRecovery?.mirrorSyncSeconds || 120),
         allowSessionRestart: false
       },
       checkpointLedger: {
@@ -66,7 +67,11 @@ export function browserV2PolicySummary(document, projectIds = []) {
   return (document?.projects || []).filter((project) => wanted.has(String(project.id))).map((project) => ({
     id: project.id,
     chatDiscovery: { enabled: project.chatDiscovery?.enabled === true, autoAdopt: project.chatDiscovery?.autoAdopt === true },
-    browserRecovery: { enabled: project.browserRecovery?.enabled === true, allowSessionRestart: project.browserRecovery?.allowSessionRestart === true },
+    browserRecovery: {
+      enabled: project.browserRecovery?.enabled === true,
+      mirrorSyncSeconds: Number(project.browserRecovery?.mirrorSyncSeconds || 120),
+      allowSessionRestart: project.browserRecovery?.allowSessionRestart === true
+    },
     checkpointLedger: {
       enabled: project.checkpointLedger?.enabled === true,
       repository: String(project.checkpointLedger?.evidence?.github?.repository || ""),

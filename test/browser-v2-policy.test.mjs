@@ -47,6 +47,7 @@ test("v2 policy preserves project identity while adding staged safety and eviden
     assert.equal(project.chatDiscovery.enabled, true);
     assert.equal(project.chatDiscovery.autoAdopt, false);
     assert.equal(project.browserRecovery.enabled, true);
+    assert.equal(project.browserRecovery.mirrorSyncSeconds, 120);
     assert.equal(project.browserRecovery.allowSessionRestart, false);
     assert.equal(project.checkpointLedger.enabled, true);
     assert.equal(project.checkpointLedger.evidence.github.requireMergedPr, true);
@@ -61,7 +62,7 @@ test("policy summary exposes only rollout-relevant fields", () => {
   assert.deepEqual(browserV2PolicySummary(next, ["btc-radar-development"]), [{
     id: "btc-radar-development",
     chatDiscovery: { enabled: true, autoAdopt: false },
-    browserRecovery: { enabled: true, allowSessionRestart: false },
+    browserRecovery: { enabled: true, mirrorSyncSeconds: 120, allowSessionRestart: false },
     checkpointLedger: {
       enabled: true,
       repository: "eNgine9r/btc-radar-telegram",

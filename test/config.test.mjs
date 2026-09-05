@@ -143,20 +143,25 @@ test("rejects unsafe discovery timing and auto-adopt without discovery", () => {
 });
 
 test("normalizes staged browser recovery settings without enabling by default", () => {
-  const loaded = loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:120, allowSessionRestart:false } }]));
+  const loaded = loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:120, mirrorSyncSeconds:180, allowSessionRestart:false } }]));
   assert.equal(loaded[0].browserRecovery.enabled, true);
   assert.equal(loaded[0].browserRecovery.staleHeartbeatSeconds, 120);
+  assert.equal(loaded[0].browserRecovery.mirrorSyncSeconds, 180);
   assert.equal(loaded[0].browserRecovery.allowSessionRestart, false);
   const defaults = loadProjects(tempConfig([project]));
   assert.equal(defaults[0].browserRecovery.enabled, false);
   assert.equal(defaults[0].browserRecovery.allowSessionRestart, false);
+  assert.equal(defaults[0].browserRecovery.mirrorSyncSeconds, 120);
   const enabledDefault = loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:90 } }]));
   assert.equal(enabledDefault[0].browserRecovery.allowSessionRestart, false);
+  assert.equal(enabledDefault[0].browserRecovery.mirrorSyncSeconds, 120);
 });
 
 test("rejects unsafe browser recovery heartbeat windows", () => {
   assert.throws(() => loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:30 } }])), /browserRecovery.staleHeartbeatSeconds/);
   assert.throws(() => loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:4000 } }])), /browserRecovery.staleHeartbeatSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:90, mirrorSyncSeconds:30 } }])), /browserRecovery.mirrorSyncSeconds/);
+  assert.throws(() => loadProjects(tempConfig([{ ...project, browserRecovery:{ enabled:true, staleHeartbeatSeconds:90, mirrorSyncSeconds:4000 } }])), /browserRecovery.mirrorSyncSeconds/);
 });
 
 test("normalizes checkpoint ledger and keeps evidence hooks private", () => {
