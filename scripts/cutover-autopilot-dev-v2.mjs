@@ -64,6 +64,7 @@ if (uid === 0) throw new Error("run_as_normal_autopilot_user");
 if (!homeDir) throw new Error("HOME_required");
 assertFile(projectsFile, "v2_projects_file");
 assertFile(path.join(appDir, "src/browser-worker.mjs"), "dedicated_bridge_launcher");
+assertFile(path.join(appDir, "src/dedicated-browser-launcher.mjs"), "dedicated_browser_launcher");
 assertFile(path.join(appDir, "extension/manifest.json"), "canonical_extension");
 assertFile(bridgeService, "existing_bridge_service");
 assertFile(browserService, "existing_browser_service");
@@ -72,7 +73,7 @@ assertFile(path.join(runtimeDir, "bus"), "user_systemd_bus");
 const projects = loadProjects(projectsFile);
 const project = validateDedicatedV2Project(projects.find((item) => item.id === "autopilot-development"));
 const store = new ProjectRuntimeStore({ stateDir, projects: [project] });
-const units = renderDedicatedWorkerUnits({ appDir, nodeBin: process.execPath, projectsFile, stateDir, homeDir, runtimeDir, chatUrl: project.chatUrl });
+const units = renderDedicatedWorkerUnits({ appDir, nodeBin: process.execPath, projectsFile, stateDir, homeDir, runtimeDir });
 let browserPreferencesParsed = {};
 try {
   if (fs.existsSync(browserPreferences)) browserPreferencesParsed = JSON.parse(fs.readFileSync(browserPreferences, "utf8"));
