@@ -43,3 +43,32 @@ test("bridge exposes loopback operator status and durable actions", async (t) =>
   assert.equal(restart.response.status, 200);
   assert.equal(store.control("demo").restartGeneration, 1);
 });
+
+
+test("heartbeat attests extension worker and recovers turn metadata from progress key", async (t) => {
+  const { project, file, store } = fixture();
+  const server = await createBridgeServer({
+    host: "127.0.0.1", port: 0, projects: [project], projectsFile: file,
+    notifier: { enabled: false, async send() { return false; } },
+    logger: { info() {}, error() {} },
+    progressWatchdog: { observe() { return { ok: true }; }, snapshot() { return { alerted: false }; } },
+    runtimeStore: store
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const heartbeat = await post(base, "/heartbeat", {
+    projectId: "demo", progressKey: "assistant|turn-42|finished|idle|abc|def", status: "assistant",
+    extensionVersion: "0.3.12", backgroundWorker: "v10"
+  });
+  assert.equal(heartbeat.response.status, 200);
+  let runtime = store.snapshot("demo").runtime;
+  assert.equal(runtime.lastTurnRole, "assistant");
+  assert.equal(runtime.lastTurnId, "turn-42");
+  assert.equal(runtime.extensionVersion, "0.3.12");
+  assert.equal(runtime.backgroundWorker, "v10");
+
+  await post(base, "/heartbeat", { projectId: "demo", progressKey: "assistant|turn-42|finished|idle|abc|ghi", status: "assistant" });
+  runtime = store.snapshot("demo").runtime;
+  assert.equal(runtime.extensionVersion, "0.3.12");
+  assert.equal(runtime.backgroundWorker, "v10");
+});
