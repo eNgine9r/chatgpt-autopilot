@@ -1,0 +1,52 @@
+{
+  "projects": [
+    {
+      "id": "autopilot-development",
+      "name": "Розробка Autopilot",
+      "enabled": true,
+      "chatUrl": "https://chatgpt.com/g/g-p-example/c/example",
+      "continueAfterSeconds": 1480,
+      "userGateMarker": "[[USER_ACTION_REQUIRED]]",
+      "continuationPrompt": "Continue from the approved Plan Anchor and durable runtime evidence. Stop for production cutover, secrets, irreversible actions, or unavailable mandatory access and append [[USER_ACTION_REQUIRED]].",
+      "startupPriority": 300,
+      "autoContinueMode": "on_completion",
+      "completionSettleSeconds": 12,
+      "startupGraceSeconds": 45,
+      "watchdogSeconds": 1800,
+      "startImmediately": false,
+      "backend": "browser",
+      "autoRollover": true,
+      "noProgressAlertSeconds": 1800,
+      "planVersion": "2026-09-04-v1",
+      "planAnchor": "Replace with the approved immutable Autopilot project plan anchor.",
+      "rolloverPrompt": "Continue the same Autopilot Project from its durable checkpoint and Plan Anchor without repeating completed work.",
+      "chatDiscovery": {
+        "enabled": true,
+        "autoAdopt": false,
+        "intervalSeconds": 300,
+        "includeTitlePatterns": [
+          "Autopilot"
+        ]
+      },
+      "browserRecovery": {
+        "enabled": true,
+        "staleHeartbeatSeconds": 90,
+        "allowSessionRestart": false
+      },
+      "checkpointLedger": {
+        "enabled": true,
+        "evidenceCheckSeconds": 120,
+        "evidence": {
+          "repoPath": "/home/autopilot/chatgpt-autopilot",
+          "requireCleanWorktree": false,
+          "requireHeadAdvanceFrom": "",
+          "github": {
+            "repository": "eNgine9r/chatgpt-autopilot",
+            "requireMergedPr": true,
+            "matchLocalHead": true
+          }
+        }
+      }
+    }
+  ]
+}
