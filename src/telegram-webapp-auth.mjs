@@ -10,7 +10,6 @@ export function validateTelegramInitData(initData, { botToken, ownerUserId, now 
   const params = new URLSearchParams(initData);
   const receivedHash = params.get("hash") || "";
   params.delete("hash");
-  params.delete("signature");
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
