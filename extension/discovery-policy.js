@@ -10,5 +10,12 @@
     return mode === "manual";
   }
 
-  globalThis.AutopilotDiscoveryPolicy = Object.freeze({ shouldStartScan, shouldAdopt });
+  function scanDisposition({ timedOut = false, currentChatUrl = "", candidateUrls = [] }) {
+    if (timedOut) return "timeout";
+    const current = String(currentChatUrl || "");
+    const hasAlternative = candidateUrls.some((url) => String(url || "") && String(url) !== current);
+    return hasAlternative ? "finalize" : "wait";
+  }
+
+  globalThis.AutopilotDiscoveryPolicy = Object.freeze({ shouldStartScan, shouldAdopt, scanDisposition });
 })();
