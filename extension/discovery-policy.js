@@ -13,8 +13,9 @@
   function scanDisposition({ timedOut = false, currentChatUrl = "", candidateUrls = [] }) {
     if (timedOut) return "timeout";
     const current = String(currentChatUrl || "");
-    const hasAlternative = candidateUrls.some((url) => String(url || "") && String(url) !== current);
-    return hasAlternative ? "finalize" : "wait";
+    if (!current) return "wait";
+    const currentObserved = candidateUrls.some((url) => String(url || "") === current);
+    return currentObserved ? "finalize" : "wait";
   }
 
   function durableCandidate(discovery = {}) {

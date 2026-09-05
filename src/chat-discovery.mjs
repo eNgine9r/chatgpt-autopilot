@@ -28,20 +28,32 @@ export function candidateEligibility(project, candidate) {
   return { eligible: marker || pattern, reason: marker ? "marker" : (pattern ? "pattern" : "no_signal"), candidate: value };
 }
 
-export function selectDiscoveryCandidate(project, candidates = []) {
+export function newerDiscoveryCandidates(project, candidates = []) {
+  const current = normalizeChatUrl(project.chatUrl);
+  const ordered = [];
+  const seen = new Set();
   for (const raw of candidates.slice(0, 40)) {
-    const result = candidateEligibility(project, raw);
+    const candidate = sanitizeDiscoveryCandidate(raw);
+    if (!candidateIsSameProject(project, candidate) || seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    ordered.push(candidate);
+  }
+  const currentIndex = ordered.findIndex((candidate) => candidate.url === current);
+  if (currentIndex < 0) return { ready: false, candidates: [] };
+  return { ready: true, candidates: ordered.slice(0, currentIndex) };
+}
+
+export function selectDiscoveryCandidate(project, candidates = []) {
+  const window = newerDiscoveryCandidates(project, candidates);
+  if (!window.ready) return { eligible: false, reason: "current_not_observed", candidate: null };
+  for (const candidate of window.candidates) {
+    const result = candidateEligibility(project, candidate);
     if (result.eligible) return result;
   }
-  return { eligible: false, reason: "no_candidate", candidate: null };
+  return { eligible: false, reason: "no_newer_candidate", candidate: null };
 }
 
 export function selectManualDiscoveryCandidate(project, candidates = []) {
-  for (const raw of candidates.slice(0, 40)) {
-    const candidate = sanitizeDiscoveryCandidate(raw);
-    if (!candidateIsSameProject(project, candidate)) continue;
-    if (candidate.url === normalizeChatUrl(project.chatUrl)) continue;
-    return candidate;
-  }
-  return null;
+  const window = newerDiscoveryCandidates(project, candidates);
+  return window.ready ? (window.candidates[0] || null) : null;
 }

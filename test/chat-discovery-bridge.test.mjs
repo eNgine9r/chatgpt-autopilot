@@ -39,8 +39,8 @@ test("bridge records candidate and adopts only confirmed same-project chat", asy
   const base = `http://127.0.0.1:${server.address().port}`;
   runtimeStore.observe("demo", { progressKey: "before-adopt", status: "assistant", latestAssistantExcerpt: "durable checkpoint survives" });
   const scan = await post(base, "/discovery-candidates", { projectId: "demo", candidates: [
-    { url: `https://chatgpt.com/g/${id}/c/current`, title: "BTC Radar current" },
-    { url: `https://chatgpt.com/g/${id}-slug/c/new`, title: "BTC Radar next" }
+    { url: `https://chatgpt.com/g/${id}-slug/c/new`, title: "BTC Radar next" },
+    { url: `https://chatgpt.com/g/${id}/c/current`, title: "BTC Radar current" }
   ] });
   assert.equal(scan.response.status, 200);
   assert.equal(scan.json.shouldAdopt, true);
@@ -55,4 +55,28 @@ test("bridge records candidate and adopts only confirmed same-project chat", asy
   assert.equal(runtimeStore.snapshot("demo").runtime.latestAssistantExcerpt, "durable checkpoint survives");
   assert.equal(runtimeStore.snapshot("demo").discovery.lastAdoptionMode, "auto");
   assert.match(sent.at(-1), /переприв’язався/);
+});
+
+
+test("bridge clears rollback candidates that appear after the current chat", async (t) => {
+  const { id, projects, runtimeStore, file } = fixture();
+  const server = await createBridgeServer({
+    host: "127.0.0.1", port: 0, projects, projectsFile: file, runtimeStore,
+    notifier: { enabled: false, async send() { return true; } },
+    logger: { info() {}, error() {} }, progressWatchdog: { observe() { return { ok: true }; } }
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  runtimeStore.recordDiscovery("demo", { url: `https://chatgpt.com/g/${id}/c/previous`, title: "BTC Radar previous" }, { eligible: true, reason: "pattern" });
+  const scan = await post(base, "/discovery-candidates", { projectId: "demo", candidates: [
+    { url: `https://chatgpt.com/g/${id}/c/current`, title: "Current newest" },
+    { url: `https://chatgpt.com/g/${id}/c/previous`, title: "BTC Radar previous" }
+  ] });
+  assert.equal(scan.response.status, 200);
+  assert.equal(scan.json.candidate, null);
+  assert.equal(scan.json.shouldAdopt, false);
+  assert.equal(scan.json.reason, "no_newer_candidate");
+  const state = runtimeStore.snapshot("demo").discovery;
+  assert.equal(state.candidateUrl, "");
+  assert.equal(state.candidateEligible, false);
 });

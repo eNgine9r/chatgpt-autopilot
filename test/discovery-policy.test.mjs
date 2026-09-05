@@ -21,10 +21,11 @@ test("forced scan may run while paused after generation finishes", () => {
 });
 
 
-test("lazy sidebar discovery waits for an alternative same-project chat", () => {
+test("lazy sidebar discovery waits until the configured current chat is observed", () => {
   assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:[] }), "wait");
-  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["current"] }), "wait");
-  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["current","new"] }), "finalize");
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["newer"] }), "wait");
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["current"] }), "finalize");
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["newer","current","older"] }), "finalize");
 });
 
 test("discovery timeout closes a scan even when the sidebar never exposes another chat", () => {
