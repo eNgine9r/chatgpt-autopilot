@@ -11,8 +11,8 @@
     ].join("|");
   }
 
-  function shouldStartProbe({ enabled, pending, sourcePresent, sourceFresh, sourceKnown, sourceGenerating, sourceBlocked, due }) {
-    return Boolean(enabled && !pending && sourcePresent && sourceFresh && sourceKnown && !sourceGenerating && !sourceBlocked && due);
+  function shouldStartProbe({ enabled, pending, sourcePresent, sourceFresh, sourceKnown, sourceGenerating, sourceBlocked, sourceTurnId, due }) {
+    return Boolean(enabled && !pending && sourcePresent && sourceFresh && sourceKnown && !sourceGenerating && !sourceBlocked && String(sourceTurnId || "") && due);
   }
 
   function provesNewerTurn(sourceTurnId, snapshot = {}) {

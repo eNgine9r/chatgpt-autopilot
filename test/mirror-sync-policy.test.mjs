@@ -5,7 +5,7 @@ await import("../extension/mirror-sync-policy.js");
 const Mirror = globalThis.AutopilotMirrorSyncPolicy;
 
 test("mirror probe starts only from a fresh idle owning tab", () => {
-  const base = { enabled:true, pending:false, sourcePresent:true, sourceFresh:true, sourceKnown:true, sourceGenerating:false, sourceBlocked:false, due:true };
+  const base = { enabled:true, pending:false, sourcePresent:true, sourceFresh:true, sourceKnown:true, sourceGenerating:false, sourceBlocked:false, sourceTurnId:"turn-1", due:true };
   assert.equal(Mirror.shouldStartProbe(base), true);
   assert.equal(Mirror.shouldStartProbe({ ...base, sourceGenerating:true }), false);
   assert.equal(Mirror.shouldStartProbe({ ...base, sourceFresh:false }), false);
@@ -13,6 +13,7 @@ test("mirror probe starts only from a fresh idle owning tab", () => {
   assert.equal(Mirror.shouldStartProbe({ ...base, sourceBlocked:true }), false);
   assert.equal(Mirror.shouldStartProbe({ ...base, pending:true }), false);
   assert.equal(Mirror.shouldStartProbe({ ...base, due:false }), false);
+  assert.equal(Mirror.shouldStartProbe({ ...base, sourceTurnId:"" }), false);
 });
 
 test("same remote turn is a no-op", () => {

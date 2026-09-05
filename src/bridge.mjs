@@ -153,6 +153,33 @@ export function createBridgeServer({
         logger.info("extension_event", { project: project.name, event, delivered });
         return json(res, 200, { ok: true, delivered });
       }
+      if (req.method === "POST" && req.url === "/mirror-report") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        if (!runtimeStore) return json(res, 503, { error: "runtime_store_unavailable" });
+        const allowedResults = new Set(["started", "same", "blocked", "refresh", "timeout", "error"]);
+        const result = String(payload.result || "");
+        if (!allowedResults.has(result)) return json(res, 400, { error: "invalid_mirror_result" });
+        const current = runtimeStore.snapshot(project.id).mirrorSync || {};
+        const pickText = (key, fallback = "", limit = 256) => String(payload[key] !== undefined ? payload[key] : fallback).slice(0, limit);
+        const pickTime = (key, fallback = 0) => { const value = Number(payload[key] !== undefined ? payload[key] : fallback); return Number.isFinite(value) ? Math.max(0, value) : Math.max(0, Number(fallback || 0)); };
+        const patch = {
+          lastProbeAt: pickTime("lastProbeAt", current.lastProbeAt),
+          lastResult: result,
+          sourceTurnId: pickText("sourceTurnId", current.sourceTurnId),
+          remoteTurnId: pickText("remoteTurnId", current.remoteTurnId),
+          lastObservedAt: pickTime("lastObservedAt", current.lastObservedAt),
+          lastRefreshAt: pickTime("lastRefreshAt", current.lastRefreshAt),
+          lastError: pickText("lastError", "", 512)
+        };
+        const state = runtimeStore.recordMirrorSync(project.id, patch);
+        logger.info("mirror_sync_state", { project: project.name, result, sourceTurnId: patch.sourceTurnId, remoteTurnId: patch.remoteTurnId });
+        return json(res, 200, { ok: true, mirrorSync: state.mirrorSync });
+      }
       if (req.method === "POST" && req.url === "/recovery-report") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
           return json(res, 415, { error: "application_json_required" });

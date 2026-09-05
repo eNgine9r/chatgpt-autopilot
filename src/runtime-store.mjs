@@ -32,6 +32,10 @@ export class ProjectRuntimeStore {
         stage: "idle", reason: "", attempts: 0, softReloads: 0, tabRecreates: 0, browserRestarts: 0,
         lastAttemptAt: 0, nextCheckAt: 0, cooldownUntil: 0, lastRecoveredAt: 0, alerted: false, lastError: ""
       },
+      mirrorSync: {
+        lastProbeAt: 0, lastResult: "never", sourceTurnId: "", remoteTurnId: "",
+        lastObservedAt: 0, lastRefreshAt: 0, lastError: ""
+      },
       checkpoint: {
         revision: 0, fingerprint: "", planVersion: "", goal: "", completed: [], currentTask: "", decisions: [],
         evidence: [], blockers: [], nextAction: "", doNotRepeat: [], stage: "active", githubPr: 0,
@@ -51,6 +55,7 @@ export class ProjectRuntimeStore {
         runtime: { ...this.empty(projectId).runtime, ...(parsed.runtime || {}) },
         discovery: { ...this.empty(projectId).discovery, ...(parsed.discovery || {}) },
         recovery: { ...this.empty(projectId).recovery, ...(parsed.recovery || {}) },
+        mirrorSync: { ...this.empty(projectId).mirrorSync, ...(parsed.mirrorSync || {}) },
         checkpoint: { ...this.empty(projectId).checkpoint, ...(parsed.checkpoint || {}),
           evidenceHealth: { ...this.empty(projectId).checkpoint.evidenceHealth, ...(parsed.checkpoint?.evidenceHealth || {}) }
         }
@@ -130,6 +135,10 @@ export class ProjectRuntimeStore {
       candidateUrl: "", candidateTitle: "", candidatePreview: "", candidateSeenAt: 0,
       candidateEligible: false, candidateReason: ""
     });
+  }
+
+  recordMirrorSync(projectId, patch = {}) {
+    return this.patch(projectId, "mirrorSync", patch);
   }
 
   recordRecovery(projectId, patch = {}) {
