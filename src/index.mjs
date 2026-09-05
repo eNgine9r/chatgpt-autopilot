@@ -9,6 +9,7 @@ import { createBridgeServer } from "./bridge.mjs";
 import { SupervisorProgressWatchdog } from "./progress-watchdog.mjs";
 import { buildStartupPlan } from "./startup.mjs";
 import { buildChromiumEnvironment, chromiumPlatformArgs } from "./chromium-session.mjs";
+import { ensureChromiumDeveloperMode } from "./chromium-profile.mjs";
 import { waitForStartupReadiness } from "./connect-preflight.mjs";
 import { listOwnedGcrPrompterPids, watchAndDismissNewGcrPrompters } from "./keyring-prompt.mjs";
 import { ProjectRuntimeStore } from "./runtime-store.mjs";
@@ -85,6 +86,9 @@ const progressWatchdogTimer = setInterval(() => {
   });
 }, Math.max(5, config.supervisorWatchdogPollSeconds) * 1000);
 progressWatchdogTimer.unref();
+
+const profileBootstrap = ensureChromiumDeveloperMode(config.browserProfileDir);
+logger.info("chromium_profile_ready", { developerMode: true, preferencesChanged: profileBootstrap.changed });
 
 const browserLogPath = path.join(config.logDir, "chromium.log");
 const browserLogFd = fs.openSync(browserLogPath, "a", 0o600);
