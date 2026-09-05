@@ -46,10 +46,14 @@ test("post-cutover acceptance requires a newer fresh paused heartbeat and v2 fea
 });
 
 test("rendered units pin the private project config, canonical extension, and loopback bridge launcher", () => {
-  const units = renderDedicatedWorkerUnits({ appDir: "/srv/autopilot", nodeBin: "/opt/node/bin/node", projectsFile: "/srv/autopilot/runtime/projects-autopilot-dev-v2.json", stateDir: "/srv/autopilot/state-autopilot-dev", homeDir: "/home/u", runtimeDir: "/run/user/1000", chatUrl: "https://chatgpt.com/g/g-p-demo/c/demo" });
+  const units = renderDedicatedWorkerUnits({ appDir: "/srv/autopilot", nodeBin: "/opt/node/bin/node", projectsFile: "/srv/autopilot/runtime/projects-autopilot-dev-v2.json", stateDir: "/srv/autopilot/state-autopilot-dev", homeDir: "/home/u", runtimeDir: "/run/user/1000" });
   assert.match(units.bridge, /PROJECTS_FILE=\/srv\/autopilot\/runtime\/projects-autopilot-dev-v2\.json/);
   assert.match(units.bridge, /browser-worker\.mjs/);
-  assert.match(units.browser, /--load-extension=\/srv\/autopilot\/extension/);
+  assert.match(units.browser, /PROJECTS_FILE=\/srv\/autopilot\/runtime\/projects-autopilot-dev-v2\.json/);
+  assert.match(units.browser, /BROWSER_PROFILE_DIR=\/srv\/autopilot\/browser-profile-autopilot-dev/);
+  assert.match(units.browser, /dedicated-browser-launcher\.mjs/);
   assert.match(units.browser, /DBUS_SESSION_BUS_ADDRESS=unix:path=\/run\/user\/1000\/bus/);
+  assert.doesNotMatch(units.browser, /chatgpt\.com\/g\//);
+  assert.doesNotMatch(units.browser, /--new-window/);
   assert.doesNotMatch(units.browser, /extension-autopilot-dev-v2/);
 });
