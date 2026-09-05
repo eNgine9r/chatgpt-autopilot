@@ -3,6 +3,7 @@ import { publicProjects, normalizeChatUrl, sameProjectChatUrl } from "./config.m
 import { persistProjectChatUrl } from "./project-store.mjs";
 import { telegramEventMessage } from "./messages.uk.mjs";
 import { candidateEligibility, selectDiscoveryCandidate, selectManualDiscoveryCandidate } from "./chat-discovery.mjs";
+import { operatorProjectStatus, applyOperatorAction } from "./operator-control.mjs";
 import { normalizeCheckpoint, checkpointFingerprint, checkpointDisplayStatus } from "./checkpoint-ledger.mjs";
 import { verifyProjectEvidence, evidenceConfigured } from "./evidence-verifier.mjs";
 
@@ -62,6 +63,26 @@ export function createBridgeServer({
       }
       if (req.method === "GET" && req.url === "/config") {
         return json(res, 200, { projects: publicProjects(projects, runtimeStore) });
+      }
+      if (req.method === "GET" && req.url === "/operator/status") {
+        return json(res, 200, {
+          ok: true,
+          generatedAt: Date.now(),
+          projects: [...projectById.values()].map((project) => operatorProjectStatus(project, runtimeStore, progressWatchdog))
+        });
+      }
+      if (req.method === "POST" && req.url === "/operator/action") {
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const project = projectById.get(String(payload.projectId || ""));
+        if (!project) return json(res, 404, { error: "unknown_project" });
+        const action = String(payload.action || "");
+        const result = applyOperatorAction(project, runtimeStore, action);
+        if (!result.ok) return json(res, result.status, { ok: false, error: result.error });
+        logger.info("operator_action", { project: project.name, action });
+        return json(res, 200, { ok: true, projectId: project.id, action, state: result.state });
       }
       if (req.method === "POST" && req.url === "/heartbeat") {
         if (!String(req.headers["content-type"] || "").startsWith("application/json")) {

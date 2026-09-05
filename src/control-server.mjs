@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { validateTelegramInitData } from "./telegram-webapp-auth.mjs";
+import { operatorProjectStatus, applyOperatorAction, isOperatorProjectProvenIdle } from "./operator-control.mjs";
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -36,7 +37,7 @@ function authHeader(req) {
 export function createControlServer({
   host, port, projects, runtimeStore, progressWatchdog, logger,
   telegramBotToken, telegramOwnerUserId, miniappDir,
-  onServiceRestart = null
+  onServiceRestart = null, controlRegistry = null
 }) {
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const staticFiles = new Map([
@@ -52,29 +53,12 @@ export function createControlServer({
     });
   }
 
-  function statusPayload() {
+  async function statusPayload() {
+    if (controlRegistry) return controlRegistry.status();
     return {
       ok: true,
       generatedAt: Date.now(),
-      projects: projects.map((project) => ({
-        id: project.id,
-        name: project.name,
-        chatUrl: project.chatUrl,
-        planVersion: project.planVersion,
-        chatDiscovery: project.chatDiscovery || { enabled: false, autoAdopt: false },
-        browserRecovery: project.browserRecovery || { enabled: false, allowSessionRestart: false },
-        checkpointLedger: {
-          enabled: project.checkpointLedger?.enabled === true,
-          evidenceCheckSeconds: Number(project.checkpointLedger?.evidenceCheckSeconds || 120),
-          evidenceConfigured: Boolean(
-            project.checkpointLedger?.evidence?.requireCleanWorktree
-            || project.checkpointLedger?.evidence?.requireHeadAdvanceFrom
-            || project.checkpointLedger?.evidence?.github?.requireMergedPr
-          )
-        },
-        state: runtimeStore.snapshot(project.id),
-        watchdog: progressWatchdog?.snapshot?.(project.id) || null
-      }))
+      projects: projects.map((project) => operatorProjectStatus(project, runtimeStore, progressWatchdog))
     };
   }
 
@@ -94,31 +78,43 @@ export function createControlServer({
         if (!auth.ok) return json(res, auth.error === "forbidden_user" ? 403 : 401, { ok: false, error: auth.error });
       }
       if (req.method === "GET" && pathname === "/api/status") {
-        return json(res, 200, statusPayload());
+        return json(res, 200, await statusPayload());
       }
       const match = pathname.match(/^\/api\/projects\/([a-z0-9_-]+)\/action$/i);
       if (req.method === "POST" && match) {
         const projectId = match[1];
-        if (!projectById.has(projectId)) return json(res, 404, { ok: false, error: "unknown_project" });
         const { action } = await readJson(req);
-        if (action === "pause") runtimeStore.setPaused(projectId, true);
-        else if (action === "resume") runtimeStore.setPaused(projectId, false);
-        else if (action === "restart") runtimeStore.bump(projectId, "restartGeneration");
-        else if (action === "rollover") runtimeStore.bump(projectId, "rolloverGeneration");
-        else if (action === "scan_chats") {
-          if (!projectById.get(projectId).chatDiscovery?.enabled) return json(res, 409, { ok: false, error: "chat_discovery_disabled" });
-          runtimeStore.bump(projectId, "discoveryScanGeneration");
-        } else if (action === "adopt_candidate") {
-          if (!projectById.get(projectId).chatDiscovery?.enabled) return json(res, 409, { ok: false, error: "chat_discovery_disabled" });
-          const candidate = runtimeStore.snapshot(projectId).discovery?.candidateUrl || "";
-          if (!candidate) return json(res, 409, { ok: false, error: "no_discovery_candidate" });
-          runtimeStore.bump(projectId, "adoptGeneration");
-        } else return json(res, 400, { ok: false, error: "unsupported_action" });
-        logger.info("control_action", { project: projectById.get(projectId).name, action });
-        return json(res, 200, { ok: true, projectId, action, state: runtimeStore.snapshot(projectId) });
+        if (controlRegistry) {
+          try {
+            const result = await controlRegistry.action(projectId, String(action || ""));
+            logger.info("control_action", { projectId, action, workerMode: true });
+            return json(res, 200, result);
+          } catch (error) {
+            return json(res, Number(error.status || 502), { ok: false, error: String(error.message || "worker_action_failed") });
+          }
+        }
+        const project = projectById.get(projectId);
+        if (!project) return json(res, 404, { ok: false, error: "unknown_project" });
+        const result = applyOperatorAction(project, runtimeStore, String(action || ""));
+        if (!result.ok) return json(res, result.status, { ok: false, error: result.error });
+        logger.info("control_action", { project: project.name, action, workerMode: false });
+        return json(res, 200, { ok: true, projectId, action, state: result.state });
       }
       if (req.method === "POST" && pathname === "/api/service/restart") {
         await readJson(req).catch(() => ({}));
+        if (controlRegistry) {
+          try {
+            const result = await controlRegistry.restartAll();
+            logger.info("control_workers_restart_requested", { workers: result.restarting });
+            return json(res, 202, result);
+          } catch (error) {
+            return json(res, Number(error.status || 502), { ok: false, error: String(error.message || "worker_restart_failed") });
+          }
+        }
+        const status = await statusPayload();
+        if (!status.projects.every((project) => isOperatorProjectProvenIdle(project))) {
+          return json(res, 409, { ok: false, error: "restart_blocked_active_or_unknown" });
+        }
         logger.info("control_service_restart_requested", {});
         json(res, 202, { ok: true, restarting: true });
         setTimeout(() => onServiceRestart?.(), 250).unref();
