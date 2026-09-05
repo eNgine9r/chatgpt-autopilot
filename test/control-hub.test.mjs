@@ -33,6 +33,9 @@ test("Telegram control hub authenticates owner and routes worker actions", async
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
+  const health = await fetch(`${base}/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { ok: true, mode: "control_hub", workers: 0 });
   assert.equal((await fetch(`${base}/api/status`)).status, 401);
   const headers = { authorization: `tma ${signed("123:test", 42)}`, "content-type": "application/json" };
   const status = await fetch(`${base}/api/status`, { headers });
