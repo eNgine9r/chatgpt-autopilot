@@ -96,3 +96,17 @@ test("evidence recheck can verify an unchanged complete checkpoint", () => {
   assert.equal(result.state.checkpoint.completionStatus,"complete_verified");
   assert.equal(result.state.checkpoint.evidenceHealth.ok,true);
 });
+
+test("transient empty heartbeat metadata does not erase the last known turn", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-runtime-"));
+  const store = new ProjectRuntimeStore({ stateDir: dir, projects: [{ id: "demo" }] });
+  store.observe("demo", {
+    progressKey: "assistant|a1|finished|idle", status: "assistant", lastTurnRole: "assistant", lastTurnId: "a1",
+    latestAssistantExcerpt: "durable assistant", latestUserExcerpt: "prior user"
+  });
+  const next = store.observe("demo", { progressKey: "assistant|a1|unknown|idle", status: "assistant" }).state.runtime;
+  assert.equal(next.lastTurnRole, "assistant");
+  assert.equal(next.lastTurnId, "a1");
+  assert.equal(next.latestAssistantExcerpt, "durable assistant");
+  assert.equal(next.latestUserExcerpt, "prior user");
+});

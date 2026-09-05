@@ -130,6 +130,20 @@ test("state-driven mode requires an explicit finished assistant status", () => {
   assert.equal(decideAction({ ...stateDriven, assistantFinished: false }), "wait_completion");
 });
 
+test("unknown completion may continue only after a stable idle safety window", () => {
+  const stateDriven = {
+    ...base, autoContinueMode: "on_completion", assistantFinished: null,
+    latestTurnKey: "a1", stableIdleEligible: true, stableIdleObservationKey: "a1|text|controls",
+    stableIdleSettleMs: 30000, completionObservedTurnKey: "", completionObservedAtMs: 0, nowMs: 50000
+  };
+  assert.equal(decideAction(stateDriven), "observe_completion");
+  assert.equal(decideAction({ ...stateDriven, completionObservedTurnKey: "a1|text|controls", completionObservedAtMs: 25000 }), "wait_settle");
+  assert.equal(decideAction({ ...stateDriven, completionObservedTurnKey: "a1|text|controls", completionObservedAtMs: 20000 }), "send_continue");
+  assert.equal(decideAction({ ...stateDriven, completionObservedTurnKey: "a1|old|controls", completionObservedAtMs: 10000 }), "observe_completion");
+  assert.equal(decideAction({ ...stateDriven, stableIdleEligible: false }), "fail_closed");
+  assert.equal(decideAction({ ...stateDriven, generating: true }), "wait_generating");
+});
+
 test("state-driven mode observes, settles, sends once, then waits for a new turn", () => {
   const stateDriven = {
     ...base,

@@ -96,10 +96,10 @@ export class ProjectRuntimeStore {
       lastProgressAt: (!current.runtime.lastProgressAt || changed) ? at : current.runtime.lastProgressAt,
       progressKey: key || current.runtime.progressKey,
       status: String(detail.status || current.runtime.status || "unknown").slice(0, 64),
-      lastTurnRole: String(detail.lastTurnRole || "").slice(0, 32),
-      lastTurnId: String(detail.lastTurnId || "").slice(0, 256),
-      latestAssistantExcerpt: String(detail.latestAssistantExcerpt || "").slice(-3000),
-      latestUserExcerpt: String(detail.latestUserExcerpt || "").slice(-2000)
+      lastTurnRole: String(detail.lastTurnRole || current.runtime.lastTurnRole || "").slice(0, 32),
+      lastTurnId: String(detail.lastTurnId || current.runtime.lastTurnId || "").slice(0, 256),
+      latestAssistantExcerpt: String(detail.latestAssistantExcerpt || current.runtime.latestAssistantExcerpt || "").slice(-3000),
+      latestUserExcerpt: String(detail.latestUserExcerpt || current.runtime.latestUserExcerpt || "").slice(-2000)
     };
     if (!changed && at - Number(current.updatedAt || 0) < 15000) return { state: current, changed };
     return { state: this.write(projectId, { ...current, runtime, updatedAt: at }), changed };
