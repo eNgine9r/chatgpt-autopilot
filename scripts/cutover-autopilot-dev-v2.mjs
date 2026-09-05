@@ -6,7 +6,8 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadProjects } from "../src/config.mjs";
 import { ProjectRuntimeStore } from "../src/runtime-store.mjs";
-import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits, withExtensionsDeveloperMode } from "../src/dedicated-cutover.mjs";
+import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
+import { withExtensionsDeveloperMode } from "../src/chromium-profile.mjs";
 
 const execFileAsync = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

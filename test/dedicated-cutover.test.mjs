@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits, withExtensionsDeveloperMode } from "../src/dedicated-cutover.mjs";
+import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
+import { withExtensionsDeveloperMode } from "../src/chromium-profile.mjs";
 
 function project(overrides = {}) {
   return { id: "autopilot-development", enabled: true, backend: "browser", chatUrl: "https://chatgpt.com/g/g-p-demo/c/demo", browserRecovery: { enabled: true, allowSessionRestart: false }, checkpointLedger: { enabled: true }, chatDiscovery: { enabled: true, autoAdopt: false }, ...overrides };

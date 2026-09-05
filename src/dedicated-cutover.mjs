@@ -9,17 +9,6 @@ function quoteExec(value) {
 }
 
 
-export function withExtensionsDeveloperMode(preferences = {}) {
-  const source = preferences && typeof preferences === "object" && !Array.isArray(preferences) ? preferences : {};
-  return {
-    ...source,
-    extensions: {
-      ...(source.extensions || {}),
-      ui: { ...(source.extensions?.ui || {}), developer_mode: true }
-    }
-  };
-}
-
 export function isFreshPausedIdleState(state, { now = Date.now(), maxAgeMs = 30000 } = {}) {
   const runtime = state?.runtime || {};
   const age = Number(now) - Number(runtime.lastSeenAt || 0);
