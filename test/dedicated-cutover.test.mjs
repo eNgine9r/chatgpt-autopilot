@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits } from "../src/dedicated-cutover.mjs";
+import { isFreshPausedIdleState, validateDedicatedV2Project, acceptsDedicatedV2Status, renderDedicatedWorkerUnits, withExtensionsDeveloperMode } from "../src/dedicated-cutover.mjs";
 
 function project(overrides = {}) {
   return { id: "autopilot-development", enabled: true, backend: "browser", chatUrl: "https://chatgpt.com/g/g-p-demo/c/demo", browserRecovery: { enabled: true, allowSessionRestart: false }, checkpointLedger: { enabled: true }, chatDiscovery: { enabled: true, autoAdopt: false }, ...overrides };
@@ -8,6 +8,19 @@ function project(overrides = {}) {
 function state(overrides = {}) {
   return { control: { paused: true }, runtime: { lastSeenAt: 100000, progressKey: "assistant|x|finished|idle|y", status: "operator_paused" }, ...overrides };
 }
+
+
+test("developer mode preference is enabled without dropping existing Chromium settings", () => {
+  const original = { browser: { check_default_browser: false }, extensions: { pinned_by_default: true, ui: { other: "keep" } }, profile: { name: "Autopilot" } };
+  const next = withExtensionsDeveloperMode(original);
+  assert.equal(next.extensions.ui.developer_mode, true);
+  assert.equal(next.extensions.ui.other, "keep");
+  assert.equal(next.extensions.pinned_by_default, true);
+  assert.deepEqual(next.browser, original.browser);
+  assert.deepEqual(next.profile, original.profile);
+  assert.equal(original.extensions.ui.developer_mode, undefined);
+  assert.equal(withExtensionsDeveloperMode(null).extensions.ui.developer_mode, true);
+});
 
 test("dedicated cutover mutates only from a fresh paused idle state", () => {
   assert.equal(isFreshPausedIdleState(state(), { now: 100000 }), true);
