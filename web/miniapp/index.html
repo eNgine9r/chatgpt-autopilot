@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#090d13">
-  <title>Autopilot Control</title>
+  <title>Autopilot — центр керування</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app-shell">
     <header class="app-header">
-      <div class="brand-block"><span class="eyebrow">AUTOPILOT</span><h1>Project Control</h1><p id="updated" class="updated">Завантаження…</p></div>
+      <div class="brand-block"><span class="eyebrow">AUTOPILOT</span><h1>Центр керування</h1><p id="updated" class="updated">Завантаження…</p></div>
       <button id="refresh" class="icon-button" type="button" aria-label="Оновити статус">↻</button>
     </header>
     <section id="overview" class="overview-grid" aria-label="Огляд проєктів"></section>
@@ -23,11 +23,11 @@
     </nav>    <section id="projects" class="projects" aria-live="polite"></section>
     <section class="maintenance-card" aria-labelledby="maintenanceTitle">
       <div class="maintenance-copy">
-        <span class="section-kicker">MAINTENANCE</span>
-        <h2 id="maintenanceTitle">Autopilot workers</h2>
-        <p id="workersStatus">Безпечний restart усіх workers із paused + fresh-idle gate.</p>
+        <span class="section-kicker">ОБСЛУГОВУВАННЯ</span>
+        <h2 id="maintenanceTitle">Воркери Autopilot</h2>
+        <p id="workersStatus">Безпечний перезапуск усіх воркерів із перевіркою стану.</p>
       </div>
-      <button id="restartService" class="danger-button" type="button">Перезапустити workers</button>
+      <button id="restartService" class="danger-button" type="button">Перезапустити воркери</button>
     </section>
     <p id="message" class="toast" role="status" aria-live="polite"></p>
   </main>

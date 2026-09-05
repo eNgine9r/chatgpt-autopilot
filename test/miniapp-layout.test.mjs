@@ -25,3 +25,13 @@ test("project cards keep dangerous and technical controls out of the primary row
   assert.doesNotMatch(primary, /data-action="restart"/);
   assert.doesNotMatch(primary, /data-action="rollover"/);
 });
+
+test("Mini App polish localizes operator chrome and cleans raw markdown previews", () => {
+  assert.match(html, /Центр керування/);
+  assert.match(html, /ОБСЛУГОВУВАННЯ/);
+  assert.match(app, /function|const cleanPreview/);
+  assert.match(app, /\^\\s\{0,3\}#\{1,6\}/);
+  assert.match(app, /Контрольна точка/);
+  assert.match(app, /Самовідновлення/);
+  assert.doesNotMatch(html, /Project Control|MAINTENANCE|Autopilot workers/);
+});
