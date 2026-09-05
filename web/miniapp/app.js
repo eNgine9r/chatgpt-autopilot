@@ -33,6 +33,14 @@ function recoveryBlock(p) {
   const cooldown=r.cooldownUntil>Date.now()?` • cooldown ${ago(Date.now()-(r.cooldownUntil-Date.now()))}`:"";
   return `<div class="checkpoint"><b>Self-healing:</b> ${esc(stage)}<br><small>${esc(r.reason||'')} • спроби ${Number(r.attempts||0)}${cooldown}${r.lastError?` • ${esc(r.lastError)}`:""}</small></div>`;
 }
+function mirrorBlock(p) {
+  if (!p.browserRecovery?.enabled) return "";
+  const m=p.state?.mirrorSync||{}; const result=m.lastResult||"never";
+  const labels={never:"ще не перевірявся",started:"перевірка…",same:"синхронно",blocked:"заблоковано safety gate",refresh:"вкладку синхронізовано",timeout:"timeout",error:"помилка"};
+  const refresh=m.lastRefreshAt?` • refresh ${ago(m.lastRefreshAt)}`:"";
+  const error=m.lastError?` • ${esc(m.lastError)}`:"";
+  return `<div class="checkpoint"><b>Mirror sync:</b> ${esc(labels[result]||result)}<br><small>остання перевірка ${ago(m.lastProbeAt)}${refresh}${error}</small></div>`;
+}
 function discoveryBlock(p) {
   if (!p.chatDiscovery?.enabled) return "";
   const d=p.state.discovery||{};
@@ -45,7 +53,7 @@ function card(p) {
   const worker=p.worker?`<small>Worker: ${esc(p.worker.name||p.worker.id)} • ${online?'online':'offline'}</small>`:"";
   const link=p.chatUrl?`<a href="${esc(p.chatUrl)}">Відкрити чат ↗</a>`:`<span>Chat unavailable</span>`;
   const disabled=online?'':' disabled';
-  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div>${worker}</div>${link}</div><div class="meta"><div>Останній heartbeat<b>${ago(p.state?.runtime?.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state?.runtime?.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}"${disabled}>${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart"${disabled}>↻ Вкладка</button><button data-id="${p.id}" data-action="rollover"${disabled}>＋ Новий чат</button></div>${checkpointBlock(p)}${recoveryBlock(p)}${discoveryBlock(p)}</article>`;
+  return `<article class="card ${paused?'paused':''}"><div class="row"><div><div class="title">${esc(p.name)}</div><div class="state"><i class="dot ${kind}"></i>${esc(label)}</div>${worker}</div>${link}</div><div class="meta"><div>Останній heartbeat<b>${ago(p.state?.runtime?.lastSeenAt)}</b></div><div>Останній прогрес<b>${ago(p.state?.runtime?.lastProgressAt)}</b></div><div>Plan anchor<b>${esc(p.planVersion||'v1')}</b></div><div>Watchdog<b>${p.watchdog?.alerted?'⚠ alert':'OK'}</b></div></div><div class="checkpoint">${esc(excerpt)}</div><div class="actions"><button data-id="${p.id}" data-action="${paused?'resume':'pause'}" class="${paused?'primary':''}"${disabled}>${paused?'▶ Відновити':'Ⅱ Пауза'}</button><button data-id="${p.id}" data-action="restart"${disabled}>↻ Вкладка</button><button data-id="${p.id}" data-action="rollover"${disabled}>＋ Новий чат</button></div>${checkpointBlock(p)}${recoveryBlock(p)}${mirrorBlock(p)}${discoveryBlock(p)}</article>`;
 }
 async function load() {
   try {

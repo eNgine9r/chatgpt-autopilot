@@ -110,3 +110,22 @@ test("transient empty heartbeat metadata does not erase the last known turn", ()
   assert.equal(next.latestAssistantExcerpt, "durable assistant");
   assert.equal(next.latestUserExcerpt, "prior user");
 });
+
+
+test("mirror sync telemetry persists across supervisor restarts", () => {
+  const { store, stateDir, tick } = fixture();
+  store.recordMirrorSync("demo", {
+    lastProbeAt: 1000, lastResult: "started", sourceTurnId: "turn-1", remoteTurnId: "", lastObservedAt: 0
+  });
+  tick(5000);
+  store.recordMirrorSync("demo", {
+    lastResult: "refresh", remoteTurnId: "turn-2", lastObservedAt: 5000, lastRefreshAt: 5000, lastError: ""
+  });
+  const reloaded = new ProjectRuntimeStore({ stateDir, projects: [{ id: "demo" }] });
+  const mirror = reloaded.snapshot("demo").mirrorSync;
+  assert.equal(mirror.lastProbeAt, 1000);
+  assert.equal(mirror.lastResult, "refresh");
+  assert.equal(mirror.sourceTurnId, "turn-1");
+  assert.equal(mirror.remoteTurnId, "turn-2");
+  assert.equal(mirror.lastRefreshAt, 5000);
+});

@@ -9,7 +9,8 @@ function emptyState(status = "worker_offline") {
     control: { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
     runtime: { lastSeenAt: 0, lastProgressAt: 0, progressKey: "", status },
     checkpoint: { revision: 0, completionStatus: "missing", blockers: [], evidenceHealth: { configured: false, ok: false, reasons: [] } },
-    recovery: { stage: "idle", attempts: 0, lastError: "" }
+    recovery: { stage: "idle", attempts: 0, lastError: "" },
+    mirrorSync: { lastProbeAt: 0, lastResult: "never", lastRefreshAt: 0, lastError: "" }
   };
 }
 
