@@ -139,6 +139,13 @@
     return { role, turnId: id, text: String(node.innerText || "").trim(), assistantStatus: "", assistantFinished: null };
   }
 
+  function recentTurnIds(limit = 24) {
+    const modern = [...document.querySelectorAll("[data-testid^=\"conversation-turn-\"][data-turn]")].map((turn) => turnId(turn)).filter(Boolean);
+    if (modern.length) return [...new Set(modern)].slice(-limit);
+    const legacy = [...document.querySelectorAll("[data-message-author-role][data-message-id]")].map((node) => String(node.getAttribute("data-message-id") || "")).filter(Boolean);
+    return [...new Set(legacy)].slice(-limit);
+  }
+
   async function conversationTail() {
     const turns = [...document.querySelectorAll('[data-testid^="conversation-turn-"][data-turn]')].slice(-10);
     const parts = [];
@@ -708,6 +715,24 @@
         url: Policy.normalizeChatUrl(location.href), ...recoveryBlockers()
       });
       return false;
+    }
+    if (payload?.type === "MIRROR_SNAPSHOT") {
+      Promise.resolve().then(async () => {
+        const configured = await refreshProject();
+        if (!configured) return { ok: false, error: "project_not_configured" };
+        const latest = await latestTurn();
+        const known = generationStateKnown();
+        return {
+          ok: true, projectId: configured.id, url: Policy.normalizeChatUrl(location.href),
+          role: latest.role || "unknown", turnId: latest.turnId || "",
+          recentTurnIds: recentTurnIds(),
+          assistantFinished: latest.assistantFinished,
+          textFingerprint: Policy.fingerprint(latest.text || ""),
+          generatingKnown: known, generating: known ? isGenerating() : false,
+          composerPresent: Boolean(first(SELECTORS.composer)), ...recoveryBlockers()
+        };
+      }).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
+      return true;
     }
     if (payload?.type === "DISCOVERY_SCAN") {
       sendResponse({ ok: true, candidates: discoveryCandidates(String(payload.projectRootUrl || "")) });

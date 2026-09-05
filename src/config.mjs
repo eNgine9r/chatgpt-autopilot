@@ -219,10 +219,14 @@ export function loadProjects(projectsFile) {
     const browserRecovery = {
       enabled: backend === "browser" && recoveryRaw.enabled === true,
       staleHeartbeatSeconds: Number(recoveryRaw.staleHeartbeatSeconds ?? 90),
+      mirrorSyncSeconds: Number(recoveryRaw.mirrorSyncSeconds ?? 120),
       allowSessionRestart: recoveryRaw.allowSessionRestart === true
     };
     if (!Number.isFinite(browserRecovery.staleHeartbeatSeconds) || browserRecovery.staleHeartbeatSeconds < 60 || browserRecovery.staleHeartbeatSeconds > 3600) {
       throw new Error(`${project.id}: browserRecovery.staleHeartbeatSeconds must be between 60 and 3600`);
+    }
+    if (!Number.isFinite(browserRecovery.mirrorSyncSeconds) || browserRecovery.mirrorSyncSeconds < 60 || browserRecovery.mirrorSyncSeconds > 3600) {
+      throw new Error(`${project.id}: browserRecovery.mirrorSyncSeconds must be between 60 and 3600`);
     }
 
     const discoveryRaw = project.chatDiscovery || {};
