@@ -696,7 +696,7 @@ async function handleMessage(message, sender) {
         latestUserExcerpt: message.latestUserExcerpt,
         checkpoint: message.checkpoint || null,
         extensionVersion: chrome.runtime.getManifest().version,
-        backgroundWorker: "v12"
+        backgroundWorker: "v13"
       })) };
     case "ROLLOVER":
       return startRollover(message, sender);
