@@ -1,5 +1,6 @@
-importScripts("lease-policy.js", "discovery-policy.js", "recovery-policy.js", "rollover-policy.js");
-const BRIDGE = "http://127.0.0.1:8765";
+importScripts("bridge-policy.js", "lease-policy.js", "discovery-policy.js", "recovery-policy.js", "rollover-policy.js");
+const BRIDGE_CANDIDATES = ["http://127.0.0.1:8765", "http://127.0.0.1:8767"];
+let bridgeBaseCache = "";
 const PULSE_ALARM = "autopilot-pulse";
 const MONITOR_STARTED_KEY = "monitor:startedAt";
 const MISSING_PREFIX = "missing:";
@@ -15,10 +16,38 @@ const RECOVERY_COOLDOWN_MS = 300000;
 const LEASE_TTL_MS = 90000;
 const claimChains = new Map();
 
-async function bridge(path, options = {}) {
-  const response = await fetch(`${BRIDGE}${path}`, options);
+async function fetchBridgeJson(base, path, options = {}) {
+  const response = await fetch(`${base}${path}`, options);
   if (!response.ok) throw new Error(`bridge_http_${response.status}`);
   return response.json();
+}
+
+async function resolveBridge({ force = false } = {}) {
+  if (bridgeBaseCache && !force) return bridgeBaseCache;
+  const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
+  const tabUrls = tabs.map((tab) => tab.url || "").filter(Boolean);
+  const candidates = [];
+  for (const base of BRIDGE_CANDIDATES) {
+    try {
+      const config = await fetchBridgeJson(base, "/config");
+      candidates.push({ base, config });
+    } catch {}
+  }
+  const selected = AutopilotBridgePolicy.selectBridge(candidates, tabUrls);
+  if (!selected?.base) throw new Error("bridge_unresolved");
+  bridgeBaseCache = selected.base;
+  return bridgeBaseCache;
+}
+
+async function bridge(path, options = {}) {
+  let base = await resolveBridge();
+  try {
+    return await fetchBridgeJson(base, path, options);
+  } catch (error) {
+    bridgeBaseCache = "";
+    base = await resolveBridge({ force: true });
+    return fetchBridgeJson(base, path, options);
+  }
 }
 
 function normalizeChatUrl(raw) {
