@@ -480,13 +480,15 @@
       const latest = await latestTurn();
       const generating = isGenerating();
       const now = Date.now();
+      const textFingerprint = Policy.fingerprint(latest.text || "");
+      const activityFingerprint = latestActivityFingerprint();
       const progressKey = [
         latest.role || "unknown",
         latest.turnId || "",
         latest.assistantFinished === true ? "finished" : (latest.assistantFinished === false ? "working" : "unknown"),
         generating ? "generating" : "idle",
-        Policy.fingerprint(latest.text || ""),
-        latestActivityFingerprint()
+        textFingerprint,
+        activityFingerprint
       ].join("|");
       if (progressKey !== String(state.lastProgressKey || "")) {
         const refreshedWatchdogAt = Policy.refreshedWatchdogAt({
@@ -612,8 +614,21 @@
       }
 
       const turnKey = latest.role === "assistant"
-        ? (latest.turnId || Policy.fingerprint(latest.text))
+        ? (latest.turnId || textFingerprint)
         : "";
+      const stableIdleObservationKey = turnKey ? `${turnKey}|${textFingerprint}|${activityFingerprint}` : "";
+      const stableIdleEligible = Boolean(
+        latest.assistantFinished == null
+        && !generating
+        && generationStateKnown()
+        && first(SELECTORS.composer)
+        && first(SELECTORS.send)
+        && latest.role === "assistant"
+        && String(latest.text || "").trim()
+      );
+      const completionObservationKey = latest.assistantFinished === true
+        ? turnKey
+        : stableIdleObservationKey;
       const action = Policy.decideAction({
         enabled: project.enabled !== false,
         generating,
@@ -629,7 +644,10 @@
         lastContinuedTurnKey: state.lastContinuedTurnKey || "",
         completionObservedTurnKey: state.completionObservedTurnKey || "",
         completionObservedAtMs: Number(state.completionObservedAt || 0),
-        completionSettleMs: project.completionSettleSeconds * 1000
+        completionSettleMs: project.completionSettleSeconds * 1000,
+        stableIdleEligible,
+        stableIdleObservationKey,
+        stableIdleSettleMs: Math.max(project.completionSettleSeconds * 1000, 30000)
       });
 
       if (action === "resume_from_user") {
@@ -639,7 +657,7 @@
       if (action === "send_continue") return sendContinuation(state, turnKey);
       if (action === "observe_completion") {
         await saveState({
-          completionObservedTurnKey: turnKey,
+          completionObservedTurnKey: completionObservationKey,
           completionObservedAt: Date.now(),
           watchdogAt: 0,
           watchdogNotified: false,

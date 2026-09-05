@@ -49,7 +49,10 @@
     lastContinuedTurnKey = "",
     completionObservedTurnKey = "",
     completionObservedAtMs = 0,
-    completionSettleMs = 0
+    completionSettleMs = 0,
+    stableIdleEligible = false,
+    stableIdleObservationKey = "",
+    stableIdleSettleMs = 30000
   }) {
     if (!enabled) return "disabled";
     if (pausedForUser) {
@@ -67,13 +70,20 @@
 
     if (autoContinueMode === "on_completion") {
       if (assistantFinished === false) return "wait_completion";
-      if (assistantFinished !== true) return "fail_closed";
       if (!latestTurnKey) return "fail_closed";
       if (lastContinuedTurnKey === latestTurnKey) return "wait_next_turn";
-      if (completionObservedTurnKey !== latestTurnKey || !completionObservedAtMs) {
+
+      let observationKey = latestTurnKey;
+      let settleMs = Number(completionSettleMs || 0);
+      if (assistantFinished !== true) {
+        if (!stableIdleEligible || !String(stableIdleObservationKey || "")) return "fail_closed";
+        observationKey = String(stableIdleObservationKey);
+        settleMs = Math.max(settleMs, Number(stableIdleSettleMs || 0));
+      }
+      if (completionObservedTurnKey !== observationKey || !completionObservedAtMs) {
         return "observe_completion";
       }
-      if (nowMs < completionObservedAtMs + completionSettleMs) return "wait_settle";
+      if (nowMs < completionObservedAtMs + settleMs) return "wait_settle";
       return "send_continue";
     }
 
