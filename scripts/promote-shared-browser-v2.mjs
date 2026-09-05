@@ -9,7 +9,7 @@ import { loadDotEnv } from "../src/env.mjs";
 import { loadRuntimeConfig, loadProjects } from "../src/config.mjs";
 import { ProjectRuntimeStore } from "../src/runtime-store.mjs";
 import { applyBrowserV2PolicyDocument, browserV2PolicySummary, parseProjectRepositories } from "../src/browser-v2-policy.mjs";
-import { validateSharedTargets, validateSharedV2Projects, allFreshPausedIdle, acceptsSharedV2Status } from "../src/shared-promotion.mjs";
+import { validateSharedTargets, validateSharedV2Projects, allFreshPausedIdle, allFreshPausedIdleAfter, acceptsSharedV2Status } from "../src/shared-promotion.mjs";
 
 loadDotEnv();
 const execFileAsync = promisify(execFile);
@@ -102,11 +102,13 @@ let rollbackAttempted = false;
 try {
   fs.mkdirSync(path.dirname(lockFile), { recursive: true, mode: 0o700 });
   lockFd = fs.openSync(lockFile, "wx", 0o600);
+  const prePause = snapshot();
+  const pauseRequestedAfterSeen = new Map(targetIds.map((id) => [id, Number(prePause[id].runtime.lastSeenAt || 0)]));
   for (const id of targetIds) store.setPaused(id, true);
   const idleStates = await waitFor(() => {
     const states = snapshot();
-    return allFreshPausedIdle(states, targetIds) ? states : null;
-  }, idleTimeoutMs, "shared_pre_promotion_idle");
+    return allFreshPausedIdleAfter(states, targetIds, pauseRequestedAfterSeen) ? states : null;
+  }, idleTimeoutMs, "shared_post_pause_idle");
   const beforeSeen = new Map(targetIds.map((id) => [id, Number(idleStates[id].runtime.lastSeenAt || 0)]));
 
   const currentText = fs.readFileSync(config.projectsFile, "utf8");
