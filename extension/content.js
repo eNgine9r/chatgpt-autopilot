@@ -3,17 +3,10 @@
   globalThis.__CHATGPT_PROJECT_AUTOPILOT__ = true;
 
   const Policy = globalThis.AutopilotPolicy;
+  const GenerationPolicy = globalThis.AutopilotGenerationPolicy;
   const REQUEST_SOURCE = "chatgpt-autopilot-isolated";
   const RESPONSE_SOURCE = "chatgpt-autopilot-main";
   const SELECTORS = {
-    stop: [
-      'button[data-testid="stop-button"]',
-      '#composer-stop-button',
-      'button[aria-label*="Stop"]',
-      'button[title*="Stop"]',
-      'button[aria-label*="Зупин"]',
-      'button[title*="Зупин"]'
-    ],
     composer: [
       '#prompt-textarea',
       'textarea[data-testid="prompt-textarea"]',
@@ -161,7 +154,7 @@
   }
 
   function isGenerating() {
-    return Boolean(first(SELECTORS.stop));
+    return GenerationPolicy?.isGenerating ? GenerationPolicy.isGenerating(document, window) : true;
   }
 
   function generationStateKnown() {
