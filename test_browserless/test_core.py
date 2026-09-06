@@ -86,7 +86,7 @@ class CoreTest(unittest.TestCase):
         result = process_once(self.store, client)
         self.assertEqual(result["status"], "done")
         actions = self.store.actions_for_job(result["job_id"])
-        self.assertEqual(actions, [{"sequence":0,"type":"github.read","target":"repo#107","purpose":"fresh state","status":"planned"}])
+        self.assertEqual(actions, [{"sequence":0,"type":"github.read","target":"repo#107","purpose":"fresh state","payload":"","status":"planned"}])
         self.assertEqual(self.store.counts()["planned_actions"], 1)
 
     def test_budget_blocks_before_api_call(self):

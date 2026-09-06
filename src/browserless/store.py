@@ -50,7 +50,7 @@ class BrowserlessStore:
         CREATE TABLE IF NOT EXISTS action_requests(
           id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES jobs(id),
           project_id TEXT NOT NULL REFERENCES projects(id), sequence INTEGER NOT NULL,
-          action_type TEXT NOT NULL, target TEXT NOT NULL, purpose TEXT NOT NULL,
+          action_type TEXT NOT NULL, target TEXT NOT NULL, purpose TEXT NOT NULL, payload_text TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'planned', result_json TEXT NOT NULL DEFAULT '{}',
           last_error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0,
           UNIQUE(job_id,sequence));
@@ -62,6 +62,7 @@ class BrowserlessStore:
         CREATE TABLE IF NOT EXISTS repo_workspaces(
           id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id),
           alias TEXT NOT NULL, branch TEXT NOT NULL, workspace_path TEXT NOT NULL, base_sha TEXT NOT NULL,
+          diff_sha TEXT NOT NULL DEFAULT '', last_test_sha TEXT NOT NULL DEFAULT '', last_test_passed INTEGER NOT NULL DEFAULT 0,
           status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_repo_workspaces_active
           ON repo_workspaces(project_id,alias) WHERE status='active';
@@ -79,6 +80,15 @@ class BrowserlessStore:
             self.db.execute("ALTER TABLE action_requests ADD COLUMN last_error TEXT NOT NULL DEFAULT ''")
         if "updated_at" not in action_columns:
             self.db.execute("ALTER TABLE action_requests ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        if "payload_text" not in action_columns:
+            self.db.execute("ALTER TABLE action_requests ADD COLUMN payload_text TEXT NOT NULL DEFAULT ''")
+        workspace_columns = {row[1] for row in self.db.execute("PRAGMA table_info(repo_workspaces)")}
+        if "diff_sha" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN diff_sha TEXT NOT NULL DEFAULT ''")
+        if "last_test_sha" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN last_test_sha TEXT NOT NULL DEFAULT ''")
+        if "last_test_passed" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN last_test_passed INTEGER NOT NULL DEFAULT 0")
 
     @staticmethod
     def _now():
@@ -200,9 +210,9 @@ class BrowserlessStore:
             self.db.execute("UPDATE events SET status='done' WHERE id=?", (row["event_id"],))
             for sequence, action in enumerate(list(decision.get("actions") or [])):
                 self.db.execute(
-                    """INSERT OR IGNORE INTO action_requests(job_id,project_id,sequence,action_type,target,purpose,status,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,'planned',?,?)""",
-                    (job_id, row["project_id"], sequence, action["type"], action["target"], action["purpose"], now, now),
+                    """INSERT OR IGNORE INTO action_requests(job_id,project_id,sequence,action_type,target,purpose,payload_text,status,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,'planned',?,?)""",
+                    (job_id, row["project_id"], sequence, action["type"], action["target"], action["purpose"], action.get("payload", ""), now, now),
                 )
             self.db.execute("COMMIT")
         except Exception:
@@ -211,11 +221,11 @@ class BrowserlessStore:
 
     def actions_for_job(self, job_id: int):
         rows = self.db.execute(
-            "SELECT sequence,action_type,target,purpose,status FROM action_requests WHERE job_id=? ORDER BY sequence",
+            "SELECT sequence,action_type,target,purpose,payload_text,status FROM action_requests WHERE job_id=? ORDER BY sequence",
             (job_id,),
         ).fetchall()
         return [{"sequence": int(row["sequence"]), "type": row["action_type"], "target": row["target"],
-                 "purpose": row["purpose"], "status": row["status"]} for row in rows]
+                 "purpose": row["purpose"], "payload": row["payload_text"], "status": row["status"]} for row in rows]
 
 
     def recover_running_actions(self):
@@ -240,7 +250,7 @@ class BrowserlessStore:
             self.db.execute("COMMIT")
             return {"id": int(row["id"]), "job_id": int(row["job_id"]), "project_id": row["project_id"],
                     "sequence": int(row["sequence"]), "type": row["action_type"],
-                    "target": row["target"], "purpose": row["purpose"]}
+                    "target": row["target"], "purpose": row["purpose"], "payload": row["payload_text"]}
         except Exception:
             self.db.execute("ROLLBACK")
             raise
@@ -262,7 +272,7 @@ class BrowserlessStore:
             return None
         return {"id": int(row["id"]), "job_id": int(row["job_id"]), "project_id": row["project_id"],
                 "sequence": int(row["sequence"]), "type": row["action_type"], "target": row["target"],
-                "purpose": row["purpose"], "status": row["status"],
+                "purpose": row["purpose"], "payload": row["payload_text"], "status": row["status"],
                 "result": json.loads(row["result_json"] or "{}"), "last_error": row["last_error"]}
 
 
@@ -275,7 +285,9 @@ class BrowserlessStore:
             return None
         return {"id": int(row["id"]), "project_id": row["project_id"], "alias": row["alias"],
                 "branch": row["branch"], "workspace_path": row["workspace_path"],
-                "base_sha": row["base_sha"], "status": row["status"],
+                "base_sha": row["base_sha"], "diff_sha": row["diff_sha"],
+                "last_test_sha": row["last_test_sha"], "last_test_passed": bool(row["last_test_passed"]),
+                "status": row["status"],
                 "created_at": int(row["created_at"]), "updated_at": int(row["updated_at"])}
 
     def register_repo_workspace(self, project_id: str, alias: str, branch: str, workspace_path: str, base_sha: str):
@@ -286,6 +298,24 @@ class BrowserlessStore:
             (project_id, alias, branch, workspace_path, base_sha, now, now),
         )
         return self.active_repo_workspace(project_id, alias)
+
+    def set_repo_workspace_diff(self, project_id: str, alias: str, diff_sha: str):
+        cur = self.db.execute(
+            """UPDATE repo_workspaces SET diff_sha=?,last_test_sha='',last_test_passed=0,updated_at=?
+               WHERE project_id=? AND alias=? AND status='active'""",
+            (str(diff_sha), self._now(), project_id, alias),
+        )
+        if cur.rowcount != 1:
+            raise ValueError('active_repo_workspace_missing')
+
+    def set_repo_workspace_test(self, project_id: str, alias: str, diff_sha: str, passed: bool):
+        cur = self.db.execute(
+            """UPDATE repo_workspaces SET last_test_sha=?,last_test_passed=?,updated_at=?
+               WHERE project_id=? AND alias=? AND status='active'""",
+            (str(diff_sha), 1 if passed else 0, self._now(), project_id, alias),
+        )
+        if cur.rowcount != 1:
+            raise ValueError('active_repo_workspace_missing')
 
     def close_repo_workspace(self, project_id: str, alias: str, status='closed'):
         if status not in {'closed', 'published', 'abandoned'}:

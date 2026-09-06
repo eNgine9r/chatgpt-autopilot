@@ -32,13 +32,17 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.store=BrowserlessStore(str(self.db_path)); self.store.register_project("p1","2026-09-04-v1","anchor",{})
         self.bindings={"p1":{"github":{},"runtime":{},"git":{},"evidence":{},"repo":{"autopilot":{
             "path":str(self.repo),"workspace_root":str(self.workspace_root),"base_branch":"main","write_enabled":True,
-            "tests":{"unit":["python3","-c","print('ok')"]},"test_timeout":30}}}}
+            "write_paths":["app.py","safe.txt"],"tests":{"unit":["python3","-c","print('ok')"]},"test_timeout":30}}}}
 
     def tearDown(self):
         self.store.close(); self.tmp.cleanup()
 
     def action(self, kind, target, job_id=7):
         return {"id":1,"job_id":job_id,"project_id":"p1","type":kind,"target":target,"purpose":"test"}
+
+    @staticmethod
+    def app_patch(old="print('hello')", new="print('changed')"):
+        return f"diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n-{old}\n+{new}\n needle = 1\n"
 
     def test_repo_read_uses_only_tracked_files_and_literal_search(self):
         (self.repo/".env.local").write_text("DUMMY_PLACEHOLDER=not-a-secret\n")
@@ -107,6 +111,75 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.assertIn("safe.txt", result["matches"])
         self.assertNotIn(".env.example", result["matches"])
 
+    def test_patch_applies_only_allowed_tracked_file_and_records_diff(self):
+        store_path=Path(self.tmp.name)/"patch.sqlite3"
+        from src.browserless.store import BrowserlessStore
+        store=BrowserlessStore(str(store_path)); store.register_project("p1","2026-09-04-v1","anchor",{})
+        try:
+            ex=WorkspaceToolExecutor(self.bindings,store=store)
+            ex.execute(self.action("repo.prepare","autopilot",job_id=30))
+            patch=self.app_patch()
+            result=ex.execute({**self.action("repo.patch","autopilot",job_id=31),"payload":patch})
+            self.assertEqual(result["files"],["app.py"]); self.assertEqual(len(result["diff_sha"]),64)
+            active=store.active_repo_workspace("p1","autopilot")
+            self.assertEqual(active["diff_sha"],result["diff_sha"]); self.assertFalse(active["last_test_passed"])
+            self.assertIn("changed",(Path(active["workspace_path"])/"app.py").read_text())
+        finally: store.close()
+
+    def test_patch_rejects_disallowed_new_delete_rename_mode_binary_and_out_of_band_diff(self):
+        from src.browserless.store import BrowserlessStore
+        store=BrowserlessStore(str(Path(self.tmp.name)/"reject.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})
+        try:
+            ex=WorkspaceToolExecutor(self.bindings,store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=40))
+            bad=[
+              "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-tracked docs\n+x\n",
+              "diff --git a/new.py b/new.py\nnew file mode 100644\n--- /dev/null\n+++ b/new.py\n@@ -0,0 +1 @@\n+x\n",
+              "diff --git a/app.py b/app.py\ndeleted file mode 100644\n--- a/app.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-print('hello')\n-needle = 1\n",
+              "diff --git a/app.py b/safe.txt\nrename from app.py\nrename to safe.txt\n",
+              "diff --git a/app.py b/app.py\nold mode 100644\nnew mode 100755\n",
+              "diff --git a/app.py b/app.py\nGIT binary patch\nliteral 0\nHcmV?d00001\n",
+            ]
+            for patch in bad:
+                with self.assertRaises(ReadActionError): ex.execute({**self.action("repo.patch","autopilot",job_id=41),"payload":patch})
+            active=store.active_repo_workspace("p1","autopilot"); (Path(active["workspace_path"])/"app.py").write_text("manual change\n")
+            with self.assertRaises(ReadActionError) as ctx:
+                ex.execute({**self.action("repo.patch","autopilot",job_id=42),"payload":self.app_patch()})
+            self.assertEqual(ctx.exception.code,"repo_workspace_diff_untracked")
+        finally: store.close()
+
+    def test_patch_rolls_back_if_durable_state_update_fails(self):
+        from src.browserless.store import BrowserlessStore
+        store=BrowserlessStore(str(Path(self.tmp.name)/"rollback.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})
+        try:
+            ex=WorkspaceToolExecutor(self.bindings,store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=45))
+            active=store.active_repo_workspace("p1","autopilot"); workspace=Path(active["workspace_path"]); before=(workspace/"app.py").read_text()
+            def fail_state(*_args,**_kwargs): raise RuntimeError("simulated db failure")
+            store.set_repo_workspace_diff=fail_state
+            with self.assertRaises(ReadActionError) as ctx:
+                ex.execute({**self.action("repo.patch","autopilot",job_id=46),"payload":self.app_patch()})
+            self.assertEqual(ctx.exception.code,"repo_patch_state_failed")
+            self.assertEqual((workspace/"app.py").read_text(),before)
+            self.assertEqual(git("diff","--", ".",cwd=workspace),"")
+        finally: store.close()
+
+    def test_test_attests_exact_patch_diff_and_detects_test_mutation(self):
+        from src.browserless.store import BrowserlessStore
+        store=BrowserlessStore(str(Path(self.tmp.name)/"attest.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})
+        try:
+            ex=WorkspaceToolExecutor(self.bindings,store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=50))
+            patch_result=ex.execute({**self.action("repo.patch","autopilot",job_id=51),"payload":self.app_patch()})
+            seen={}
+            def sandbox(argv,**kwargs): seen["argv"]=argv; return FakeResult()
+            tester=WorkspaceToolExecutor(self.bindings,store=store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
+            result=tester.execute(self.action("repo.test","autopilot:unit",job_id=52))
+            self.assertTrue(result["passed"]); self.assertEqual(result["diff_sha"],patch_result["diff_sha"])
+            active=store.active_repo_workspace("p1","autopilot"); self.assertTrue(active["last_test_passed"]); self.assertEqual(active["last_test_sha"],patch_result["diff_sha"])
+            def mutating(argv,**kwargs):
+                workspace=Path(active["workspace_path"]); (workspace/"app.py").write_text("test mutation\n"); return FakeResult()
+            result=WorkspaceToolExecutor(self.bindings,store=store,bwrap_path="/usr/bin/bwrap",sandbox_runner=mutating).execute(self.action("repo.test","autopilot:unit",job_id=53))
+            self.assertFalse(result["passed"]); self.assertTrue(result["workspace_mutated"]); self.assertFalse(store.active_repo_workspace("p1","autopilot")["last_test_passed"])
+        finally: store.close()
+
     def test_write_disabled_repo_cannot_prepare_or_test(self):
         self.bindings["p1"]["repo"]["autopilot"]["write_enabled"]=False
         ex=WorkspaceToolExecutor(self.bindings, store=self.store)
@@ -128,6 +201,15 @@ class RepoBindingTest(unittest.TestCase):
             p=Path(tmp)/"tools.json"
             p.write_text('{"projects":{"p":{"repo":{"r":{"path":"'+str(root)+'","workspaceRoot":"'+str(parent)+'","writeEnabled":true,"tests":{"unit":["python3","-c","print(1)"]}}}}}}')
             with self.assertRaises(ValueError): load_tool_bindings(p,{})
+
+    def test_repo_binding_rejects_sensitive_write_paths(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"repo"; root.mkdir(); workspace=Path(tmp)/"workspaces"
+            for value in (".env", ".env.local", "credentials.json", "cert.pem", "id_ed25519"):
+                p=Path(tmp)/"tools.json"
+                p.write_text(json.dumps({"projects":{"p":{"repo":{"r":{"path":str(root),"workspaceRoot":str(workspace),"writeEnabled":True,"writePaths":[value],"tests":{}}}}}}))
+                with self.assertRaises(ValueError, msg=value): load_tool_bindings(p,{})
 
     def test_repo_binding_rejects_shell_test_and_invalid_workspace(self):
         with tempfile.TemporaryDirectory() as tmp:

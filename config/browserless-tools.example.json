@@ -39,7 +39,14 @@
               "-p",
               "test_*.py"
             ]
-          }
+          },
+          "writePaths": [
+            "src/browserless/",
+            "test_browserless/",
+            "docs/browserless-core.md",
+            "config/browserless-tools.example.json",
+            "package.json"
+          ]
         }
       }
     }

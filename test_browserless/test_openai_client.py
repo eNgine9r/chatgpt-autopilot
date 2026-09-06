@@ -26,7 +26,7 @@ class OpenAIClientTest(unittest.TestCase):
         self.assertEqual(result["decision"]["decision"], "wait")
         self.assertEqual(result["decision"]["actions"], [])
         self.assertEqual(seen["body"]["text"]["format"]["schema"]["properties"]["actions"]["items"]["properties"]["type"]["enum"],
-                         ["github.read", "runtime.read", "git.read", "evidence.read", "repo.read", "repo.prepare", "repo.test"])
+                         ["github.read", "runtime.read", "git.read", "evidence.read", "repo.read", "repo.prepare", "repo.patch", "repo.test"])
 
     def test_missing_key_fails_closed(self):
         with self.assertRaises(MissingCredentialError):
@@ -39,7 +39,7 @@ class OpenAIClientTest(unittest.TestCase):
             LunaResponsesClient(api_key="x", transport=transport).decide("context")
     def test_write_action_is_rejected_even_when_response_is_otherwise_valid(self):
         payload = {"decision":"continue","message":"write",
-                   "actions":[{"type":"github.write","target":"issue:1","purpose":"mutate"}],
+                   "actions":[{"type":"github.write","target":"issue:1","purpose":"mutate","payload":""}],
                    "checkpoint":json.loads(CHECKPOINT)}
         def transport(*_args):
             return {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}]}
@@ -48,7 +48,7 @@ class OpenAIClientTest(unittest.TestCase):
 
     def test_non_continue_decision_cannot_queue_actions(self):
         payload = {"decision":"wait","message":"wait",
-                   "actions":[{"type":"github.read","target":"repo","purpose":"later"}],
+                   "actions":[{"type":"github.read","target":"repo","purpose":"later","payload":""}],
                    "checkpoint":json.loads(CHECKPOINT)}
         def transport(*_args):
             return {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}]}
@@ -57,9 +57,16 @@ class OpenAIClientTest(unittest.TestCase):
 
     def test_read_only_action_contract_is_accepted(self):
         payload = {"decision":"continue","message":"inspect",
-                   "actions":[{"type":"github.read","target":"eNgine9r/chatgpt-autopilot#107","purpose":"refresh evidence"}],
+                   "actions":[{"type":"github.read","target":"eNgine9r/chatgpt-autopilot#107","purpose":"refresh evidence","payload":""}],
                    "checkpoint":json.loads(CHECKPOINT)}
         def transport(*_args):
             return {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}]}
         result = LunaResponsesClient(api_key="x", transport=transport).decide("context")
         self.assertEqual(result["decision"]["actions"][0]["type"], "github.read")
+    def test_repo_patch_action_contract_is_accepted(self):
+        diff="diff --git a/src/browserless/core.py b/src/browserless/core.py\n--- a/src/browserless/core.py\n+++ b/src/browserless/core.py\n@@ -1 +1 @@\n-old\n+new\n"
+        payload={"decision":"continue","message":"patch","actions":[{"type":"repo.patch","target":"autopilot","purpose":"apply bounded diff","payload":diff}],"checkpoint":json.loads(CHECKPOINT)}
+        def transport(*_args):
+            return {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}]}
+        result=LunaResponsesClient(api_key="x",transport=transport).decide("context")
+        self.assertEqual(result["decision"]["actions"][0]["payload"],diff)
