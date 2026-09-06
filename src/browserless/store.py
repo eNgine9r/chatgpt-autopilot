@@ -262,8 +262,13 @@ class BrowserlessStore:
         if quiet:
             cutoff = now - quiet
             cur = self.db.execute("""INSERT OR IGNORE INTO jobs(event_id,project_id,status,created_at,updated_at)
-              SELECT id,project_id,'pending',?,? FROM events
-              WHERE status='pending' AND (kind!='observation.github' OR created_at<=?)""", (now, now, cutoff))
+              SELECT e.id,e.project_id,'pending',?,? FROM events e
+              WHERE e.status='pending' AND (e.kind!='observation.github' OR (
+                e.created_at<=? AND NOT EXISTS(
+                  SELECT 1 FROM events newer WHERE newer.project_id=e.project_id
+                    AND newer.status='pending' AND newer.kind='observation.github' AND newer.created_at>?
+                )
+              ))""", (now, now, cutoff, cutoff))
         else:
             cur = self.db.execute("""INSERT OR IGNORE INTO jobs(event_id,project_id,status,created_at,updated_at)
               SELECT id,project_id,'pending',?,? FROM events WHERE status='pending'""", (now, now))

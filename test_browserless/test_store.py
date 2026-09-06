@@ -157,6 +157,22 @@ class StoreTest(unittest.TestCase):
         self.store.ensure_jobs(github_quiet_seconds=15,now=now+30)
         self.assertEqual(self.store.counts()["jobs"],1)
 
+    def test_new_github_event_resets_quiet_window_for_entire_project(self):
+        from src.browserless.ingress import ingest_observation
+        now=self.store._now()
+        ingest_observation(self.store,"p1","github","issue:old",{"summary":"old","material":{"state":"open"}})
+        ingest_observation(self.store,"p1","github","issue:new",{"summary":"new","material":{"state":"open"}})
+        rows=self.store.db.execute("SELECT id FROM events WHERE kind='observation.github' ORDER BY id").fetchall()
+        self.store.db.execute("UPDATE events SET created_at=? WHERE id=?",(now-20,int(rows[0]["id"])))
+        self.store.db.execute("UPDATE events SET created_at=? WHERE id=?",(now-5,int(rows[1]["id"])))
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now)
+        self.assertEqual(self.store.counts()["jobs"],0)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM events WHERE status='pending'").fetchone()[0],2)
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+11)
+        self.assertEqual(self.store.counts()["jobs"],1)
+        job=self.store.claim_job(); self.assertEqual(job["kind"],"observation.github.batch")
+        self.assertEqual(len(job["payload"]["material"]["changes"]),2)
+
     def test_operator_event_is_immediate_while_github_event_is_debounced(self):
         from src.browserless.ingress import ingest_observation
         now=self.store._now()
