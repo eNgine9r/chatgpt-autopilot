@@ -262,6 +262,14 @@ class BrowserlessStore:
             self.db.execute("ROLLBACK")
             raise
 
+    def action_failure_count(self, project_id: str, action_type: str, target: str, error_code: str) -> int:
+        row = self.db.execute(
+            """SELECT COUNT(*) FROM action_requests WHERE project_id=? AND action_type=? AND target=?
+               AND status='failed' AND last_error=?""",
+            (project_id, action_type, target, str(error_code)),
+        ).fetchone()
+        return int(row[0])
+
     def finish_action(self, action_id: int, status: str, result=None, last_error=""):
         allowed = {"done", "suppressed", "failed"}
         if status not in allowed:

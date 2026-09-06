@@ -3,12 +3,20 @@ import unittest
 from pathlib import Path
 
 from src.browserless.action_runner import execute_once
+from src.browserless.read_tools import ReadActionError
 from src.browserless.store import BrowserlessStore
 
 
 class FakeExecutor:
     def __init__(self, result=None): self.calls=0; self.result=result or {"ok":True,"kind":"github","data":{"state":"open"}}
     def execute(self, _action): self.calls += 1; return self.result
+
+
+class FailingExecutor:
+    def __init__(self, code="repo_patch_invalid"): self.calls=0; self.code=code
+    def execute(self, _action):
+        self.calls += 1
+        raise ReadActionError(self.code)
 
 
 class ActionRunnerTest(unittest.TestCase):
@@ -37,6 +45,24 @@ class ActionRunnerTest(unittest.TestCase):
         self.assertEqual(second["status"],"suppressed"); self.assertFalse(second["event_created"])
         self.assertEqual(executor.calls,2)
         self.assertEqual(self.store.counts()["events"],2)  # seed + first evidence only
+
+    def test_repeated_identical_failure_creates_bounded_retry_evidence(self):
+        action={"type":"repo.patch","target":"repo","purpose":"patch","payload":"diff"}
+        self.plan_action("seed-fail-1", action)
+        executor=FailingExecutor()
+        first=execute_once(self.store,executor)
+        self.assertEqual(first["status"],"failed"); self.assertTrue(first["event_created"])
+        obs=self.store.observation("p","evidence", next(row[0] for row in self.store.db.execute("SELECT subject FROM observations WHERE source='evidence'")))
+        self.assertEqual(obs["material"]["failure_attempt"],1); self.assertFalse(obs["material"]["retry_exhausted"])
+        self.store.ensure_jobs(); job=self.store.claim_job()
+        self.store.finish_job(job["id"],{"decision":"continue","actions":[action]})
+        second=execute_once(self.store,executor)
+        self.assertEqual(second["status"],"failed"); self.assertTrue(second["event_created"])
+        row=self.store.db.execute("SELECT material_json FROM observations WHERE source='evidence'").fetchone()
+        import json
+        material=json.loads(row[0])
+        self.assertEqual(material["failure_attempt"],2); self.assertTrue(material["retry_exhausted"])
+        self.assertEqual(executor.calls,2)
 
     def test_running_action_recovers_after_restart(self):
         self.plan_action("seed-1"); action=self.store.claim_action(); self.assertIsNotNone(action)

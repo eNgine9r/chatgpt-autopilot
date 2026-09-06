@@ -130,3 +130,12 @@ class ToolBindingTest(unittest.TestCase):
         self.assertTrue(manifest["repo"]["work"]["publishEnabled"])
         for secret in ("TOP_SECRET_TOKEN","/very/private/repo","secret-health","/private/evidence","owner/private-repo"):
             self.assertNotIn(secret,text)
+
+class CapabilityPatchGrammarTest(unittest.TestCase):
+    def test_patch_capability_exposes_exact_git_diff_grammar(self):
+        from src.browserless.read_tools import capability_manifest
+        manifest=capability_manifest({"p":{"github":{},"runtime":{},"git":{},"evidence":{},"repo":{}}})
+        grammar=manifest["p"]["syntax"]["repo.patch"]
+        self.assertIn("diff --git a/<path> b/<path>",grammar)
+        self.assertIn("--- a/<path>",grammar); self.assertIn("+++ b/<path>",grammar)
+        self.assertIn("no Markdown fences",grammar)

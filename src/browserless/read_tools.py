@@ -127,7 +127,7 @@ def capability_manifest(bindings):
         "evidence.read": "<evidence-alias>:<relative .json/.md/.txt file>",
         "repo.read": "<repo-alias>:file:<tracked-path> OR <repo-alias>:tree[:prefix] OR <repo-alias>:search:<literal>",
         "repo.prepare": "<repo-alias>",
-        "repo.patch": "<repo-alias>; put unified diff only in payload",
+        "repo.patch": "<repo-alias>; payload must be raw git-style unified diff starting `diff --git a/<path> b/<path>`, with `--- a/<path>` and `+++ b/<path>`; no Markdown fences",
         "repo.test": "<repo-alias>:<test-alias>",
         "repo.commit": "<repo-alias>",
         "repo.publish": "<repo-alias>",
