@@ -14,6 +14,23 @@ def _subject(action):
     return f"action:{action['type']}:{digest}"
 
 
+LOCAL_ONLY_RESULT_KEYS = {"workspace", "workspace_path", "workspace_id", "local_path"}
+
+
+def _context_material(value, depth=0):
+    if depth > 5:
+        return str(value)[:1000]
+    if isinstance(value, dict):
+        return {str(key)[:120]: _context_material(item, depth + 1)
+                for key, item in list(value.items())[:64]
+                if str(key).lower() not in LOCAL_ONLY_RESULT_KEYS}
+    if isinstance(value, list):
+        return [_context_material(item, depth + 1) for item in value[:64]]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:2000]
+
+
 def execute_once(store, executor):
     action = store.claim_action()
     if not action:
@@ -24,7 +41,7 @@ def execute_once(store, executor):
     except ReadActionError as exc:
         error_code = exc.code
         result = {"ok":False, "error_code":error_code, "kind":action["type"], "target":action["target"]}
-    document = {"material":result,
+    document = {"material":_context_material(result),
                 "summary":f"Safe evidence/workspace action {action['type']}: {'ok' if result.get('ok') else 'failed'}",
                 "metadata":{"actionId":action["id"], "actionType":action["type"], "target":action["target"]},
                 "evidence":[]}
