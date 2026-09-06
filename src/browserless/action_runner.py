@@ -36,14 +36,18 @@ def execute_once(store, executor):
     if not action:
         return {"status":"idle", "external_read":False}
     error_code = ""
+    error_detail = ""
     try:
         result = executor.execute(action)
     except ReadActionError as exc:
         error_code = exc.code
+        error_detail = getattr(exc, "detail", "")
         result = {"ok":False, "error_code":error_code, "kind":action["type"], "target":action["target"]}
+        if error_detail:
+            result["error_detail"] = error_detail
     material = _context_material(result)
     if error_code:
-        failure_attempt = store.action_failure_count(action["project_id"], action["type"], action["target"], error_code) + 1
+        failure_attempt = store.action_failure_count(action["project_id"], action["type"], action["target"], action["id"]) + 1
         material = {**material, "failure_attempt": failure_attempt, "retry_exhausted": failure_attempt >= 2}
     document = {"material":material,
                 "summary":f"Safe evidence/workspace action {action['type']}: {'ok' if result.get('ok') else 'failed'}",

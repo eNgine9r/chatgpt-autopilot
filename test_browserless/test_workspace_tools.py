@@ -167,6 +167,15 @@ class WorkspaceToolsTest(unittest.TestCase):
             self.assertEqual(ctx.exception.code,"repo_workspace_diff_untracked")
         finally: store.close()
 
+    def test_patch_apply_failure_exposes_only_safe_classification(self):
+        ex=self.executor(store=self.store); ex.execute(self.action("repo.prepare","autopilot",job_id=44))
+        bad=self.app_patch(old="print('not-current')",new="print('changed')")
+        with self.assertRaises(ReadActionError) as ctx:
+            ex.execute({**self.action("repo.patch","autopilot",job_id=45),"payload":bad})
+        self.assertEqual(ctx.exception.code,"repo_patch_apply_failed")
+        self.assertEqual(ctx.exception.detail,"hunk_mismatch")
+        self.assertNotIn(str(self.workspace_root),ctx.exception.detail)
+
     def test_patch_rolls_back_if_durable_state_update_fails(self):
         from src.browserless.store import BrowserlessStore
         store=BrowserlessStore(str(Path(self.tmp.name)/"rollback.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})

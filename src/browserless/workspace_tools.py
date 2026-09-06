@@ -53,6 +53,30 @@ def _run_input(command, text, cwd=None, timeout=30, allow=(0,)):
     return result
 
 
+
+
+def _patch_apply_detail(stderr):
+    text = str(stderr or "").lower()
+    if "corrupt patch" in text or "patch fragment without header" in text or "unrecognized input" in text:
+        return "corrupt_patch"
+    if "trailing whitespace" in text or "whitespace error" in text or "space before tab" in text:
+        return "whitespace_error"
+    if "patch failed" in text or "does not apply" in text:
+        return "hunk_mismatch"
+    return "apply_check_failed"
+
+
+def _check_patch_apply(root, patch):
+    command = _harden_git_command(["git", "-C", str(root), "apply", "--check", "--whitespace=error-all", "-"])
+    env = {**os.environ, "GIT_TERMINAL_PROMPT":"0", "GCM_INTERACTIVE":"Never", "LC_ALL":"C"}
+    try:
+        result = subprocess.run(command, input=patch, capture_output=True, text=True, shell=False, env=env,
+                                timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        raise ReadActionError("repo_patch_apply_failed", "apply_check_failed") from None
+    if result.returncode != 0:
+        raise ReadActionError("repo_patch_apply_failed", _patch_apply_detail(result.stderr))
+
 def _current_diff(root):
     result = _run(["git", "-C", str(root), "diff", "--no-ext-diff", "--no-color", "--binary", "--", "."])
     text = result.stdout
@@ -285,11 +309,11 @@ class WorkspaceToolExecutor:
             if before_sha!=active["diff_sha"]: raise ReadActionError("repo_workspace_diff_mismatch")
         elif before_diff:
             raise ReadActionError("repo_workspace_diff_untracked")
+        _check_patch_apply(workspace, patch)
         try:
-            _run_input(["git","-C",str(workspace),"apply","--check","--whitespace=error-all","-"],patch)
             _run_input(["git","-C",str(workspace),"apply","--whitespace=error-all","-"],patch)
         except ReadActionError:
-            raise ReadActionError("repo_patch_apply_failed") from None
+            raise ReadActionError("repo_patch_apply_failed", "apply_after_check_failed") from None
         try:
             diff,diff_sha=_current_diff(workspace)
             if not diff or len(diff)>MAX_SEARCH_OUTPUT:
