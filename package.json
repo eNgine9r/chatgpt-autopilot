@@ -24,6 +24,7 @@
     "promote:shared-v2": "node scripts/promote-shared-browser-v2.mjs",
     "test:browserless": "PYTHONPATH=. python3 -m unittest discover -s test_browserless -p 'test_*.py'",
     "check:browserless": "python3 -m py_compile src/browserless/*.py",
-    "observe:browserless": "python3 -m src.browserless.observe"
+    "observe:browserless": "python3 -m src.browserless.observe",
+    "start:browserless-ingress": "python3 -m src.browserless.ingress_server"
   }
 }

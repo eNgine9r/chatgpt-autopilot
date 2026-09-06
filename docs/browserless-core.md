@@ -35,3 +35,11 @@ Example producer call: `python3 -m src.browserless.observe --db <db> --project-i
 
 ## Read-only action contract
 Luna v1 structured output can request only `github.read`, `runtime.read`, `git.read`, or `evidence.read`. Such requests are durably stored as `planned` action requests for audit but are not executed by this phase. Browser, write, restart, trading, hardware, Modbus, secret, and production-cutover actions are absent from the schema and fail closed. Non-`continue` decisions cannot leave queued actions.
+
+
+## Authenticated event transport
+`src.browserless.ingress_server` is a lightweight stdlib HTTP receiver that binds to loopback only. It accepts project-specific GitHub webhook and runtime event paths, verifies HMAC-SHA256 before parsing the payload, enforces exact GitHub repository bindings and runtime component allowlists, then records the normalized observation. The HTTP handler never calls Luna and never creates jobs directly.
+
+Bindings live in a non-secret JSON file (`config/browserless-ingress.example.json`). Each project binding names an environment variable that contains its own secret; secret values are never stored in the bindings document. A missing secret fails closed at startup. Public/Tailscale/reverse-proxy exposure is intentionally outside this phase and requires a separate production activation decision.
+
+GitHub endpoint: `POST /v1/github/<project-id>` with `X-Hub-Signature-256` and `X-GitHub-Event`. Runtime endpoint: `POST /v1/runtime/<project-id>` with `X-Autopilot-Signature-256`. `GET /health` is read-only. Request bodies are capped at 256 KiB.

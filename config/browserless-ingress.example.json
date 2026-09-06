@@ -1,0 +1,14 @@
+{
+  "github": {
+    "autopilot-development": {
+      "repository": "eNgine9r/chatgpt-autopilot",
+      "secretEnv": "AUTOPILOT_GITHUB_WEBHOOK_SECRET_AUTOPILOT"
+    }
+  },
+  "runtime": {
+    "autopilot-development": {
+      "components": ["autopilot-control-hub"],
+      "secretEnv": "AUTOPILOT_RUNTIME_INGRESS_SECRET_AUTOPILOT"
+    }
+  }
+}
