@@ -18,3 +18,11 @@ class ContextTest(unittest.TestCase):
         evidence = ["x" * 2000 for _ in range(30)]
         text = compile_context(project, {"kind":"e", "payload":{"evidence":evidence}})
         self.assertLess(len(text), 26000)
+
+    def test_material_observation_is_included_but_bounded(self):
+        project = {"id":"p","plan_version":"2026-09-04-v1","plan_anchor":"anchor","checkpoint":{}}
+        event = {"kind":"observation.github","payload":{"material":{"status":"success","sha":"a"*5000}}}
+        context = compile_context(project, event)
+        self.assertIn('"status":"success"', context)
+        self.assertLess(len(context), 20000)
+        self.assertNotIn("a" * 1500, context)

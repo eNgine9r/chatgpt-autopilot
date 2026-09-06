@@ -3,6 +3,8 @@ import os
 import urllib.error
 import urllib.request
 
+from .actions import ACTION_SCHEMA, validate_actions
+
 MODEL = "gpt-5.6-luna"
 RESPONSES_URL = "https://api.openai.com/v1/responses"
 
@@ -18,10 +20,11 @@ class InvalidModelResponse(RuntimeError):
 DECISION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["decision", "message", "checkpoint"],
+    "required": ["decision", "message", "actions", "checkpoint"],
     "properties": {
         "decision": {"type": "string", "enum": ["continue", "wait", "user_action_required", "complete", "escalation_required"]},
         "message": {"type": "string"},
+        "actions": ACTION_SCHEMA,
         "checkpoint": {
             "type": "object",
             "additionalProperties": False,
@@ -81,6 +84,12 @@ def _validate_decision(decision):
         raise InvalidModelResponse("invalid_decision")
     if not isinstance(decision.get("message"), str) or not isinstance(decision.get("checkpoint"), dict):
         raise InvalidModelResponse("invalid_decision_shape")
+    try:
+        decision["actions"] = validate_actions(decision.get("actions"))
+    except ValueError as exc:
+        raise InvalidModelResponse(str(exc)) from exc
+    if decision["decision"] != "continue" and decision["actions"]:
+        raise InvalidModelResponse("actions_require_continue_decision")
     checkpoint = decision["checkpoint"]
     required = {"goal", "completed", "currentTask", "decisions", "evidence", "blockers", "nextAction", "doNotRepeat", "planVersion", "stage", "githubPr"}
     if not required.issubset(checkpoint) or checkpoint.get("planVersion") != "2026-09-04-v1":
@@ -101,7 +110,7 @@ class LunaResponsesClient:
             raise MissingCredentialError("OPENAI_API_KEY is not configured for Browserless Autopilot")
         body = {
             "model": MODEL,
-            "instructions": "You are Browserless Autopilot. Follow the supplied Plan Anchor and durable checkpoint. Never invent evidence. Fail closed on ambiguity. Never perform or authorize product trading, hardware/Modbus writes, secrets disclosure, or unapproved production/site cutovers. Return only the required structured decision.",
+            "instructions": "You are Browserless Autopilot. Follow the supplied Plan Anchor and durable checkpoint. Never invent evidence. Fail closed on ambiguity. Never perform or authorize product trading, hardware/Modbus writes, secrets disclosure, browser automation, or unapproved production/site cutovers. requested actions may be read-only evidence requests only (github.read, runtime.read, git.read, evidence.read). If a write or higher-risk action is required, return user_action_required or escalation_required instead. Return only the required structured decision.",
             "store": False,
             "reasoning": {"effort": "low"},
             "input": context,

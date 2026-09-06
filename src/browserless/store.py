@@ -33,6 +33,17 @@ class BrowserlessStore:
           attempts INTEGER NOT NULL DEFAULT 0, decision_json TEXT NOT NULL DEFAULT '{}',
           last_error TEXT NOT NULL DEFAULT '', available_at INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS observations(
+          project_id TEXT NOT NULL REFERENCES projects(id), source TEXT NOT NULL, subject TEXT NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 0, content_hash TEXT NOT NULL, material_json TEXT NOT NULL,
+          last_seen_at INTEGER NOT NULL, changed_at INTEGER NOT NULL,
+          PRIMARY KEY(project_id,source,subject));
+        CREATE TABLE IF NOT EXISTS action_requests(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES jobs(id),
+          project_id TEXT NOT NULL REFERENCES projects(id), sequence INTEGER NOT NULL,
+          action_type TEXT NOT NULL, target TEXT NOT NULL, purpose TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'planned', created_at INTEGER NOT NULL,
+          UNIQUE(job_id,sequence));
         CREATE TABLE IF NOT EXISTS usage(
           id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id),
           response_id TEXT NOT NULL DEFAULT '', model TEXT NOT NULL, input_tokens INTEGER NOT NULL,
@@ -72,6 +83,59 @@ class BrowserlessStore:
         except sqlite3.IntegrityError:
             return False
 
+
+    def record_observation(self, project_id: str, source: str, subject: str, content_hash: str, material, payload) -> dict:
+        now = self._now()
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            current = self.db.execute(
+                "SELECT revision,content_hash FROM observations WHERE project_id=? AND source=? AND subject=?",
+                (project_id, source, subject),
+            ).fetchone()
+            if current and current["content_hash"] == content_hash:
+                self.db.execute(
+                    "UPDATE observations SET last_seen_at=? WHERE project_id=? AND source=? AND subject=?",
+                    (now, project_id, source, subject),
+                )
+                self.db.execute("COMMIT")
+                return {"changed": False, "revision": int(current["revision"]), "event_created": False}
+            revision = int(current["revision"] if current else 0) + 1
+            self.db.execute(
+                """INSERT INTO observations(project_id,source,subject,revision,content_hash,material_json,last_seen_at,changed_at)
+                VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(project_id,source,subject) DO UPDATE SET
+                revision=excluded.revision,content_hash=excluded.content_hash,material_json=excluded.material_json,
+                last_seen_at=excluded.last_seen_at,changed_at=excluded.changed_at""",
+                (project_id, source, subject, revision, content_hash, json.dumps(material, ensure_ascii=False), now, now),
+            )
+            event_key = f"obs:{project_id}:{source}:{subject}:{revision}:{content_hash[:16]}"
+            event_payload = dict(payload or {})
+            metadata = event_payload.get("metadata") if isinstance(event_payload.get("metadata"), dict) else {}
+            event_payload["metadata"] = {**metadata, "source": source, "subject": subject, "revision": revision}
+            event_payload["material"] = material
+            self.db.execute(
+                "INSERT INTO events(event_key,project_id,kind,payload_json,created_at) VALUES(?,?,?,?,?)",
+                (event_key, project_id, f"observation.{source}", json.dumps(event_payload, ensure_ascii=False), now),
+            )
+            self.db.execute("COMMIT")
+            return {"changed": True, "revision": revision, "event_created": True, "event_key": event_key}
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
+
+    def observation(self, project_id: str, source: str, subject: str):
+        row = self.db.execute(
+            "SELECT * FROM observations WHERE project_id=? AND source=? AND subject=?",
+            (project_id, source, subject),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "project_id": row["project_id"], "source": row["source"], "subject": row["subject"],
+            "revision": int(row["revision"]), "content_hash": row["content_hash"],
+            "material": json.loads(row["material_json"] or "{}"),
+            "last_seen_at": int(row["last_seen_at"]), "changed_at": int(row["changed_at"]),
+        }
+
     def ensure_jobs(self) -> int:
         now = self._now()
         cur = self.db.execute("""INSERT OR IGNORE INTO jobs(event_id,project_id,status,created_at,updated_at)
@@ -105,10 +169,30 @@ class BrowserlessStore:
 
     def finish_job(self, job_id: int, decision: dict):
         now = self._now()
-        row = self.db.execute("SELECT event_id FROM jobs WHERE id=?", (job_id,)).fetchone()
-        self.db.execute("UPDATE jobs SET status='done',decision_json=?,last_error='',updated_at=? WHERE id=?",
-                        (json.dumps(decision, ensure_ascii=False), now, job_id))
-        self.db.execute("UPDATE events SET status='done' WHERE id=?", (row["event_id"],))
+        row = self.db.execute("SELECT event_id,project_id FROM jobs WHERE id=?", (job_id,)).fetchone()
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            self.db.execute("UPDATE jobs SET status='done',decision_json=?,last_error='',updated_at=? WHERE id=?",
+                            (json.dumps(decision, ensure_ascii=False), now, job_id))
+            self.db.execute("UPDATE events SET status='done' WHERE id=?", (row["event_id"],))
+            for sequence, action in enumerate(list(decision.get("actions") or [])):
+                self.db.execute(
+                    """INSERT OR IGNORE INTO action_requests(job_id,project_id,sequence,action_type,target,purpose,status,created_at)
+                    VALUES(?,?,?,?,?,?,'planned',?)""",
+                    (job_id, row["project_id"], sequence, action["type"], action["target"], action["purpose"], now),
+                )
+            self.db.execute("COMMIT")
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
+
+    def actions_for_job(self, job_id: int):
+        rows = self.db.execute(
+            "SELECT sequence,action_type,target,purpose,status FROM action_requests WHERE job_id=? ORDER BY sequence",
+            (job_id,),
+        ).fetchall()
+        return [{"sequence": int(row["sequence"]), "type": row["action_type"], "target": row["target"],
+                 "purpose": row["purpose"], "status": row["status"]} for row in rows]
 
     def block_job(self, job_id: int, reason: str):
         now = self._now()
@@ -144,6 +228,8 @@ class BrowserlessStore:
         return {
             'projects': self.db.execute("SELECT COUNT(*) FROM projects").fetchone()[0],
             'events': self.db.execute("SELECT COUNT(*) FROM events").fetchone()[0],
+            'observations': self.db.execute("SELECT COUNT(*) FROM observations").fetchone()[0],
             'jobs': self.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0],
             'pending_jobs': self.db.execute("SELECT COUNT(*) FROM jobs WHERE status='pending'").fetchone()[0],
+            'planned_actions': self.db.execute("SELECT COUNT(*) FROM action_requests WHERE status='planned'").fetchone()[0],
         }
