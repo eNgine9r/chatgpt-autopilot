@@ -14,8 +14,8 @@ from .safe_tools import SafeToolExecutor
 from .store import BrowserlessStore
 
 
-def run_once(store, client, executor, governor, capabilities_by_project=None):
-    ai = process_once(store, client, governor, capabilities_by_project)
+def run_once(store, client, executor, governor, capabilities_by_project=None, github_quiet_seconds=15):
+    ai = process_once(store, client, governor, capabilities_by_project, github_quiet_seconds=github_quiet_seconds)
     action = execute_action_once(store, executor)
     return {"ai": ai, "action": action}
 
@@ -29,6 +29,7 @@ def main(argv=None):
     parser.add_argument("--ingress-port", type=int, default=8771)
     parser.add_argument("--idle-seconds", type=float, default=5.0)
     parser.add_argument("--hard-budget-usd", type=float, default=30.0)
+    parser.add_argument("--github-quiet-seconds", type=int, default=15)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args(argv)
 
@@ -51,7 +52,7 @@ def main(argv=None):
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
             thread.start()
         while True:
-            result = run_once(store, client, executor, governor, capabilities)
+            result = run_once(store, client, executor, governor, capabilities, args.github_quiet_seconds)
             print(json.dumps(result, ensure_ascii=False), flush=True)
             if args.once:
                 return 0

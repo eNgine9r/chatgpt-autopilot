@@ -111,3 +111,42 @@ class StoreTest(unittest.TestCase):
         self.store.finish_job(job["id"],{"decision":"continue","actions":[{"type":"repo.patch","target":"repo","purpose":"x","payload":""}]})
         fresh=self.store.claim_action()
         self.assertEqual(self.store.action_failure_count("p1","repo.patch","repo",fresh["id"]),0)
+    def test_github_quiet_window_coalesces_latest_subject_revisions_into_one_job(self):
+        from src.browserless.ingress import ingest_observation
+        now = self.store._now()
+        ingest_observation(self.store,"p1","github","pr:7",{"summary":"opened","metadata":{"githubEvent":"pull_request"},"material":{"state":"open","revisionHint":1}})
+        ingest_observation(self.store,"p1","github","pr:7",{"summary":"merged","metadata":{"githubEvent":"pull_request"},"material":{"state":"closed","merged":True,"revisionHint":2}})
+        ingest_observation(self.store,"p1","github","issue:9",{"summary":"closed","metadata":{"githubEvent":"issues"},"material":{"state":"closed","state_reason":"completed"}})
+        self.store.ensure_jobs(github_quiet_seconds=15, now=now+5)
+        self.assertEqual(self.store.counts()["jobs"],0)
+        self.store.ensure_jobs(github_quiet_seconds=15, now=now+20)
+        self.assertEqual(self.store.counts()["jobs"],1)
+        job=self.store.claim_job(); self.assertEqual(job["kind"],"observation.github.batch")
+        changes=job["payload"]["material"]["changes"]
+        self.assertEqual(len(changes),2)
+        pr=[item for item in changes if item["subject"]=="pr:7"][0]
+        self.assertEqual(pr["revision"],2); self.assertTrue(pr["material"]["merged"]); self.assertEqual(pr["material"]["state"],"closed")
+        rows=self.store.db.execute("SELECT kind,status,COUNT(*) n FROM events GROUP BY kind,status ORDER BY kind,status").fetchall()
+        grouped={(row["kind"],row["status"]):int(row["n"]) for row in rows}
+        self.assertEqual(grouped[("observation.github","coalesced")],3)
+        self.assertEqual(grouped[("observation.github.batch","queued")],1)
+
+    def test_single_github_event_waits_for_quiet_window_then_queues_once(self):
+        from src.browserless.ingress import ingest_observation
+        now=self.store._now()
+        ingest_observation(self.store,"p1","github","issue:3",{"summary":"closed","material":{"state":"closed"}})
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+10)
+        self.assertEqual(self.store.counts()["jobs"],0)
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+16)
+        self.assertEqual(self.store.counts()["jobs"],1)
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+30)
+        self.assertEqual(self.store.counts()["jobs"],1)
+
+    def test_operator_event_is_immediate_while_github_event_is_debounced(self):
+        from src.browserless.ingress import ingest_observation
+        now=self.store._now()
+        ingest_observation(self.store,"p1","github","issue:4",{"summary":"opened","material":{"state":"open"}})
+        self.store.enqueue_event("p1","operator-now","operator.task",{"summary":"continue now"})
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+1)
+        self.assertEqual(self.store.counts()["jobs"],1)
+        job=self.store.claim_job(); self.assertEqual(job["kind"],"operator.task")

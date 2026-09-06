@@ -1,4 +1,5 @@
 import calendar
+import hashlib
 import json
 import re
 import sqlite3
@@ -180,10 +181,91 @@ class BrowserlessStore:
             "last_seen_at": int(row["last_seen_at"]), "changed_at": int(row["changed_at"]),
         }
 
-    def ensure_jobs(self) -> int:
-        now = self._now()
-        cur = self.db.execute("""INSERT OR IGNORE INTO jobs(event_id,project_id,status,created_at,updated_at)
-          SELECT id,project_id,'pending',?,? FROM events WHERE status='pending'""", (now, now))
+    def coalesce_pending_github_events(self, quiet_seconds=15, max_items=16, now=None) -> dict:
+        now = int(now if now is not None else self._now())
+        quiet_seconds = max(0, int(quiet_seconds))
+        max_items = max(1, min(32, int(max_items)))
+        cutoff = now - quiet_seconds
+        result = {"projects": 0, "source_events": 0, "coalesced_events": 0, "batch_events": 0}
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            projects = [row[0] for row in self.db.execute(
+                """SELECT project_id FROM events WHERE status='pending' AND kind='observation.github'
+                   GROUP BY project_id HAVING MAX(created_at)<=? ORDER BY project_id""", (cutoff,)).fetchall()]
+            for project_id in projects:
+                rows = self.db.execute(
+                    "SELECT id,event_key,payload_json FROM events WHERE project_id=? AND status='pending' AND kind='observation.github' ORDER BY id",
+                    (project_id,),
+                ).fetchall()
+                latest = {}
+                for row in rows:
+                    payload = json.loads(row["payload_json"] or "{}")
+                    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+                    subject = str(metadata.get("subject") or row["event_key"])[:180]
+                    revision = int(metadata.get("revision") or 0)
+                    current = latest.get(subject)
+                    if current is None or (revision, int(row["id"])) >= (current["revision"], current["id"]):
+                        latest[subject] = {"id": int(row["id"]), "event_key": row["event_key"],
+                                           "revision": revision, "subject": subject, "payload": payload}
+                latest_ids = {item["id"] for item in latest.values()}
+                stale_ids = [int(row["id"]) for row in rows if int(row["id"]) not in latest_ids]
+                if stale_ids:
+                    marks = ",".join("?" for _ in stale_ids)
+                    self.db.execute(f"UPDATE events SET status='coalesced' WHERE id IN ({marks})", stale_ids)
+                ordered = sorted(latest.values(), key=lambda item: item["id"])
+                for start in range(0, len(ordered), max_items):
+                    chunk = ordered[start:start + max_items]
+                    if len(chunk) <= 1:
+                        continue
+                    fingerprint = hashlib.sha256("\n".join(item["event_key"] for item in chunk).encode()).hexdigest()[:24]
+                    changes = []
+                    for item in chunk:
+                        payload = item["payload"]
+                        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+                        changes.append({
+                            "subject": item["subject"], "revision": item["revision"],
+                            "summary": str(payload.get("summary") or "")[:500],
+                            "githubEvent": str(metadata.get("githubEvent") or "")[:80],
+                            "number": str(metadata.get("number") or "")[:80],
+                            "material": payload.get("material") if isinstance(payload.get("material"), dict) else {},
+                        })
+                    batch_payload = {
+                        "summary": f"GitHub material batch: {len(changes)} latest observations",
+                        "metadata": {"source": "github", "batchSize": len(changes),
+                                     "subjects": ",".join(item["subject"] for item in chunk)[:500]},
+                        "material": {"changes": changes}, "evidence": [],
+                    }
+                    batch_key = f"github-batch:{project_id}:{fingerprint}"
+                    self.db.execute(
+                        "INSERT OR IGNORE INTO events(event_key,project_id,kind,payload_json,status,created_at) VALUES(?,?,?,?,?,?)",
+                        (batch_key, project_id, "observation.github.batch", json.dumps(batch_payload, ensure_ascii=False), "pending", now),
+                    )
+                    ids = [item["id"] for item in chunk]
+                    marks = ",".join("?" for _ in ids)
+                    self.db.execute(f"UPDATE events SET status='coalesced' WHERE id IN ({marks})", ids)
+                    result["batch_events"] += 1
+                result["projects"] += 1
+                result["source_events"] += len(rows)
+                result["coalesced_events"] += len(stale_ids) + sum(len(ordered[i:i + max_items]) for i in range(0, len(ordered), max_items) if len(ordered[i:i + max_items]) > 1)
+            self.db.execute("COMMIT")
+            return result
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
+
+    def ensure_jobs(self, github_quiet_seconds=0, github_batch_max=16, now=None) -> int:
+        now = int(now if now is not None else self._now())
+        quiet = max(0, int(github_quiet_seconds))
+        if quiet:
+            self.coalesce_pending_github_events(quiet, github_batch_max, now=now)
+        if quiet:
+            cutoff = now - quiet
+            cur = self.db.execute("""INSERT OR IGNORE INTO jobs(event_id,project_id,status,created_at,updated_at)
+              SELECT id,project_id,'pending',?,? FROM events
+              WHERE status='pending' AND (kind!='observation.github' OR created_at<=?)""", (now, now, cutoff))
+        else:
+            cur = self.db.execute("""INSERT OR IGNORE INTO jobs(event_id,project_id,status,created_at,updated_at)
+              SELECT id,project_id,'pending',?,? FROM events WHERE status='pending'""", (now, now))
         self.db.execute("UPDATE events SET status='queued' WHERE status='pending' AND id IN (SELECT event_id FROM jobs)")
         return max(0, cur.rowcount)
 

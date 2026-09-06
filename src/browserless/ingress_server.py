@@ -123,6 +123,12 @@ class IngressHandler(BaseHTTPRequestHandler):
                 if event_name == "ping":
                     self._reply(200, {"ok": True, "ping": True, "projectId": project_id})
                     return
+                if event_name == "workflow_run":
+                    run = payload.get("workflow_run") if isinstance(payload.get("workflow_run"), dict) else {}
+                    if str(run.get("status") or "") != "completed":
+                        self._reply(200, {"ok": True, "ignored": True, "reason": "workflow_not_terminal",
+                                          "projectId": project_id})
+                        return
                 subject, document = github_observation(event_name, payload)
             else:
                 component = str(payload.get("component") or "")

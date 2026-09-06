@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from src.browserless.store import BrowserlessStore
@@ -18,6 +19,16 @@ class NeverExecutor:
 
 
 class SupervisorTest(unittest.TestCase):
+    def test_run_once_passes_production_github_quiet_window(self):
+        seen = {}
+        store = object()
+        with patch("src.browserless.supervisor.process_once") as proc, patch("src.browserless.supervisor.execute_action_once") as act:
+            proc.side_effect = lambda *args, **kwargs: seen.update(kwargs) or {"status":"idle"}
+            act.return_value = {"status":"idle"}
+            result = run_once(store, object(), object(), object(), {}, 15)
+        self.assertEqual(result["ai"]["status"],"idle")
+        self.assertEqual(seen["github_quiet_seconds"],15)
+
     def test_idle_run_makes_zero_ai_and_external_reads(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = BrowserlessStore(str(Path(tmp) / "core.sqlite3"))
