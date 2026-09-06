@@ -348,6 +348,26 @@ class BrowserlessStore:
             self.db.execute("ROLLBACK")
             raise
 
+    def ranged_read_streak(self, project_id: str, target: str, before_action_id=None, window_seconds=900) -> int:
+        from .read_budget import parse_ranged_read_target
+        current = parse_ranged_read_target(target)
+        if not current:
+            return 0
+        upper = int(before_action_id or (2**63 - 1))
+        cutoff = self._now() - max(1, int(window_seconds))
+        rows = self.db.execute(
+            """SELECT action_type,target,status,updated_at FROM action_requests
+               WHERE project_id=? AND id<? AND updated_at>=? ORDER BY id DESC LIMIT 32""",
+            (project_id, upper, cutoff),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            previous = parse_ranged_read_target(row["target"]) if row["action_type"] == "repo.read" else None
+            if not previous or previous["file_key"] != current["file_key"] or row["status"] not in {"done", "suppressed"}:
+                break
+            count += 1
+        return count
+
     def action_failure_count(self, project_id: str, action_type: str, target: str, before_action_id=None) -> int:
         upper = int(before_action_id or (2**63 - 1))
         if str(action_type).startswith("repo."):

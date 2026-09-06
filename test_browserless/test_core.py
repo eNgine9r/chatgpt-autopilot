@@ -164,3 +164,29 @@ class CoreTest(unittest.TestCase):
         row=self.store.db.execute("SELECT model,input_tokens,cached_input_tokens,output_tokens,cost_usd,response_id FROM usage").fetchone()
         self.assertEqual(tuple(row[:4]),("gpt-5.6-luna",321,21,45))
         self.assertGreater(row[4],0); self.assertEqual(row[5],"resp_bad")
+    def test_ranged_read_budget_same_file_is_blocked_before_action_plan(self):
+        payload={"material":{"read_budget_exhausted":True,"blocked_file":"btc:app/db/stats.py",
+                             "error_code":"repo_ranged_read_budget_exhausted","max_windows":6},
+                 "summary":"bounded ranged read budget exhausted"}
+        self.store.enqueue_event("p1","evt-read-budget","observation.evidence",payload)
+        class RetryClient:
+            def decide(self,*_args,**_kwargs):
+                return {"response_id":"budget","decision":{"decision":"continue","message":"retry range",
+                    "actions":[{"type":"repo.read","target":"btc:lines:1800:120:app/db/stats.py","purpose":"more","payload":""}],
+                    "checkpoint":CHECKPOINT},"usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":50}}
+        result=process_once(self.store,RetryClient())
+        self.assertEqual(result["status"],"blocked"); self.assertEqual(result["reason"],"repeated_ranged_read_budget")
+        self.assertEqual(self.store.counts()["planned_actions"],0)
+
+    def test_ranged_read_budget_allows_distinct_artifact(self):
+        payload={"material":{"read_budget_exhausted":True,"blocked_file":"btc:app/db/stats.py",
+                             "error_code":"repo_ranged_read_budget_exhausted","max_windows":6},
+                 "summary":"bounded ranged read budget exhausted"}
+        self.store.enqueue_event("p1","evt-read-budget-distinct","observation.evidence",payload)
+        class DistinctClient:
+            def decide(self,*_args,**_kwargs):
+                return {"response_id":"distinct","decision":{"decision":"continue","message":"inspect test",
+                    "actions":[{"type":"repo.read","target":"btc:file:tests/test_strategy_v2_mainnet_stats.py","purpose":"distinct","payload":""}],
+                    "checkpoint":CHECKPOINT},"usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":50}}
+        result=process_once(self.store,DistinctClient())
+        self.assertEqual(result["status"],"done"); self.assertEqual(self.store.counts()["planned_actions"],1)

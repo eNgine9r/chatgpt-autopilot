@@ -100,6 +100,42 @@ class ActionRunnerTest(unittest.TestCase):
         row=self.store.db.execute("SELECT material_json FROM observations WHERE source='evidence'").fetchone()
         self.assertNotIn("/home/private",row[0])
 
+
+    def _finish_direct_action(self, event_key, target, action_type="repo.read", status="done"):
+        self.store.enqueue_event("p",event_key,"seed",{})
+        self.store.ensure_jobs(); job=self.store.claim_job()
+        self.store.finish_job(job["id"],{"decision":"continue","actions":[{"type":action_type,"target":target,"purpose":"budget","payload":""}]})
+        action=self.store.claim_action(); self.store.finish_action(action["id"],status,{"ok":True})
+        return action
+
+    def test_seventh_consecutive_ranged_read_is_blocked_before_executor(self):
+        for i in range(6):
+            self._finish_direct_action(f"range-{i}",f"btc:lines:{1+i*100}:100:app/db/stats.py")
+        self.plan_action("range-7",{"type":"repo.read","target":"btc:lines:601:100:app/db/stats.py","purpose":"next","payload":""})
+        executor=FakeExecutor({"ok":True,"kind":"repo","content":"should-not-run"})
+        result=execute_once(self.store,executor)
+        self.assertEqual(result["status"],"failed"); self.assertFalse(result["external_read"]); self.assertEqual(executor.calls,0)
+        stored=self.store.action(result["action_id"]); self.assertEqual(stored["last_error"],"repo_ranged_read_budget_exhausted")
+        self.assertTrue(stored["result"]["read_budget_exhausted"]); self.assertEqual(stored["result"]["blocked_file"],"btc:app/db/stats.py")
+
+    def test_distinct_action_breaks_ranged_read_streak(self):
+        for i in range(6):
+            self._finish_direct_action(f"range-reset-{i}",f"btc:lines:{1+i*100}:100:app/db/stats.py")
+        self._finish_direct_action("search-reset","btc:search:mainnet")
+        self.plan_action("range-after-reset",{"type":"repo.read","target":"btc:lines:601:100:app/db/stats.py","purpose":"next","payload":""})
+        executor=FakeExecutor({"ok":True,"kind":"repo","content":"allowed"})
+        result=execute_once(self.store,executor)
+        self.assertEqual(result["status"],"done"); self.assertTrue(result["external_read"]); self.assertEqual(executor.calls,1)
+
+    def test_old_ranged_reads_do_not_count_after_budget_window(self):
+        for i in range(6):
+            self._finish_direct_action(f"range-old-{i}",f"btc:lines:{1+i*100}:100:app/db/stats.py")
+        self.store.db.execute("UPDATE action_requests SET updated_at=updated_at-3600")
+        self.plan_action("range-fresh",{"type":"repo.read","target":"btc:lines:601:100:app/db/stats.py","purpose":"fresh","payload":""})
+        executor=FakeExecutor({"ok":True,"kind":"repo","content":"allowed"})
+        result=execute_once(self.store,executor)
+        self.assertEqual(result["status"],"done"); self.assertEqual(executor.calls,1)
+
     def test_running_action_recovers_after_restart(self):
         self.plan_action("seed-1"); action=self.store.claim_action(); self.assertIsNotNone(action)
         self.store.close(); self.store=BrowserlessStore(self.db); self.store.recover_running_actions()
