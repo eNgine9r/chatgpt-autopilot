@@ -138,7 +138,7 @@ def load_tool_bindings(path, env=None):
 def capability_manifest(bindings):
     """Return a bounded, non-secret tool contract for Luna context."""
     syntax = {
-        "github.read": "<github-alias>:issue|pr|commit|run:<identity>",
+        "github.read": "<github-alias>:issue|pr|prfiles|commit|run:<identity>",
         "runtime.read": "<runtime-alias>",
         "git.read": "<git-alias>:head|branch|status|diffstat OR <git-alias>:log:<1-20>",
         "evidence.read": "<evidence-alias>:<relative .json/.md/.txt file>",
@@ -250,14 +250,15 @@ class ReadToolExecutor:
         alias, resource, identity = parts
         binding = project["github"].get(alias)
         if not binding: raise ReadActionError("github_alias_not_allowed")
-        if resource not in {"issue", "pr", "commit", "run"} or not identity or len(identity) > 80:
+        if resource not in {"issue", "pr", "prfiles", "commit", "run"} or not identity or len(identity) > 80:
             raise ReadActionError("invalid_github_target")
-        if resource in {"issue", "pr", "run"} and not identity.isdigit():
+        if resource in {"issue", "pr", "prfiles", "run"} and not identity.isdigit():
             raise ReadActionError("invalid_github_identity")
         if resource == "commit" and not re.fullmatch(r"[A-Fa-f0-9]{7,64}", identity):
             raise ReadActionError("invalid_github_identity")
         repo = binding["repository"]
         path = {"issue":f"issues/{identity}", "pr":f"pulls/{identity}",
+                "prfiles":f"pulls/{identity}/files?per_page=100",
                 "commit":f"commits/{identity}", "run":f"actions/runs/{identity}"}[resource]
         try:
             if binding.get("use_gh_auth"):
@@ -295,12 +296,33 @@ class ReadToolExecutor:
             raw = json.loads(output)
         except json.JSONDecodeError:
             raise ReadActionError("github_invalid_json") from None
-        if not isinstance(raw, dict):
+        if not isinstance(raw, (dict, list)):
             raise ReadActionError("github_invalid_json")
         return raw
 
     @staticmethod
     def _github_safe(resource, raw):
+        if resource == "prfiles":
+            if not isinstance(raw, list):
+                raise ReadActionError("github_invalid_json")
+            files = []
+            for item in raw[:100]:
+                if not isinstance(item, dict):
+                    continue
+                filename = str(item.get("filename") or "")[:300]
+                if not filename or SENSITIVE_REPO_PATH.search(filename.replace("\\", "/")):
+                    continue
+                previous = str(item.get("previous_filename") or "")[:300]
+                if previous and SENSITIVE_REPO_PATH.search(previous.replace("\\", "/")):
+                    previous = ""
+                files.append({
+                    "filename": filename, "status": str(item.get("status") or "")[:40],
+                    "additions": int(item.get("additions") or 0), "deletions": int(item.get("deletions") or 0),
+                    "changes": int(item.get("changes") or 0), "previous_filename": previous,
+                })
+            return {"files": files, "count": len(files), "truncated": len(raw) >= 100}
+        if not isinstance(raw, dict):
+            raise ReadActionError("github_invalid_json")
         if resource == "issue":
             return {"number":raw.get("number"), "title":str(raw.get("title") or "")[:500],
                     "state":raw.get("state"), "state_reason":raw.get("state_reason"),

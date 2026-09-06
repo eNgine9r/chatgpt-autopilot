@@ -64,6 +64,35 @@ class ReadToolsTest(unittest.TestCase):
         self.assertEqual(env["GIT_TERMINAL_PROMPT"],"0"); self.assertNotIn("OPENAI_API_KEY",env)
         self.assertNotIn("secret body",str(result)); self.assertEqual(result["data"]["title"],"Private issue")
 
+    def test_github_prfiles_is_bounded_and_drops_patch_sensitive_paths_and_raw_metadata(self):
+        seen = {}
+        raw = [
+            {"filename":"src/app.py","status":"modified","additions":7,"deletions":2,"changes":9,"sha":"abc","patch":"@@ secret patch"},
+            {"filename":"docs/readme.md","status":"renamed","previous_filename":"README.md","additions":1,"deletions":1,"changes":2,"patch":"@@"},
+            {"filename":".env","status":"modified","additions":1,"deletions":0,"changes":1,"patch":"SECRET=1"},
+        ]
+        def get(url, headers): seen.update(url=url, headers=headers); return raw
+        result=ReadToolExecutor(self.bindings,github_get=get).execute(self.action("github.read","repo:prfiles:351"))
+        self.assertEqual(seen["url"],"https://api.github.com/repos/eNgine9r/chatgpt-autopilot/pulls/351/files?per_page=100")
+        self.assertEqual(result["data"]["count"],2); self.assertFalse(result["data"]["truncated"])
+        names=[item["filename"] for item in result["data"]["files"]]
+        self.assertEqual(names,["src/app.py","docs/readme.md"]); self.assertNotIn(".env",names)
+        encoded=json.dumps(result,sort_keys=True)
+        self.assertNotIn("secret patch",encoded); self.assertNotIn("SECRET=1",encoded); self.assertNotIn('"sha"',encoded); self.assertNotIn('"patch"',encoded)
+
+    def test_github_prfiles_via_gh_uses_fixed_read_endpoint_and_accepts_list_json(self):
+        bindings={"p1":{"github":{"private":{"repository":"owner/private-repo","token":"","use_gh_auth":True}},
+                        "runtime":{},"git":{},"evidence":{}}}
+        seen={}
+        class Result:
+            returncode=0; stderr=""
+            stdout=json.dumps([{"filename":"src/a.py","status":"added","additions":3,"deletions":0,"changes":3,"patch":"hidden"}])
+        def runner(command,**kwargs): seen.update(command=command,kwargs=kwargs); return Result()
+        result=ReadToolExecutor(bindings,gh_runner=runner).execute(self.action("github.read","private:prfiles:12"))
+        self.assertEqual(seen["command"],["gh","api","--hostname","github.com","--method","GET","repos/owner/private-repo/pulls/12/files?per_page=100"])
+        self.assertEqual(result["data"]["files"][0]["filename"],"src/a.py")
+        self.assertNotIn("hidden",json.dumps(result))
+
     def test_github_read_via_gh_fails_closed_on_process_or_json_error(self):
         bindings={"p1":{"github":{"private":{"repository":"owner/private-repo","token":"","use_gh_auth":True}},
                         "runtime":{},"git":{},"evidence":{}}}
@@ -167,6 +196,7 @@ class ToolBindingTest(unittest.TestCase):
         manifest=capability_manifest(bindings)["p"]
         text=json.dumps(manifest,sort_keys=True)
         self.assertIn("repo.patch",text); self.assertIn("<repo-alias>",text)
+        self.assertIn("prfiles",manifest["syntax"]["github.read"])
         self.assertEqual(manifest["aliases"]["github"],["gh"])
         self.assertEqual(manifest["repo"]["work"]["testAliases"],["unit"])
         self.assertEqual(manifest["repo"]["work"]["requiredTestAliases"],["unit"])
