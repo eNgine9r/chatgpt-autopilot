@@ -49,7 +49,7 @@ function json(res, status, body) {
 
 export function createBridgeServer({
   host, port, projects, projectsFile, notifier, logger, progressWatchdog = null, runtimeStore = null,
-  onBrowserRestart = null, evidenceVerifier = verifyProjectEvidence
+  navigationPressureStore = null, onBrowserRestart = null, evidenceVerifier = verifyProjectEvidence
 }) {
   const projectById = new Map(projects.filter((p) => p.enabled).map((p) => [p.id, p]));
 
@@ -63,6 +63,28 @@ export function createBridgeServer({
       }
       if (req.method === "GET" && req.url === "/config") {
         return json(res, 200, { projects: publicProjects(projects, runtimeStore) });
+      }
+      if (req.method === "GET" && req.url === "/navigation-pressure") {
+        if (!navigationPressureStore) return json(res, 503, { error: "navigation_pressure_unavailable" });
+        return json(res, 200, { ok: true, ...navigationPressureStore.snapshot() });
+      }
+      if (req.method === "POST" && req.url === "/navigation-pressure") {
+        if (!navigationPressureStore) return json(res, 503, { error: "navigation_pressure_unavailable" });
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return json(res, 415, { error: "application_json_required" });
+        }
+        const payload = await readJson(req);
+        const action = String(payload.action || "");
+        const state = action === "claim_navigation"
+          ? await navigationPressureStore.claimNavigation()
+          : action === "rate_limit"
+            ? await navigationPressureStore.recordRateLimit()
+            : null;
+        if (!state) return json(res, 400, { error: "unsupported_navigation_pressure_action" });
+        logger.info("navigation_pressure", {
+          action, allowed: state.allowed, backoffUntil: state.backoffUntil, lastNavigationAt: state.lastNavigationAt
+        });
+        return json(res, 200, { ok: true, ...state });
       }
       if (req.method === "GET" && req.url === "/operator/status") {
         return json(res, 200, {

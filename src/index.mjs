@@ -13,6 +13,7 @@ import { ensureChromiumDeveloperMode } from "./chromium-profile.mjs";
 import { waitForStartupReadiness } from "./connect-preflight.mjs";
 import { listOwnedGcrPrompterPids, watchAndDismissNewGcrPrompters } from "./keyring-prompt.mjs";
 import { ProjectRuntimeStore } from "./runtime-store.mjs";
+import { NavigationPressureStore } from "./navigation-pressure-store.mjs";
 import { createControlServer } from "./control-server.mjs";
 
 loadDotEnv();
@@ -47,6 +48,9 @@ const notifier = new TelegramNotifier({
 });
 
 const runtimeStore = new ProjectRuntimeStore({ stateDir: config.stateDir, projects: enabled });
+const navigationPressureStore = new NavigationPressureStore({
+  file: path.resolve(process.env.NAVIGATION_PRESSURE_FILE || "./runtime/navigation-pressure.json")
+});
 const progressWatchdog = new SupervisorProgressWatchdog({ projects: enabled, notifier, logger, runtimeStore });
 const bridge = await createBridgeServer({
   host: config.bridgeHost,
@@ -57,6 +61,7 @@ const bridge = await createBridgeServer({
   logger,
   progressWatchdog,
   runtimeStore,
+  navigationPressureStore,
   onBrowserRestart: ({ projectId, reason }) => {
     logger.info("browser_recovery_supervisor_restart", { projectId, reason });
     shutdown("browser_recovery_restart", 1);
