@@ -7,6 +7,8 @@ from pathlib import Path
 from .read_tools import ALIAS, ReadActionError
 
 MAX_REPO_FILE_BYTES = 65536
+MAX_REPO_RANGED_FILE_BYTES = 1048576
+MAX_RANGE_LINES = 200
 MAX_TREE_FILES = 300
 MAX_SEARCH_OUTPUT = 60000
 MAX_PATCH_CHARS = 20000
@@ -148,7 +150,7 @@ def _assert_safe_git_attributes(root, paths=None):
                 raise ReadActionError("repo_external_transform_not_allowed")
 
 
-def _tracked_file(root, relative):
+def _tracked_file(root, relative, max_bytes=MAX_REPO_FILE_BYTES):
     if not relative or len(relative) > 240 or "\x00" in relative:
         raise ReadActionError("invalid_repo_path")
     rel = Path(relative)
@@ -158,8 +160,11 @@ def _tracked_file(root, relative):
     base = Path(root).resolve(); candidate = (base / rel).resolve()
     try: candidate.relative_to(base)
     except ValueError: raise ReadActionError("repo_path_escape") from None
-    if not candidate.is_file() or candidate.stat().st_size > MAX_REPO_FILE_BYTES:
+    if not candidate.is_file():
         raise ReadActionError("repo_file_not_allowed")
+    if candidate.stat().st_size > int(max_bytes):
+        code = "repo_file_too_large" if int(max_bytes) == MAX_REPO_FILE_BYTES else "repo_ranged_file_too_large"
+        raise ReadActionError(code)
     return candidate
 
 
@@ -225,6 +230,23 @@ class WorkspaceToolExecutor:
             except UnicodeDecodeError: raise ReadActionError("repo_file_not_text") from None
             return {"ok":True,"kind":"repo","operation":"file","alias":alias,"file":parts[2],
                     "sha256":hashlib.sha256(raw).hexdigest(),"content":text[:60000]}
+        if mode == "lines":
+            if len(parts) != 3: raise ReadActionError("invalid_repo_read_target")
+            ranged = parts[2].split(":", 2)
+            if len(ranged) != 3 or not ranged[0].isdigit() or not ranged[1].isdigit():
+                raise ReadActionError("invalid_repo_lines_target")
+            start, count, relative = int(ranged[0]), int(ranged[1]), ranged[2]
+            if start < 1 or start > 1000000 or count < 1 or count > MAX_RANGE_LINES:
+                raise ReadActionError("invalid_repo_lines_range")
+            file = _tracked_file(root, relative, max_bytes=MAX_REPO_RANGED_FILE_BYTES); raw = file.read_bytes()
+            try: text = raw.decode("utf-8")
+            except UnicodeDecodeError: raise ReadActionError("repo_file_not_text") from None
+            lines = text.splitlines(keepends=True); selected = "".join(lines[start-1:start-1+count])
+            clipped = selected[:MAX_SEARCH_OUTPUT]
+            return {"ok":True,"kind":"repo","operation":"lines","alias":alias,"file":relative,
+                    "sha256":hashlib.sha256(raw).hexdigest(),"start_line":start,
+                    "end_line":min(len(lines), start + count - 1),"total_lines":len(lines),
+                    "content":clipped,"content_truncated":len(selected)>len(clipped)}
         if mode == "tree":
             prefix = parts[2] if len(parts) == 3 else ""
             if prefix and (Path(prefix).is_absolute() or ".." in Path(prefix).parts or len(prefix) > 200):

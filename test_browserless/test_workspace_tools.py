@@ -69,6 +69,27 @@ class WorkspaceToolsTest(unittest.TestCase):
         with self.assertRaises(ReadActionError): ex.execute(self.action("repo.read","autopilot:file:.env.local"))
         with self.assertRaises(ReadActionError): ex.execute(self.action("repo.read","autopilot:file:untracked.py"))
 
+    def test_large_tracked_file_requires_bounded_lines_mode(self):
+        large=self.repo/"large.py"
+        large.write_text("".join(f"line_{i:04d} = '{'x'*260}'\n" for i in range(1,401)))
+        git("add","large.py",cwd=self.repo); git("commit","-m","large fixture",cwd=self.repo); git("push","origin","main",cwd=self.repo)
+        ex=self.executor(store=self.store)
+        with self.assertRaises(ReadActionError) as ctx:
+            ex.execute(self.action("repo.read","autopilot:file:large.py"))
+        self.assertEqual(ctx.exception.code,"repo_file_too_large")
+        result=ex.execute(self.action("repo.read","autopilot:lines:120:40:large.py"))
+        self.assertEqual(result["operation"],"lines"); self.assertEqual(result["start_line"],120); self.assertEqual(result["end_line"],159)
+        self.assertEqual(result["total_lines"],400); self.assertIn("line_0120",result["content"]); self.assertIn("line_0159",result["content"]); self.assertNotIn("line_0119",result["content"]); self.assertNotIn("line_0160",result["content"]); self.assertEqual(len(result["sha256"]),64)
+
+    def test_lines_mode_rejects_invalid_range_sensitive_untracked_and_huge_source(self):
+        ex=self.executor(store=self.store)
+        for target in ("autopilot:lines:0:10:app.py","autopilot:lines:1:201:app.py","autopilot:lines:x:10:app.py",
+                       "autopilot:lines:1:10:.env.local","autopilot:lines:1:10:missing.py"):
+            with self.assertRaises(ReadActionError, msg=target): ex.execute(self.action("repo.read",target))
+        huge=self.repo/"huge.py"; huge.write_text("x"*(1048576+1)); git("add","huge.py",cwd=self.repo); git("commit","-m","huge fixture",cwd=self.repo)
+        with self.assertRaises(ReadActionError) as ctx: ex.execute(self.action("repo.read","autopilot:lines:1:10:huge.py"))
+        self.assertEqual(ctx.exception.code,"repo_ranged_file_too_large")
+
     def test_prepare_rejects_external_checkout_transform_attributes(self):
         (self.repo/".gitattributes").write_text("app.py filter=evil\n")
         git("add",".gitattributes",cwd=self.repo); git("commit","-m","attrs",cwd=self.repo); git("push","origin","main",cwd=self.repo)

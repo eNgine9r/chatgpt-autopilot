@@ -196,6 +196,8 @@ class ToolBindingTest(unittest.TestCase):
         manifest=capability_manifest(bindings)["p"]
         text=json.dumps(manifest,sort_keys=True)
         self.assertIn("repo.patch",text); self.assertIn("<repo-alias>",text)
+        self.assertIn(":lines:<start>:<count 1-200>:",manifest["syntax"]["repo.read"])
+        self.assertIn("lines",manifest["repo"]["work"]["readModes"])
         self.assertIn("prfiles",manifest["syntax"]["github.read"])
         self.assertEqual(manifest["aliases"]["github"],["gh"])
         self.assertEqual(manifest["repo"]["work"]["testAliases"],["unit"])

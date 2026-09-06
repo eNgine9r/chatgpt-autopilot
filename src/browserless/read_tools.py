@@ -142,7 +142,7 @@ def capability_manifest(bindings):
         "runtime.read": "<runtime-alias>",
         "git.read": "<git-alias>:head|branch|status|diffstat OR <git-alias>:log:<1-20>",
         "evidence.read": "<evidence-alias>:<relative .json/.md/.txt file>",
-        "repo.read": "<repo-alias>:file:<tracked-path> OR <repo-alias>:tree[:prefix] OR <repo-alias>:search:<literal>",
+        "repo.read": "<repo-alias>:file:<tracked-path> OR <repo-alias>:lines:<start>:<count 1-200>:<tracked-path> OR <repo-alias>:tree[:prefix] OR <repo-alias>:search:<literal>",
         "repo.prepare": "<repo-alias>",
         "repo.patch": "<repo-alias>; payload must be raw git-style unified diff starting `diff --git a/<path> b/<path>`, with `--- a/<path>` and `+++ b/<path>`; no Markdown fences",
         "repo.test": "<repo-alias>:<test-alias>",
@@ -155,7 +155,7 @@ def capability_manifest(bindings):
         for alias, repo in sorted((project.get("repo") or {}).items())[:8]:
             write_enabled = bool(repo.get("write_enabled"))
             repos[str(alias)] = {
-                "readModes": ["file", "tree", "search"],
+                "readModes": ["file", "lines", "tree", "search"],
                 "writeEnabled": write_enabled,
                 "writePaths": [str(x)[:240] for x in list(repo.get("write_paths") or [])[:16]] if write_enabled else [],
                 "testAliases": sorted(str(x)[:80] for x in (repo.get("tests") or {}))[:16] if write_enabled else [],
