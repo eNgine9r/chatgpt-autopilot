@@ -9,7 +9,8 @@ from .core import process_once
 from .cost import BudgetGovernor
 from .ingress_server import create_server, load_bindings
 from .openai_client import LunaResponsesClient
-from .read_tools import ReadToolExecutor, load_tool_bindings
+from .read_tools import load_tool_bindings
+from .safe_tools import SafeToolExecutor
 from .store import BrowserlessStore
 
 
@@ -42,7 +43,7 @@ def main(argv=None):
         enqueue_checkpoint_bootstraps(store)
         client = LunaResponsesClient()
         governor = BudgetGovernor(hard_budget_usd=args.hard_budget_usd)
-        executor = ReadToolExecutor(load_tool_bindings(args.tools))
+        executor = SafeToolExecutor(load_tool_bindings(args.tools))
         if args.ingress_bindings:
             server = create_server(args.db, load_bindings(args.ingress_bindings), args.ingress_host, args.ingress_port)
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)

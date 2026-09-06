@@ -26,7 +26,7 @@ class OpenAIClientTest(unittest.TestCase):
         self.assertEqual(result["decision"]["decision"], "wait")
         self.assertEqual(result["decision"]["actions"], [])
         self.assertEqual(seen["body"]["text"]["format"]["schema"]["properties"]["actions"]["items"]["properties"]["type"]["enum"],
-                         ["github.read", "runtime.read", "git.read", "evidence.read"])
+                         ["github.read", "runtime.read", "git.read", "evidence.read", "repo.read", "repo.prepare", "repo.test"])
 
     def test_missing_key_fails_closed(self):
         with self.assertRaises(MissingCredentialError):

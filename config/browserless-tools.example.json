@@ -20,6 +20,27 @@
         "release": {
           "root": "/home/btcradar/release-evidence"
         }
+      },
+      "repo": {
+        "autopilot": {
+          "path": "/home/btcradar/chatgpt-autopilot",
+          "workspaceRoot": "/home/btcradar/chatgpt-autopilot-browserless-workspaces",
+          "baseBranch": "main",
+          "writeEnabled": true,
+          "testTimeoutSeconds": 600,
+          "tests": {
+            "browserless": [
+              "python3",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "test_browserless",
+              "-p",
+              "test_*.py"
+            ]
+          }
+        }
       }
     }
   }

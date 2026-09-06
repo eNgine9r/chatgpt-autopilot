@@ -36,7 +36,7 @@ def load_tool_bindings(path, env=None):
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
     projects = {}
     for project_id, raw_project in (doc.get("projects") or {}).items():
-        project = {"github": {}, "runtime": {}, "git": {}, "evidence": {}}
+        project = {"github": {}, "runtime": {}, "git": {}, "evidence": {}, "repo": {}}
         for alias, raw in ((raw_project or {}).get("github") or {}).items():
             repo = str((raw or {}).get("repository") or "")
             token_env = str((raw or {}).get("tokenEnv") or "")
@@ -61,6 +61,40 @@ def load_tool_bindings(path, env=None):
             if not ALIAS.fullmatch(str(alias)) or not root.is_absolute():
                 raise ValueError(f"invalid evidence read binding: {project_id}/{alias}")
             project["evidence"][str(alias)] = {"root": str(root)}
+        for alias, raw in ((raw_project or {}).get("repo") or {}).items():
+            root = Path(str((raw or {}).get("path") or ""))
+            workspace_root = Path(str((raw or {}).get("workspaceRoot") or ""))
+            base_branch = str((raw or {}).get("baseBranch") or "main")
+            write_enabled = bool((raw or {}).get("writeEnabled", False))
+            tests = (raw or {}).get("tests") or {}
+            if not ALIAS.fullmatch(str(alias)) or not root.is_absolute():
+                raise ValueError(f"invalid repo binding: {project_id}/{alias}")
+            if write_enabled and not workspace_root.is_absolute():
+                raise ValueError(f"invalid repo workspace root: {project_id}/{alias}")
+            if write_enabled:
+                root_resolved = root.resolve()
+                workspace_resolved = workspace_root.resolve()
+                if workspace_resolved == root_resolved or root_resolved in workspace_resolved.parents:
+                    raise ValueError(f"repo workspace must be outside canonical repo: {project_id}/{alias}")
+            if not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", base_branch) or ".." in base_branch or base_branch.startswith("-"):
+                raise ValueError(f"invalid repo base branch: {project_id}/{alias}")
+            normalized_tests = {}
+            for test_alias, command in tests.items():
+                if not ALIAS.fullmatch(str(test_alias)) or not isinstance(command, list) or not (1 <= len(command) <= 20):
+                    raise ValueError(f"invalid repo test binding: {project_id}/{alias}/{test_alias}")
+                argv = [str(item) for item in command]
+                if any(not item or len(item) > 300 or "\x00" in item for item in argv):
+                    raise ValueError(f"invalid repo test argv: {project_id}/{alias}/{test_alias}")
+                executable = Path(argv[0]).name
+                if executable not in {"npm", "node", "python3", "pytest", "pnpm", "yarn"}:
+                    raise ValueError(f"repo test executable not allowed: {project_id}/{alias}/{test_alias}")
+                normalized_tests[str(test_alias)] = argv
+            timeout = int((raw or {}).get("testTimeoutSeconds") or 600)
+            if timeout < 1 or timeout > 900:
+                raise ValueError(f"invalid repo test timeout: {project_id}/{alias}")
+            project["repo"][str(alias)] = {"path": str(root), "workspace_root": str(workspace_root) if write_enabled else "",
+                                                "base_branch": base_branch, "write_enabled": write_enabled,
+                                                "tests": normalized_tests, "test_timeout": timeout}
         projects[str(project_id)] = project
     return projects
 
