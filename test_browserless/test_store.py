@@ -131,6 +131,21 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(grouped[("observation.github","coalesced")],3)
         self.assertEqual(grouped[("observation.github.batch","queued")],1)
 
+    def test_github_batch_preserves_authoritative_workflow_run_id(self):
+        from src.browserless.ingress import ingest_observation
+        now=self.store._now()
+        ingest_observation(self.store,"p1","github","workflow:317326122:abc",{
+            "summary":"CI completed","metadata":{"githubEvent":"workflow_run","runId":"34053949036"},
+            "material":{"status":"completed","conclusion":"success","run_number":4388}})
+        ingest_observation(self.store,"p1","github","pr:954",{
+            "summary":"PR open","metadata":{"githubEvent":"pull_request","number":"954"},"material":{"state":"open"}})
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+20)
+        job=self.store.claim_job(); self.assertEqual(job["kind"],"observation.github.batch")
+        workflow=[x for x in job["payload"]["material"]["changes"] if x["githubEvent"]=="workflow_run"][0]
+        self.assertEqual(workflow["runId"],"34053949036")
+        self.assertNotEqual(workflow["runId"],"317326122")
+        self.assertNotEqual(workflow["runId"],str(workflow["material"]["run_number"]))
+
     def test_single_github_event_waits_for_quiet_window_then_queues_once(self):
         from src.browserless.ingress import ingest_observation
         now=self.store._now()

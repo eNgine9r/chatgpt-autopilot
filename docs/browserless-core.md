@@ -117,3 +117,7 @@ Full `repo.read <alias>:file:<path>` remains limited to 64 KiB. If a tracked tex
 
 ## Ranged-read budget
 Bounded `repo.read ...:lines:...` windows are for targeted inspection, not sequential whole-file scans. Browserless permits at most six consecutive ranged windows for the same file within 15 minutes. The next range is rejected before external file access with `repo_ranged_read_budget_exhausted` and bounded evidence. Luna must then wait, complete, escalate, or select a distinct artifact; requesting another ranged window for the blocked file is rejected by the core before action planning. A distinct action or expiry of the 15-minute window resets the consecutive-read streak.
+## Exact ranged-read reuse and workflow run identity
+Repeated `repo.read ...:lines:...` requests for the exact same target within 60 seconds reuse the already stored successful result instead of touching the filesystem again. The reused local result is marked only in local action state, does not add another ranged-read budget window, and produces the normal unchanged-evidence suppression semantics for Luna. After the cooldown expires, the target is read normally again.
+
+For GitHub `workflow_run` observations, Browserless preserves the webhook `runId` through quiet-window batching. `github.read <alias>:run:<identity>` must use that numeric `runId`; a workflow ID embedded in the observation subject and `run_number` are not valid substitutes.

@@ -38,6 +38,8 @@ class OpenAIClientTest(unittest.TestCase):
         self.assertIn("six consecutive ranged windows", instructions)
         self.assertIn("read_budget_exhausted=true", instructions)
         self.assertIn("github.read prfiles", instructions)
+        self.assertIn("numeric metadata `runId`", instructions)
+        self.assertIn("never use the workflow ID", instructions)
         payload_schema = seen["body"]["text"]["format"]["schema"]["properties"]["actions"]["items"]["properties"]["payload"]
         self.assertIn("empty string", payload_schema["description"])
 
