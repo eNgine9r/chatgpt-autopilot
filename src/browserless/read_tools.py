@@ -109,13 +109,25 @@ def load_tool_bindings(path, env=None):
                 if executable not in {"npm", "node", "python3", "pytest", "pnpm", "yarn"}:
                     raise ValueError(f"repo test executable not allowed: {project_id}/{alias}/{test_alias}")
                 normalized_tests[str(test_alias)] = argv
+            raw_required_tests = (raw or {}).get("requiredTests")
+            if raw_required_tests is None:
+                required_tests = sorted(normalized_tests)
+            else:
+                if not isinstance(raw_required_tests, list) or len(raw_required_tests) > 16:
+                    raise ValueError(f"invalid repo required tests: {project_id}/{alias}")
+                required_tests = [str(item) for item in raw_required_tests]
+                if (len(required_tests) != len(set(required_tests)) or any(not ALIAS.fullmatch(item) for item in required_tests)
+                        or any(item not in normalized_tests for item in required_tests)):
+                    raise ValueError(f"invalid repo required tests: {project_id}/{alias}")
+            if write_enabled and (not normalized_tests or not required_tests):
+                raise ValueError(f"repo required tests required: {project_id}/{alias}")
             timeout = int((raw or {}).get("testTimeoutSeconds") or 600)
             if timeout < 1 or timeout > 900:
                 raise ValueError(f"invalid repo test timeout: {project_id}/{alias}")
             project["repo"][str(alias)] = {"path": str(root_resolved), "workspace_root": str(workspace_resolved) if write_enabled else "",
                                                 "base_branch": base_branch, "write_enabled": write_enabled,
                                                 "write_paths": normalized_write_paths, "publish_repository": publish_repository,
-                                                "tests": normalized_tests, "test_timeout": timeout}
+                                                "tests": normalized_tests, "required_tests": required_tests, "test_timeout": timeout}
         projects[str(project_id)] = project
     return projects
 
@@ -144,6 +156,7 @@ def capability_manifest(bindings):
                 "writeEnabled": write_enabled,
                 "writePaths": [str(x)[:240] for x in list(repo.get("write_paths") or [])[:16]] if write_enabled else [],
                 "testAliases": sorted(str(x)[:80] for x in (repo.get("tests") or {}))[:16] if write_enabled else [],
+                "requiredTestAliases": [str(x)[:80] for x in list(repo.get("required_tests") if "required_tests" in repo else sorted((repo.get("tests") or {}).keys()))[:16]] if write_enabled else [],
                 "publishEnabled": bool(write_enabled and repo.get("publish_repository")),
             }
         result[str(project_id)] = {
