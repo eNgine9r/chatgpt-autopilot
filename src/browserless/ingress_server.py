@@ -120,6 +120,9 @@ class IngressHandler(BaseHTTPRequestHandler):
                     self._reply(403, {"ok": False, "error": "repository_mismatch"})
                     return
                 event_name = str(self.headers.get("X-GitHub-Event") or "")
+                if event_name == "ping":
+                    self._reply(200, {"ok": True, "ping": True, "projectId": project_id})
+                    return
                 subject, document = github_observation(event_name, payload)
             else:
                 component = str(payload.get("component") or "")

@@ -56,3 +56,12 @@ Every read result is written back through the normal `evidence` observation hash
 Production Browserless runtime is packaged as one Python process combining the Luna job loop, read-only action loop, and optional loopback ingress server. This avoids keeping three Python daemons resident. The individual CLIs remain available for diagnostics.
 
 `bash scripts/install-browserless-systemd.sh` only stages the user-systemd unit. It deliberately does not enable or start it; production activation remains a separate cutover gate.
+
+## GitHub event transport
+Browserless production uses signed GitHub webhooks instead of Chromium polling. The ingress remains bound to `127.0.0.1:8771`; production exposure is expected through a separately approved reverse-proxy/Funnel path such as `/autopilot-events`.
+
+GitHub sends a signed `ping` when a hook is created. Browserless validates HMAC and repository identity, returns HTTP 200, and deliberately creates no event/job for that ping.
+
+`python3 -m src.browserless.webhook_config --bindings config/browserless-ingress.json --base-url https://HOST/autopilot-events` is dry-run by default. `--apply` is the explicit mutation gate. On apply, webhook secrets are read from a mode-600 env file and sent to `gh api` through stdin, never command arguments. Existing hooks with the exact callback URL are updated rather than duplicated.
+
+Configured GitHub events are `workflow_run`, `pull_request`, `issues`, and `issue_comment`; each received payload still passes through content-hash deduplication before any Luna job exists.

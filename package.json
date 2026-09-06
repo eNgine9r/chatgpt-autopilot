@@ -28,6 +28,7 @@
     "start:browserless-ingress": "python3 -m src.browserless.ingress_server",
     "start:browserless-actions": "python3 -m src.browserless.action_runner",
     "start:browserless": "PYTHONPATH=. python3 -m src.browserless.supervisor",
-    "install:browserless-service": "bash scripts/install-browserless-systemd.sh"
+    "install:browserless-service": "bash scripts/install-browserless-systemd.sh",
+    "configure:browserless-webhooks": "PYTHONPATH=. python3 -m src.browserless.webhook_config"
   }
 }
