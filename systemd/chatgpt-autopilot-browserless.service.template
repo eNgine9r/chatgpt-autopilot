@@ -1,0 +1,19 @@
+[Unit]
+Description=ChatGPT Autopilot Browserless Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__APP_DIR__
+Environment=PYTHONPATH=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env.local
+ExecStart=__PYTHON__ -m src.browserless.supervisor --db __APP_DIR__/state-browserless/core.sqlite3 --tools __APP_DIR__/config/browserless-tools.json --ingress-bindings __APP_DIR__/config/browserless-ingress.json --ingress-host 127.0.0.1 --ingress-port 8771 --idle-seconds 5 --hard-budget-usd 30
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target
