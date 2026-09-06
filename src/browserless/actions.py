@@ -1,5 +1,5 @@
 READ_ONLY_ACTION_TYPES = ("github.read", "runtime.read", "git.read", "evidence.read", "repo.read")
-WORKSPACE_ACTION_TYPES = ("repo.prepare", "repo.patch", "repo.test")
+WORKSPACE_ACTION_TYPES = ("repo.prepare", "repo.patch", "repo.test", "repo.commit", "repo.publish")
 SAFE_ACTION_TYPES = READ_ONLY_ACTION_TYPES + WORKSPACE_ACTION_TYPES
 MAX_ACTIONS = 8
 MAX_ACTION_PAYLOAD_CHARS = 20000

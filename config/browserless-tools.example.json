@@ -46,7 +46,8 @@
             "docs/browserless-core.md",
             "config/browserless-tools.example.json",
             "package.json"
-          ]
+          ],
+          "publishRepository": "eNgine9r/chatgpt-autopilot"
         }
       }
     }

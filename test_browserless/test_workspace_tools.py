@@ -32,7 +32,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.store=BrowserlessStore(str(self.db_path)); self.store.register_project("p1","2026-09-04-v1","anchor",{})
         self.bindings={"p1":{"github":{},"runtime":{},"git":{},"evidence":{},"repo":{"autopilot":{
             "path":str(self.repo),"workspace_root":str(self.workspace_root),"base_branch":"main","write_enabled":True,
-            "write_paths":["app.py","safe.txt"],"tests":{"unit":["python3","-c","print('ok')"]},"test_timeout":30}}}}
+            "publish_repository":"eNgine9r/chatgpt-autopilot","write_paths":["app.py","safe.txt"],"tests":{"unit":["python3","-c","print('ok')"]},"test_timeout":30}}}}
 
     def tearDown(self):
         self.store.close(); self.tmp.cleanup()
@@ -40,14 +40,26 @@ class WorkspaceToolsTest(unittest.TestCase):
     def action(self, kind, target, job_id=7):
         return {"id":1,"job_id":job_id,"project_id":"p1","type":kind,"target":target,"purpose":"test"}
 
+    def executor(self, **kwargs):
+        return WorkspaceToolExecutor(self.bindings, source_url_resolver=lambda _binding: str(self.remote), **kwargs)
+
     @staticmethod
     def app_patch(old="print('hello')", new="print('changed')"):
         return f"diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n-{old}\n+{new}\n needle = 1\n"
 
+    def ready_workspace(self, base_job=60):
+        ex=self.executor(store=self.store)
+        ex.execute(self.action("repo.prepare","autopilot",job_id=base_job))
+        patched=ex.execute({**self.action("repo.patch","autopilot",job_id=base_job+1),"payload":self.app_patch()})
+        tester=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=lambda *_args,**_kwargs: FakeResult())
+        tested=tester.execute(self.action("repo.test","autopilot:unit",job_id=base_job+2))
+        self.assertTrue(tested["passed"]); self.assertEqual(tested["diff_sha"],patched["diff_sha"])
+        return ex,patched
+
     def test_repo_read_uses_only_tracked_files_and_literal_search(self):
         (self.repo/".env.local").write_text("DUMMY_PLACEHOLDER=not-a-secret\n")
         (self.repo/"untracked.py").write_text("private\n")
-        ex=WorkspaceToolExecutor(self.bindings, store=self.store)
+        ex=self.executor(store=self.store)
         file=ex.execute(self.action("repo.read","autopilot:file:app.py"))
         self.assertIn("needle",file["content"]); self.assertEqual(len(file["sha256"]),64)
         tree=ex.execute(self.action("repo.read","autopilot:tree"))
@@ -57,9 +69,17 @@ class WorkspaceToolsTest(unittest.TestCase):
         with self.assertRaises(ReadActionError): ex.execute(self.action("repo.read","autopilot:file:.env.local"))
         with self.assertRaises(ReadActionError): ex.execute(self.action("repo.read","autopilot:file:untracked.py"))
 
+    def test_prepare_rejects_external_checkout_transform_attributes(self):
+        (self.repo/".gitattributes").write_text("app.py filter=evil\n")
+        git("add",".gitattributes",cwd=self.repo); git("commit","-m","attrs",cwd=self.repo); git("push","origin","main",cwd=self.repo)
+        ex=self.executor(store=self.store)
+        with self.assertRaises(ReadActionError) as ctx: ex.execute(self.action("repo.prepare","autopilot",job_id=11))
+        self.assertEqual(ctx.exception.code,"repo_external_transform_not_allowed")
+        self.assertIsNone(self.store.active_repo_workspace("p1","autopilot"))
+
     def test_prepare_uses_remote_main_and_deterministic_workspace(self):
         canonical_before=git("rev-parse","HEAD",cwd=self.repo)
-        ex=WorkspaceToolExecutor(self.bindings, store=self.store)
+        ex=self.executor(store=self.store)
         result=ex.execute(self.action("repo.prepare","autopilot",job_id=12))
         remote_head=git("rev-parse","refs/heads/main",cwd=self.remote)
         self.assertEqual(result["base_sha"],remote_head)
@@ -71,12 +91,12 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.assertTrue(reused["reused"]); self.assertEqual(reused["branch"],result["branch"])
 
     def test_test_action_uses_bwrap_contract_and_no_secret_environment(self):
-        ex=WorkspaceToolExecutor(self.bindings, store=self.store); ex.execute(self.action("repo.prepare","autopilot",job_id=21))
+        ex=self.executor(store=self.store); ex.execute(self.action("repo.prepare","autopilot",job_id=21))
         seen={}
         def sandbox(argv, **kwargs):
             seen["argv"]=argv; seen["kwargs"]=kwargs
             return FakeResult()
-        ex=WorkspaceToolExecutor(self.bindings,store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
+        ex=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
         result=ex.execute(self.action("repo.test","autopilot:unit",job_id=22))
         argv=seen["argv"]
         self.assertIn("--unshare-all",argv); self.assertIn("--clearenv",argv)
@@ -85,7 +105,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.assertFalse(seen["kwargs"]["shell"]); self.assertTrue(result["passed"])
 
     def test_workspace_session_survives_store_reopen_and_new_job(self):
-        ex=WorkspaceToolExecutor(self.bindings, store=self.store)
+        ex=self.executor(store=self.store)
         prepared=ex.execute(self.action("repo.prepare","autopilot",job_id=31))
         self.store.close()
         self.store=BrowserlessStore(str(self.db_path))
@@ -93,7 +113,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         def sandbox(argv, **kwargs):
             seen["argv"]=argv
             return FakeResult()
-        ex=WorkspaceToolExecutor(self.bindings,store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
+        ex=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
         tested=ex.execute(self.action("repo.test","autopilot:unit",job_id=32))
         self.assertTrue(tested["passed"])
         active=self.store.active_repo_workspace("p1","autopilot")
@@ -107,7 +127,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         safe.write_text("NEEDLE=safe\n")
         git("add", ".env.example", "safe.txt", cwd=self.repo)
         git("commit", "-m", "search fixtures", cwd=self.repo)
-        result = WorkspaceToolExecutor(self.bindings, store=self.store).execute(self.action("repo.read", "autopilot:search:NEEDLE"))
+        result = self.executor(store=self.store).execute(self.action("repo.read", "autopilot:search:NEEDLE"))
         self.assertIn("safe.txt", result["matches"])
         self.assertNotIn(".env.example", result["matches"])
 
@@ -116,7 +136,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         from src.browserless.store import BrowserlessStore
         store=BrowserlessStore(str(store_path)); store.register_project("p1","2026-09-04-v1","anchor",{})
         try:
-            ex=WorkspaceToolExecutor(self.bindings,store=store)
+            ex=self.executor(store=store)
             ex.execute(self.action("repo.prepare","autopilot",job_id=30))
             patch=self.app_patch()
             result=ex.execute({**self.action("repo.patch","autopilot",job_id=31),"payload":patch})
@@ -130,7 +150,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         from src.browserless.store import BrowserlessStore
         store=BrowserlessStore(str(Path(self.tmp.name)/"reject.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})
         try:
-            ex=WorkspaceToolExecutor(self.bindings,store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=40))
+            ex=self.executor(store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=40))
             bad=[
               "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-tracked docs\n+x\n",
               "diff --git a/new.py b/new.py\nnew file mode 100644\n--- /dev/null\n+++ b/new.py\n@@ -0,0 +1 @@\n+x\n",
@@ -151,7 +171,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         from src.browserless.store import BrowserlessStore
         store=BrowserlessStore(str(Path(self.tmp.name)/"rollback.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})
         try:
-            ex=WorkspaceToolExecutor(self.bindings,store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=45))
+            ex=self.executor(store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=45))
             active=store.active_repo_workspace("p1","autopilot"); workspace=Path(active["workspace_path"]); before=(workspace/"app.py").read_text()
             def fail_state(*_args,**_kwargs): raise RuntimeError("simulated db failure")
             store.set_repo_workspace_diff=fail_state
@@ -166,23 +186,86 @@ class WorkspaceToolsTest(unittest.TestCase):
         from src.browserless.store import BrowserlessStore
         store=BrowserlessStore(str(Path(self.tmp.name)/"attest.sqlite3")); store.register_project("p1","2026-09-04-v1","anchor",{})
         try:
-            ex=WorkspaceToolExecutor(self.bindings,store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=50))
+            ex=self.executor(store=store); ex.execute(self.action("repo.prepare","autopilot",job_id=50))
             patch_result=ex.execute({**self.action("repo.patch","autopilot",job_id=51),"payload":self.app_patch()})
             seen={}
             def sandbox(argv,**kwargs): seen["argv"]=argv; return FakeResult()
-            tester=WorkspaceToolExecutor(self.bindings,store=store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
+            tester=self.executor(store=store,bwrap_path="/usr/bin/bwrap",sandbox_runner=sandbox)
             result=tester.execute(self.action("repo.test","autopilot:unit",job_id=52))
             self.assertTrue(result["passed"]); self.assertEqual(result["diff_sha"],patch_result["diff_sha"])
             active=store.active_repo_workspace("p1","autopilot"); self.assertTrue(active["last_test_passed"]); self.assertEqual(active["last_test_sha"],patch_result["diff_sha"])
             def mutating(argv,**kwargs):
                 workspace=Path(active["workspace_path"]); (workspace/"app.py").write_text("test mutation\n"); return FakeResult()
-            result=WorkspaceToolExecutor(self.bindings,store=store,bwrap_path="/usr/bin/bwrap",sandbox_runner=mutating).execute(self.action("repo.test","autopilot:unit",job_id=53))
+            result=self.executor(store=store,bwrap_path="/usr/bin/bwrap",sandbox_runner=mutating).execute(self.action("repo.test","autopilot:unit",job_id=53))
             self.assertFalse(result["passed"]); self.assertTrue(result["workspace_mutated"]); self.assertFalse(store.active_repo_workspace("p1","autopilot")["last_test_passed"])
         finally: store.close()
 
+    def test_commit_requires_exact_test_attestation_and_disables_repo_hooks(self):
+        ex=self.executor(store=self.store)
+        ex.execute(self.action("repo.prepare","autopilot",job_id=70))
+        ex.execute({**self.action("repo.patch","autopilot",job_id=71),"payload":self.app_patch()})
+        with self.assertRaises(ReadActionError) as ctx:
+            ex.execute(self.action("repo.commit","autopilot",job_id=72))
+        self.assertEqual(ctx.exception.code,"repo_commit_test_attestation_required")
+        tester=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=lambda *_args,**_kwargs: FakeResult())
+        tester.execute(self.action("repo.test","autopilot:unit",job_id=73))
+        sentinel=Path(self.tmp.name)/"hook-fired"
+        hook=self.repo/".git/hooks/pre-commit"; hook.write_text(f"#!/bin/sh\ntouch '{sentinel}'\nexit 1\n"); hook.chmod(0o755)
+        committed=ex.execute({**self.action("repo.commit","autopilot",job_id=74),"purpose":"safe isolated patch"})
+        self.assertFalse(sentinel.exists())
+        active=self.store.active_repo_workspace("p1","autopilot")
+        self.assertEqual(active["commit_sha"],committed["commit_sha"]); self.assertTrue(active["last_test_passed"])
+        workspace=Path(active["workspace_path"]); self.assertEqual(git("status","--porcelain",cwd=workspace),"")
+        self.assertEqual(git("rev-parse","HEAD^",cwd=workspace),active["base_sha"])
+        reused=ex.execute({**self.action("repo.commit","autopilot",job_id=75),"purpose":"safe isolated patch"})
+        self.assertTrue(reused["reused"]); self.assertEqual(reused["commit_sha"],committed["commit_sha"])
+        with self.assertRaises(ReadActionError): ex.execute({**self.action("repo.patch","autopilot",job_id=76),"payload":self.app_patch(new="print('again')")})
+
+    def test_commit_rolls_back_to_attested_diff_if_store_update_fails(self):
+        ex,patched=self.ready_workspace(80)
+        active=self.store.active_repo_workspace("p1","autopilot"); workspace=Path(active["workspace_path"])
+        def fail(*_args,**_kwargs): raise RuntimeError("db")
+        self.store.set_repo_workspace_commit=fail
+        with self.assertRaises(ReadActionError) as ctx:
+            ex.execute({**self.action("repo.commit","autopilot",job_id=83),"purpose":"rollback proof"})
+        self.assertEqual(ctx.exception.code,"repo_commit_state_failed")
+        diff=git("diff","--no-ext-diff","--no-color","--binary","--", ".",cwd=workspace)
+        import hashlib
+        self.assertEqual(hashlib.sha256((diff+"\n" if diff else "").encode()).hexdigest(),patched["diff_sha"] if diff else "")
+        self.assertEqual(git("rev-parse","HEAD",cwd=workspace),active["base_sha"])
+
+    def test_publish_pushes_only_generated_branch_and_creates_idempotent_pr(self):
+        ex,_patched=self.ready_workspace(90)
+        committed=ex.execute({**self.action("repo.commit","autopilot",job_id=93),"purpose":"publish proof"})
+        state={"created":False,"calls":[]}
+        def gh_runner(argv,**kwargs):
+            state["calls"].append((list(argv),kwargs.get("input")))
+            if argv[1:3]==["pr","list"]:
+                rows=[] if not state["created"] else [{"number":321,"url":"https://github.com/eNgine9r/chatgpt-autopilot/pull/321","headRefName":self.store.active_repo_workspace("p1","autopilot")["branch"],"baseRefName":"main"}]
+                import json; return FakeResult(stdout=json.dumps(rows))
+            if argv[1:3]==["pr","create"]:
+                state["created"]=True; return FakeResult(stdout="https://github.com/eNgine9r/chatgpt-autopilot/pull/321\n")
+            return FakeResult(returncode=1,stderr="unexpected")
+        publisher=self.executor(store=self.store,gh_runner=gh_runner)
+        first=publisher.execute({**self.action("repo.publish","autopilot",job_id=94),"purpose":"Browserless publish proof"})
+        self.assertTrue(first["pushed"]); self.assertTrue(first["created"]); self.assertEqual(first["pr_number"],321)
+        active=self.store.active_repo_workspace("p1","autopilot")
+        remote_sha=git("--git-dir",str(self.remote),"rev-parse",f"refs/heads/{active['branch']}")
+        self.assertEqual(remote_sha,committed["commit_sha"]); self.assertEqual(active["pr_number"],321)
+        second=publisher.execute({**self.action("repo.publish","autopilot",job_id=95),"purpose":"Browserless publish proof"})
+        self.assertFalse(second["pushed"]); self.assertFalse(second["created"]); self.assertEqual(second["pr_number"],321)
+        create_calls=[c for c,_ in state["calls"] if c[1:3]==["pr","create"]]
+        self.assertEqual(len(create_calls),1)
+        self.assertTrue(any("No autonomous merge or deploy" in (body or "") for _cmd,body in state["calls"]))
+
+    def test_publish_requires_commit(self):
+        ex=self.executor(store=self.store); ex.execute(self.action("repo.prepare","autopilot",job_id=100))
+        with self.assertRaises(ReadActionError) as ctx: ex.execute(self.action("repo.publish","autopilot",job_id=101))
+        self.assertEqual(ctx.exception.code,"repo_publish_commit_required")
+
     def test_write_disabled_repo_cannot_prepare_or_test(self):
         self.bindings["p1"]["repo"]["autopilot"]["write_enabled"]=False
-        ex=WorkspaceToolExecutor(self.bindings, store=self.store)
+        ex=self.executor(store=self.store)
         with self.assertRaises(ReadActionError): ex.execute(self.action("repo.prepare","autopilot"))
         with self.assertRaises(ReadActionError): ex.execute(self.action("repo.test","autopilot:unit"))
 
@@ -201,6 +284,18 @@ class RepoBindingTest(unittest.TestCase):
             p=Path(tmp)/"tools.json"
             p.write_text('{"projects":{"p":{"repo":{"r":{"path":"'+str(root)+'","workspaceRoot":"'+str(parent)+'","writeEnabled":true,"tests":{"unit":["python3","-c","print(1)"]}}}}}}')
             with self.assertRaises(ValueError): load_tool_bindings(p,{})
+
+    def test_repo_binding_requires_exact_publish_repository(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"repo"; root.mkdir(); workspace=Path(tmp)/"workspaces"; p=Path(tmp)/"tools.json"
+            base={"path":str(root),"workspaceRoot":str(workspace),"writeEnabled":True,"writePaths":["src/"],"tests":{}}
+            for bad in ("", "https://github.com/o/r", "o/r/extra", "../r", "o/..", "o/."):
+                doc={"projects":{"p":{"repo":{"r":{**base,"publishRepository":bad}}}}}; p.write_text(json.dumps(doc))
+                with self.assertRaises(ValueError, msg=bad): load_tool_bindings(p,{})
+            doc={"projects":{"p":{"repo":{"r":{**base,"publishRepository":"o/r"}}}}}; p.write_text(json.dumps(doc))
+            loaded=load_tool_bindings(p,{})
+            self.assertEqual(loaded["p"]["repo"]["r"]["publish_repository"],"o/r")
 
     def test_repo_binding_rejects_sensitive_write_paths(self):
         import json
