@@ -95,3 +95,18 @@ class CoreTest(unittest.TestCase):
         result = process_once(self.store, client, BudgetGovernor(hard_budget_usd=0.0001))
         self.assertEqual(result["reason"], "monthly_budget_exhausted")
         self.assertEqual(client.calls, 0)
+
+    def test_process_once_passes_only_current_project_capabilities(self):
+        self.store.enqueue_event("p1","evt-cap","operator.task",{"summary":"capability proof"})
+        class CaptureClient:
+            def __init__(self): self.context=""
+            def decide(self,context,**_kwargs):
+                self.context=context
+                return {"response_id":"cap","decision":{"decision":"wait","message":"ok","actions":[],"checkpoint":CHECKPOINT},
+                        "usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}
+        client=CaptureClient()
+        caps={"p1":{"repo":{"mine":{"testAliases":["unit"]}}},"other":{"repo":{"SECRET_OTHER":{}}}}
+        result=process_once(self.store,client,capabilities_by_project=caps)
+        self.assertEqual(result["status"],"done")
+        self.assertIn("mine",client.context); self.assertIn("unit",client.context)
+        self.assertNotIn("SECRET_OTHER",client.context)

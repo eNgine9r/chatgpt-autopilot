@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.browserless.read_tools import ReadActionError, ReadToolExecutor, load_tool_bindings
+from src.browserless.read_tools import ReadActionError, ReadToolExecutor, capability_manifest, load_tool_bindings
 
 
 class ReadToolsTest(unittest.TestCase):
@@ -110,3 +110,23 @@ class ToolBindingTest(unittest.TestCase):
             loaded = load_tool_bindings(p,{"GH_TOKEN":"dummy"})
             self.assertEqual(loaded["p"]["github"]["r"]["repository"], "o/r")
             self.assertNotIn("dummy", json.dumps({"repository":loaded["p"]["github"]["r"]["repository"]}))
+
+    def test_capability_manifest_exposes_grammar_not_secrets_or_local_targets(self):
+        bindings={"p":{
+            "github":{"gh":{"repository":"owner/private-repo","token":"TOP_SECRET_TOKEN"}},
+            "runtime":{"health":{"url":"http://127.0.0.1:9999/secret-health"}},
+            "git":{"local":{"path":"/very/private/repo"}},
+            "evidence":{"release":{"root":"/private/evidence"}},
+            "repo":{"work":{"path":"/private/repo","workspace_root":"/private/workspaces",
+                "base_branch":"main","write_enabled":True,"write_paths":["src/browserless/"],
+                "tests":{"unit":["python3","-m","unittest"]},"test_timeout":30,
+                "publish_repository":"owner/private-repo"}}}}
+        manifest=capability_manifest(bindings)["p"]
+        text=json.dumps(manifest,sort_keys=True)
+        self.assertIn("repo.patch",text); self.assertIn("<repo-alias>",text)
+        self.assertEqual(manifest["aliases"]["github"],["gh"])
+        self.assertEqual(manifest["repo"]["work"]["testAliases"],["unit"])
+        self.assertEqual(manifest["repo"]["work"]["writePaths"],["src/browserless/"])
+        self.assertTrue(manifest["repo"]["work"]["publishEnabled"])
+        for secret in ("TOP_SECRET_TOKEN","/very/private/repo","secret-health","/private/evidence","owner/private-repo"):
+            self.assertNotIn(secret,text)

@@ -49,13 +49,14 @@ def _bounded_material(value, depth=0):
     return _clip(value, 1000)
 
 
-def compile_context(project: dict, event: dict) -> str:
+def compile_context(project: dict, event: dict, capabilities=None) -> str:
     payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
     stable = {
         "planVersion": project["plan_version"],
         "planAnchor": _clip(project["plan_anchor"], 12000),
         "policy": {"model": "gpt-5.6-luna", "noSilentModelEscalation": True,
                    "noTradingOrHardwareWrites": True, "failClosedOnAmbiguity": True},
+        "capabilities": capabilities if isinstance(capabilities, dict) else {},
     }
     fresh = {
         "projectId": project["id"],

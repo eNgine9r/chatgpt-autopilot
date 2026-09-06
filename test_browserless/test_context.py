@@ -26,3 +26,10 @@ class ContextTest(unittest.TestCase):
         self.assertIn('"status":"success"', context)
         self.assertLess(len(context), 20000)
         self.assertNotIn("a" * 1500, context)
+
+    def test_sanitized_capabilities_are_in_stable_context(self):
+        project={"id":"p","plan_version":"2026-09-04-v1","plan_anchor":"A","checkpoint":{}}
+        caps={"syntax":{"repo.test":"<repo-alias>:<test-alias>"},"repo":{"work":{"testAliases":["unit"]}}}
+        text=compile_context(project,{"kind":"e","payload":{}},caps)
+        self.assertIn('\"capabilities\"',text)
+        self.assertIn('repo.test',text); self.assertIn('unit',text)

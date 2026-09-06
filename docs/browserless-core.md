@@ -71,6 +71,8 @@ On supervisor startup, every imported project whose governed checkpoint is still
 
 New manual work can be submitted without Chromium using `python3 -m src.browserless.operator --db <db> --project <id> --request-id <id>`. Task text may be supplied with `--task` or via stdin. A repeated request id is idempotent, and task text is capped before it can enter the event queue.
 
+Before each Luna decision, the supervisor adds a bounded capability manifest for that project to `STABLE_CONTEXT`. It contains only action target grammar, configured alias names, repository test aliases, write-enabled state and bounded `writePaths`. Local filesystem paths, runtime URLs, tokens, environment names and publish repository identity are deliberately excluded.
+
 ## Isolated repository workspace actions
 Browserless v1 uses repository actions only through local repository aliases: `repo.read`, `repo.prepare`, `repo.patch`, `repo.test`, `repo.commit`, and `repo.publish`. `repo.read` is limited to tracked UTF-8 files, tracked tree listings, and literal tracked-code search; sensitive filenames and untracked files are excluded. `repo.prepare` is allowed only when the local binding explicitly sets `writeEnabled=true`, resolves the current remote base-branch SHA, and creates a deterministic job worktree outside the canonical repository without moving canonical `main`.
 
