@@ -33,6 +33,8 @@ class OpenAIClientTest(unittest.TestCase):
         self.assertIn("payload must be exactly the empty string", instructions)
         self.assertIn("suppressed_unchanged=true", instructions)
         self.assertIn("never request that same type/target again", instructions)
+        self.assertIn("repo_file_too_large", instructions)
+        self.assertIn(":lines:<start>:<count>:", instructions)
         self.assertIn("github.read prfiles", instructions)
         payload_schema = seen["body"]["text"]["format"]["schema"]["properties"]["actions"]["items"]["properties"]["payload"]
         self.assertIn("empty string", payload_schema["description"])
