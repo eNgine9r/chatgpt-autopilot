@@ -21,6 +21,8 @@
     "start:control-hub": "node src/control-hub.mjs",
     "cutover:autopilot-dev-v2": "node scripts/cutover-autopilot-dev-v2.mjs",
     "stage:browser-v2-policy": "node scripts/stage-browser-v2-policy.mjs",
-    "promote:shared-v2": "node scripts/promote-shared-browser-v2.mjs"
+    "promote:shared-v2": "node scripts/promote-shared-browser-v2.mjs",
+    "test:browserless": "PYTHONPATH=. python3 -m unittest discover -s test_browserless -p 'test_*.py'",
+    "check:browserless": "python3 -m py_compile src/browserless/*.py"
   }
 }

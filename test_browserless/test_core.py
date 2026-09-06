@@ -1,0 +1,70 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from src.browserless.core import process_once
+from src.browserless.cost import BudgetGovernor
+from src.browserless.openai_client import LunaResponsesClient
+from src.browserless.store import BrowserlessStore
+
+CHECKPOINT = json.loads('{"goal":"g","completed":[],"currentTask":"t","decisions":[],"evidence":[],"blockers":[],"nextAction":"n","doNotRepeat":[],"planVersion":"2026-09-04-v1","stage":"active","githubPr":0}')
+
+
+class FakeClient:
+    def __init__(self): self.calls = 0
+    def decide(self, context, prompt_cache_key=""):
+        self.calls += 1
+        return {"response_id":"r1","decision":{"decision":"wait","message":"ok","checkpoint":CHECKPOINT},
+                "usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":100}}
+
+
+class CoreTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = BrowserlessStore(str(Path(self.tmp.name)/"core.sqlite3"))
+        self.store.register_project("p1","2026-09-04-v1","ANCHOR",CHECKPOINT)
+    def tearDown(self):
+        self.store.close(); self.tmp.cleanup()
+
+    def test_idle_makes_zero_api_calls(self):
+        client = FakeClient()
+        result = process_once(self.store, client)
+        self.assertEqual(result["status"], "idle")
+        self.assertFalse(result["api_called"])
+        self.assertEqual(client.calls, 0)
+
+    def test_one_event_creates_one_luna_job(self):
+        self.store.enqueue_event("p1","evt-1","github",{"summary":"CI finished"})
+        client = FakeClient()
+        result = process_once(self.store, client)
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(client.calls, 1)
+        self.assertGreater(result["cost_usd"], 0)
+        self.assertEqual(process_once(self.store, client)["status"], "idle")
+        self.assertEqual(client.calls, 1)
+
+    def test_missing_api_key_blocks_without_crashing_queue(self):
+        self.store.enqueue_event("p1","evt-1","runtime",{})
+        result = process_once(self.store, LunaResponsesClient(api_key=""))
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "missing_openai_api_key")
+
+    def test_transient_api_error_is_deferred_without_busy_retry(self):
+        self.store.enqueue_event("p1","evt-1","runtime",{})
+        class FailingClient:
+            def __init__(self): self.calls=0
+            def decide(self, *_args, **_kwargs): self.calls += 1; raise RuntimeError("network")
+        client = FailingClient()
+        first = process_once(self.store, client)
+        self.assertEqual(first["status"], "deferred")
+        self.assertEqual(first["retry_seconds"], 60)
+        second = process_once(self.store, client)
+        self.assertEqual(second["status"], "idle")
+        self.assertEqual(client.calls, 1)
+
+    def test_budget_blocks_before_api_call(self):
+        self.store.enqueue_event("p1","evt-1","runtime",{})
+        client = FakeClient()
+        result = process_once(self.store, client, BudgetGovernor(hard_budget_usd=0.0001))
+        self.assertEqual(result["reason"], "monthly_budget_exhausted")
+        self.assertEqual(client.calls, 0)
