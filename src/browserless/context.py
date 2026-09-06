@@ -36,6 +36,19 @@ def _bounded_metadata(value):
     return {str(k)[:80]: _clip(v, 500) for k, v in list(value.items())[:20]}
 
 
+
+def _bounded_material(value, depth=0):
+    if depth > 3:
+        return _clip(value, 500)
+    if isinstance(value, dict):
+        return {str(k)[:80]: _bounded_material(v, depth + 1) for k, v in list(value.items())[:32]}
+    if isinstance(value, list):
+        return [_bounded_material(item, depth + 1) for item in value[:32]]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _clip(value, 1000)
+
+
 def compile_context(project: dict, event: dict) -> str:
     payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
     stable = {
@@ -48,7 +61,8 @@ def compile_context(project: dict, event: dict) -> str:
         "projectId": project["id"],
         "checkpoint": _bounded_checkpoint(project.get("checkpoint")),
         "event": {"kind": _clip(event["kind"], 128), "summary": _clip(payload.get("summary"), MAX_SUMMARY_CHARS),
-                  "metadata": _bounded_metadata(payload.get("metadata"))},
+                  "metadata": _bounded_metadata(payload.get("metadata")),
+                  "material": _bounded_material(payload.get("material"))},
         "evidence": _bounded_evidence(payload.get("evidence")),
     }
     return "STABLE_CONTEXT\n" + json.dumps(stable, ensure_ascii=False, separators=(",", ":")) + "\nFRESH_CONTEXT\n" + json.dumps(fresh, ensure_ascii=False, separators=(",", ":"))

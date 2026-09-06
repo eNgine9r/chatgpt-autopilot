@@ -6,6 +6,7 @@ from src.browserless.core import process_once
 from src.browserless.cost import BudgetGovernor
 from src.browserless.openai_client import LunaResponsesClient
 from src.browserless.store import BrowserlessStore
+from src.browserless.ingress import ingest_observation
 
 CHECKPOINT = json.loads('{"goal":"g","completed":[],"currentTask":"t","decisions":[],"evidence":[],"blockers":[],"nextAction":"n","doNotRepeat":[],"planVersion":"2026-09-04-v1","stage":"active","githubPr":0}')
 
@@ -14,7 +15,7 @@ class FakeClient:
     def __init__(self): self.calls = 0
     def decide(self, context, prompt_cache_key=""):
         self.calls += 1
-        return {"response_id":"r1","decision":{"decision":"wait","message":"ok","checkpoint":CHECKPOINT},
+        return {"response_id":"r1","decision":{"decision":"wait","message":"ok","actions":[],"checkpoint":CHECKPOINT},
                 "usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":100}}
 
 
@@ -61,6 +62,32 @@ class CoreTest(unittest.TestCase):
         second = process_once(self.store, client)
         self.assertEqual(second["status"], "idle")
         self.assertEqual(client.calls, 1)
+
+    def test_unchanged_observation_never_creates_second_luna_call(self):
+        doc = {"material":{"status":"success","sha":"abc"},"summary":"CI success"}
+        ingest_observation(self.store,"p1","github","ci:abc",doc)
+        client = FakeClient()
+        self.assertEqual(process_once(self.store, client)["status"], "done")
+        self.assertFalse(ingest_observation(self.store,"p1","github","ci:abc",doc)["changed"])
+        self.assertEqual(process_once(self.store, client)["status"], "idle")
+        self.assertEqual(client.calls, 1)
+
+    def test_read_only_action_is_persisted_as_planned_not_executed(self):
+        self.store.enqueue_event("p1","evt-action","github",{"summary":"Need evidence"})
+        class ReadClient:
+            def __init__(self): self.calls=0
+            def decide(self, *_args, **_kwargs):
+                self.calls += 1
+                return {"response_id":"r2","decision":{"decision":"continue","message":"inspect",
+                        "actions":[{"type":"github.read","target":"repo#107","purpose":"fresh state"}],
+                        "checkpoint":CHECKPOINT},
+                        "usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":50}}
+        client = ReadClient()
+        result = process_once(self.store, client)
+        self.assertEqual(result["status"], "done")
+        actions = self.store.actions_for_job(result["job_id"])
+        self.assertEqual(actions, [{"sequence":0,"type":"github.read","target":"repo#107","purpose":"fresh state","status":"planned"}])
+        self.assertEqual(self.store.counts()["planned_actions"], 1)
 
     def test_budget_blocks_before_api_call(self):
         self.store.enqueue_event("p1","evt-1","runtime",{})
