@@ -1,5 +1,6 @@
 import calendar
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -262,13 +263,37 @@ class BrowserlessStore:
             self.db.execute("ROLLBACK")
             raise
 
-    def action_failure_count(self, project_id: str, action_type: str, target: str, error_code: str) -> int:
-        row = self.db.execute(
-            """SELECT COUNT(*) FROM action_requests WHERE project_id=? AND action_type=? AND target=?
-               AND status='failed' AND last_error=?""",
-            (project_id, action_type, target, str(error_code)),
-        ).fetchone()
-        return int(row[0])
+    def action_failure_count(self, project_id: str, action_type: str, target: str, before_action_id=None) -> int:
+        upper = int(before_action_id or (2**63 - 1))
+        if str(action_type).startswith("repo."):
+            alias = str(target).split(":", 1)[0]
+            active = self.active_repo_workspace(project_id, alias)
+            if active:
+                match = re.search(r"/job-(\d+)$", str(active.get("branch") or ""))
+                if match:
+                    rows = self.db.execute(
+                        """SELECT status FROM action_requests WHERE project_id=? AND action_type=? AND target=?
+                           AND id<? AND job_id>=? ORDER BY id DESC LIMIT 20""",
+                        (project_id, action_type, target, upper, int(match.group(1))),
+                    ).fetchall()
+                    count = 0
+                    for row in rows:
+                        if row["status"] != "failed":
+                            break
+                        count += 1
+                    return count
+        rows = self.db.execute(
+            """SELECT action_type,target,status FROM action_requests
+               WHERE project_id=? AND id<? ORDER BY id DESC LIMIT 20""",
+            (project_id, upper),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            if row["action_type"] == action_type and row["target"] == target and row["status"] == "failed":
+                count += 1
+            else:
+                break
+        return count
 
     def finish_action(self, action_id: int, status: str, result=None, last_error=""):
         allowed = {"done", "suppressed", "failed"}

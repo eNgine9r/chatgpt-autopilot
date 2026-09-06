@@ -13,10 +13,10 @@ class FakeExecutor:
 
 
 class FailingExecutor:
-    def __init__(self, code="repo_patch_invalid"): self.calls=0; self.code=code
+    def __init__(self, code="repo_patch_invalid", detail=""): self.calls=0; self.code=code; self.detail=detail
     def execute(self, _action):
         self.calls += 1
-        raise ReadActionError(self.code)
+        raise ReadActionError(self.code, self.detail)
 
 
 class ActionRunnerTest(unittest.TestCase):
@@ -63,6 +63,29 @@ class ActionRunnerTest(unittest.TestCase):
         material=json.loads(row[0])
         self.assertEqual(material["failure_attempt"],2); self.assertTrue(material["retry_exhausted"])
         self.assertEqual(executor.calls,2)
+
+    def test_failure_detail_is_bounded_evidence_while_last_error_stays_stable(self):
+        action={"type":"repo.patch","target":"repo","purpose":"patch","payload":"diff"}
+        self.plan_action("seed-detail", action)
+        result=execute_once(self.store,FailingExecutor("repo_patch_apply_failed","hunk_mismatch"))
+        stored=self.store.action(result["action_id"])
+        self.assertEqual(stored["last_error"],"repo_patch_apply_failed")
+        self.assertEqual(stored["result"]["error_detail"],"hunk_mismatch")
+        row=self.store.db.execute("SELECT material_json FROM observations WHERE source='evidence'").fetchone()
+        import json
+        material=json.loads(row[0])
+        self.assertEqual(material["error_code"],"repo_patch_apply_failed")
+        self.assertEqual(material["error_detail"],"hunk_mismatch")
+        self.assertEqual(material["failure_attempt"],1)
+
+    def test_unsafe_failure_detail_is_not_exposed(self):
+        action={"type":"repo.patch","target":"repo","purpose":"patch","payload":"diff"}
+        self.plan_action("seed-unsafe-detail", action)
+        result=execute_once(self.store,FailingExecutor("repo_patch_apply_failed","/home/private/raw stderr"))
+        stored=self.store.action(result["action_id"])
+        self.assertNotIn("error_detail",stored["result"])
+        row=self.store.db.execute("SELECT material_json FROM observations WHERE source='evidence'").fetchone()
+        self.assertNotIn("/home/private",row[0])
 
     def test_running_action_recovers_after_restart(self):
         self.plan_action("seed-1"); action=self.store.claim_action(); self.assertIsNotNone(action)

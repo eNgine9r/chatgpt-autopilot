@@ -18,8 +18,10 @@ MAX_FILE_BYTES = 65536
 
 
 class ReadActionError(RuntimeError):
-    def __init__(self, code):
+    def __init__(self, code, detail=""):
         self.code = str(code)
+        candidate = str(detail)[:80]
+        self.detail = candidate if re.fullmatch(r"[a-z0-9_.-]{1,80}", candidate) else ""
         super().__init__(self.code)
 
 
