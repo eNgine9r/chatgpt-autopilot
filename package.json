@@ -26,6 +26,8 @@
     "check:browserless": "python3 -m py_compile src/browserless/*.py",
     "observe:browserless": "python3 -m src.browserless.observe",
     "start:browserless-ingress": "python3 -m src.browserless.ingress_server",
-    "start:browserless-actions": "python3 -m src.browserless.action_runner"
+    "start:browserless-actions": "python3 -m src.browserless.action_runner",
+    "start:browserless": "PYTHONPATH=. python3 -m src.browserless.supervisor",
+    "install:browserless-service": "bash scripts/install-browserless-systemd.sh"
   }
 }

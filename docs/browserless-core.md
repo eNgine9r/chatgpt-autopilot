@@ -51,3 +51,8 @@ GitHub endpoint: `POST /v1/github/<project-id>` with `X-Hub-Signature-256` and `
 Supported target forms are `github.read = <alias>:issue|pr|commit|run:<id>`, `runtime.read = <alias>`, `git.read = <alias>:head|branch|status|diffstat|log:<n>`, and `evidence.read = <alias>:<relative .json/.md/.txt file>`. GitHub tokens, when required for private repositories, are referenced only by optional `tokenEnv` names in the tool config.
 
 Every read result is written back through the normal `evidence` observation hash gate. A changed result creates one evidence event for a later Luna decision; an unchanged repeated read is marked `suppressed` and creates no new AI job. The action runner itself never calls OpenAI.
+
+## Single-process production supervisor
+Production Browserless runtime is packaged as one Python process combining the Luna job loop, read-only action loop, and optional loopback ingress server. This avoids keeping three Python daemons resident. The individual CLIs remain available for diagnostics.
+
+`bash scripts/install-browserless-systemd.sh` only stages the user-systemd unit. It deliberately does not enable or start it; production activation remains a separate cutover gate.

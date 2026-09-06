@@ -13,3 +13,7 @@ __pycache__/
 *.sqlite3-wal
 *.sqlite3-shm
 state-browserless/
+
+.env.local
+config/browserless-ingress.json
+config/browserless-tools.json
