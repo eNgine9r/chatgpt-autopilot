@@ -43,12 +43,15 @@ def load_tool_bindings(path, env=None):
         for alias, raw in ((raw_project or {}).get("github") or {}).items():
             repo = str((raw or {}).get("repository") or "")
             token_env = str((raw or {}).get("tokenEnv") or "")
+            use_gh_auth = bool((raw or {}).get("useGhAuth", False))
             if not ALIAS.fullmatch(str(alias)) or not REPO.fullmatch(repo):
                 raise ValueError(f"invalid github read binding: {project_id}/{alias}")
+            if token_env and use_gh_auth:
+                raise ValueError(f"github read auth modes are mutually exclusive: {project_id}/{alias}")
             token = str(env.get(token_env) or "") if token_env else ""
             if token_env and not token:
                 raise ValueError(f"missing github read token env: {token_env}")
-            project["github"][str(alias)] = {"repository": repo, "token": token}
+            project["github"][str(alias)] = {"repository": repo, "token": token, "use_gh_auth": use_gh_auth}
         for alias, raw in ((raw_project or {}).get("runtime") or {}).items():
             url = str((raw or {}).get("url") or "")
             if not ALIAS.fullmatch(str(alias)) or not _loopback_url(url):
@@ -221,11 +224,12 @@ def _redact_text(text):
 
 
 class ReadToolExecutor:
-    def __init__(self, bindings, github_get=None, runtime_get=None, git_run=None):
+    def __init__(self, bindings, github_get=None, runtime_get=None, git_run=None, gh_runner=None):
         self.bindings = bindings
         self.github_get = github_get or _default_json_get
         self.runtime_get = runtime_get or _default_json_get
         self.git_run = git_run or _default_git_run
+        self.gh_runner = gh_runner or subprocess.run
 
     def execute(self, action):
         project_id = str(action.get("project_id") or "")
@@ -255,14 +259,45 @@ class ReadToolExecutor:
         repo = binding["repository"]
         path = {"issue":f"issues/{identity}", "pr":f"pulls/{identity}",
                 "commit":f"commits/{identity}", "run":f"actions/runs/{identity}"}[resource]
-        headers = {"Accept":"application/vnd.github+json", "User-Agent":"chatgpt-autopilot-browserless"}
-        if binding.get("token"): headers["Authorization"] = f"Bearer {binding['token']}"
         try:
-            raw = self.github_get(f"https://api.github.com/repos/{repo}/{path}", headers)
+            if binding.get("use_gh_auth"):
+                raw = self._github_via_gh(repo, path)
+            else:
+                headers = {"Accept":"application/vnd.github+json", "User-Agent":"chatgpt-autopilot-browserless"}
+                if binding.get("token"): headers["Authorization"] = f"Bearer {binding['token']}"
+                raw = self.github_get(f"https://api.github.com/repos/{repo}/{path}", headers)
         except ReadActionError: raise
         except Exception: raise ReadActionError("github_read_failed") from None
         return {"ok": True, "kind":"github", "alias":alias, "resource":resource,
                 "identity":identity, "data":self._github_safe(resource, raw)}
+
+    def _github_via_gh(self, repo, path):
+        command = ["gh", "api", "--hostname", "github.com", "--method", "GET", f"repos/{repo}/{path}"]
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", ""),
+            "GH_HOST": "github.com",
+            "GH_PROMPT_DISABLED": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+        if os.environ.get("XDG_CONFIG_HOME"):
+            env["XDG_CONFIG_HOME"] = os.environ["XDG_CONFIG_HOME"]
+        try:
+            result = self.gh_runner(command, capture_output=True, text=True, check=False, env=env, timeout=15)
+        except Exception:
+            raise ReadActionError("github_read_failed") from None
+        if int(getattr(result, "returncode", 1)) != 0:
+            raise ReadActionError("github_read_failed")
+        output = str(getattr(result, "stdout", "") or "")
+        if len(output.encode()) > MAX_HTTP_BYTES:
+            raise ReadActionError("github_response_too_large")
+        try:
+            raw = json.loads(output)
+        except json.JSONDecodeError:
+            raise ReadActionError("github_invalid_json") from None
+        if not isinstance(raw, dict):
+            raise ReadActionError("github_invalid_json")
+        return raw
 
     @staticmethod
     def _github_safe(resource, raw):
