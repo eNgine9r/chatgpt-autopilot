@@ -11,6 +11,7 @@ class ServicePackageTest(unittest.TestCase):
         self.assertIn("-m src.browserless.supervisor", unit)
         self.assertNotIn("chromium", unit.lower())
         self.assertIn("127.0.0.1", unit)
+        self.assertIn("UMask=0077", unit)
 
     def test_installer_stages_but_never_activates_service(self):
         script = (ROOT / "scripts/install-browserless-systemd.sh").read_text()
@@ -18,6 +19,8 @@ class ServicePackageTest(unittest.TestCase):
         for token in forbidden:
             self.assertNotIn(token, script)
         self.assertIn("daemon-reload", script)
+        self.assertIn('chmod 0700 "$APP_DIR/state-browserless"', script)
+        self.assertIn('chmod 0600 "$APP_DIR/.env.local"', script)
 
     def test_private_browserless_files_are_gitignored(self):
         ignore = (ROOT / ".gitignore").read_text().splitlines()
