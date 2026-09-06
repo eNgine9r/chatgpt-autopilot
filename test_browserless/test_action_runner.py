@@ -51,3 +51,15 @@ class ActionRunnerTest(unittest.TestCase):
     def test_idle_executor_performs_no_external_read(self):
         executor=FakeExecutor(); result=execute_once(self.store,executor)
         self.assertEqual(result,{"status":"idle","external_read":False}); self.assertEqual(executor.calls,0)
+
+    def test_local_workspace_path_is_stored_locally_but_excluded_from_ai_evidence(self):
+        job=self.plan_action("seed-path", {"type":"repo.prepare","target":"repo","purpose":"prepare","payload":""})
+        executor=FakeExecutor({"ok":True,"kind":"repo","operation":"prepare","alias":"repo",
+                               "workspace":"/home/private/workspaces/job-1","workspace_id":7,"branch":"b"})
+        result=execute_once(self.store,executor)
+        action=self.store.action(result["action_id"])
+        self.assertEqual(action["result"]["workspace"],"/home/private/workspaces/job-1")
+        row=self.store.db.execute("SELECT material_json FROM observations WHERE source='evidence' ORDER BY changed_at DESC LIMIT 1").fetchone()
+        self.assertIsNotNone(row)
+        self.assertNotIn("/home/private",row[0]); self.assertNotIn("workspace",row[0])
+        self.assertNotIn("workspace_id",row[0]); self.assertIn("branch",row[0])
