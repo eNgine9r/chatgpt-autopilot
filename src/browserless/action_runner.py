@@ -14,6 +14,16 @@ def _subject(action):
     return f"action:{action['type']}:{digest}"
 
 
+def _suppression_subject(action):
+    digest = hashlib.sha256(f"{action['type']}\0{action['target']}".encode()).hexdigest()[:24]
+    return f"suppressed:{action['type']}:{digest}"
+
+
+def _material_hash(material):
+    encoded = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
 LOCAL_ONLY_RESULT_KEYS = {"workspace", "workspace_path", "workspace_id", "local_path"}
 
 
@@ -54,13 +64,32 @@ def execute_once(store, executor):
                 "metadata":{"actionId":action["id"], "actionType":action["type"], "target":action["target"]},
                 "evidence":[]}
     observation = ingest_observation(store, action["project_id"], "evidence", _subject(action), document)
+    suppression = None
     if error_code:
         status = "failed"
+    elif observation["changed"]:
+        status = "done"
     else:
-        status = "done" if observation["changed"] else "suppressed"
+        status = "suppressed"
+        suppression_document = {
+            "material": {
+                "suppressed_unchanged": True,
+                "action_type": action["type"],
+                "target": action["target"],
+                "result_sha256": _material_hash(material),
+            },
+            "summary": "Unchanged evidence is already authoritative; do not repeat the same action target",
+            "metadata": {"actionType": action["type"], "target": action["target"],
+                         "reason": "unchanged_evidence_already_authoritative"},
+            "evidence": [],
+        }
+        suppression = ingest_observation(store, action["project_id"], "evidence",
+                                         _suppression_subject(action), suppression_document)
     store.finish_action(action["id"], status, result, error_code)
+    event_created = observation["event_created"] if suppression is None else suppression["event_created"]
     return {"status":status, "external_read":True, "action_id":action["id"],
-            "evidence_changed":observation["changed"], "event_created":observation["event_created"]}
+            "evidence_changed":observation["changed"], "event_created":event_created,
+            "suppression_event_created":bool(suppression and suppression["event_created"])}
 
 
 def main(argv=None):
