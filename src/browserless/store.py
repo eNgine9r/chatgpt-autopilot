@@ -14,8 +14,17 @@ class BrowserlessStore:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self._schema()
+        self._enforce_private_file_modes()
+
+    def _enforce_private_file_modes(self):
+        for candidate in (Path(self.path), Path(self.path + "-wal"), Path(self.path + "-shm")):
+            try:
+                candidate.chmod(0o600)
+            except FileNotFoundError:
+                pass
 
     def close(self):
+        self._enforce_private_file_modes()
         self.db.close()
 
     def _schema(self):

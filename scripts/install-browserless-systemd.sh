@@ -11,6 +11,8 @@ PYTHON_BIN="$(command -v python3)"
 [[ -f "$APP_DIR/config/browserless-tools.json" ]] || { echo "Missing config/browserless-tools.json"; exit 1; }
 [[ -f "$APP_DIR/config/browserless-ingress.json" ]] || { echo "Missing config/browserless-ingress.json"; exit 1; }
 [[ -f "$APP_DIR/state-browserless/core.sqlite3" ]] || { echo "Missing state-browserless/core.sqlite3; import continuity first"; exit 1; }
+chmod 0700 "$APP_DIR/state-browserless"
+chmod 0600 "$APP_DIR/.env.local" "$APP_DIR/config/browserless-tools.json" "$APP_DIR/config/browserless-ingress.json" "$APP_DIR/state-browserless/core.sqlite3"
 mkdir -p "$SERVICE_DIR"
 TMP="$(mktemp "$SERVICE_DIR/.browserless.XXXXXX")"; trap 'rm -f "$TMP"' EXIT
 sed -e "s|__APP_DIR__|$APP_DIR|g" -e "s|__PYTHON__|$PYTHON_BIN|g" \

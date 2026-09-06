@@ -15,6 +15,9 @@ class StoreTest(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
+    def test_database_file_is_private_by_default(self):
+        self.assertEqual(Path(self.db).stat().st_mode & 0o777, 0o600)
+
     def test_event_key_is_idempotent(self):
         self.assertTrue(self.store.enqueue_event("p1", "evt-1", "github", {"summary":"x"}))
         self.assertFalse(self.store.enqueue_event("p1", "evt-1", "github", {"summary":"x"}))
