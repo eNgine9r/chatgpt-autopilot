@@ -43,3 +43,11 @@ Luna v1 structured output can request only `github.read`, `runtime.read`, `git.r
 Bindings live in a non-secret JSON file (`config/browserless-ingress.example.json`). Each project binding names an environment variable that contains its own secret; secret values are never stored in the bindings document. A missing secret fails closed at startup. Public/Tailscale/reverse-proxy exposure is intentionally outside this phase and requires a separate production activation decision.
 
 GitHub endpoint: `POST /v1/github/<project-id>` with `X-Hub-Signature-256` and `X-GitHub-Event`. Runtime endpoint: `POST /v1/runtime/<project-id>` with `X-Autopilot-Signature-256`. `GET /health` is read-only. Request bodies are capped at 256 KiB.
+
+
+## Read-only evidence executor
+`src.browserless.action_runner` consumes only previously validated `planned` read actions. The model never supplies a raw URL, filesystem root, repository, or shell command: targets resolve through `config/browserless-tools.example.json` aliases. GitHub reads use fixed REST resource shapes, runtime reads are loopback JSON GETs with redirects disabled, git reads use fixed non-mutating commands with `GIT_OPTIONAL_LOCKS=0` and `shell=False`, and evidence reads are contained under configured roots with extension/size limits and secret-key redaction.
+
+Supported target forms are `github.read = <alias>:issue|pr|commit|run:<id>`, `runtime.read = <alias>`, `git.read = <alias>:head|branch|status|diffstat|log:<n>`, and `evidence.read = <alias>:<relative .json/.md/.txt file>`. GitHub tokens, when required for private repositories, are referenced only by optional `tokenEnv` names in the tool config.
+
+Every read result is written back through the normal `evidence` observation hash gate. A changed result creates one evidence event for a later Luna decision; an unchanged repeated read is marked `suppressed` and creates no new AI job. The action runner itself never calls OpenAI.

@@ -1,0 +1,26 @@
+{
+  "projects": {
+    "autopilot-development": {
+      "github": {
+        "autopilot": {
+          "repository": "eNgine9r/chatgpt-autopilot"
+        }
+      },
+      "runtime": {
+        "control-hub": {
+          "url": "http://127.0.0.1:8769/health"
+        }
+      },
+      "git": {
+        "autopilot": {
+          "path": "/home/btcradar/chatgpt-autopilot"
+        }
+      },
+      "evidence": {
+        "release": {
+          "root": "/home/btcradar/release-evidence"
+        }
+      }
+    }
+  }
+}
