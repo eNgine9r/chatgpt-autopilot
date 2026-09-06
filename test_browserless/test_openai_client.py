@@ -30,6 +30,9 @@ class OpenAIClientTest(unittest.TestCase):
         instructions = seen["body"]["instructions"]
         self.assertIn("return exactly one action total in that decision", instructions)
         self.assertIn("one repo.test action per Luna turn", instructions)
+        self.assertIn("payload must be exactly the empty string", instructions)
+        payload_schema = seen["body"]["text"]["format"]["schema"]["properties"]["actions"]["items"]["properties"]["payload"]
+        self.assertIn("empty string", payload_schema["description"])
 
     def test_missing_key_fails_closed(self):
         with self.assertRaises(MissingCredentialError):
@@ -73,3 +76,15 @@ class OpenAIClientTest(unittest.TestCase):
             return {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}]}
         result=LunaResponsesClient(api_key="x",transport=transport).decide("context")
         self.assertEqual(result["decision"]["actions"][0]["payload"],diff)
+    def test_invalid_model_response_preserves_api_usage_for_accounting(self):
+        payload = {"decision":"continue","message":"inspect",
+                   "actions":[{"type":"github.read","target":"repo","purpose":"inspect","payload":"unexpected"}],
+                   "checkpoint":json.loads(CHECKPOINT)}
+        def transport(*_args):
+            return {"id":"resp_bad","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}],
+                    "usage":{"input_tokens":321,"input_tokens_details":{"cached_tokens":21},"output_tokens":45}}
+        with self.assertRaises(InvalidModelResponse) as cm:
+            LunaResponsesClient(api_key="x", transport=transport).decide("context")
+        self.assertEqual(str(cm.exception), "action_payload_not_allowed")
+        self.assertEqual(cm.exception.response_id, "resp_bad")
+        self.assertEqual(cm.exception.usage, {"input_tokens":321,"cached_input_tokens":21,"output_tokens":45})

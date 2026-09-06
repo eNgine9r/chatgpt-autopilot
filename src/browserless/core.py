@@ -24,8 +24,11 @@ def process_once(store, client, governor=None, capabilities_by_project=None):
         store.block_job(job["id"], "missing_openai_api_key")
         return {"status": "blocked", "reason": "missing_openai_api_key", "api_called": False, "job_id": job["id"]}
     except InvalidModelResponse as exc:
+        usage = getattr(exc, "usage", {}) or {}
+        cost = luna_cost(usage.get("input_tokens", 0), usage.get("cached_input_tokens", 0), usage.get("output_tokens", 0))
+        store.record_usage(project["id"], MODEL, usage, cost, getattr(exc, "response_id", ""))
         store.block_job(job["id"], f"invalid_model_response:{exc}")
-        return {"status": "blocked", "reason": "invalid_model_response", "api_called": True, "job_id": job["id"]}
+        return {"status": "blocked", "reason": "invalid_model_response", "api_called": True, "job_id": job["id"], "cost_usd": cost}
     except Exception as exc:
         retry_delays = (60, 300, 900, 3600)
         delay = retry_delays[min(max(1, int(job.get("attempts", 1))) - 1, len(retry_delays) - 1)]

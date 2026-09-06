@@ -13,7 +13,8 @@ ACTION_SCHEMA = {
             "type": {"type": "string", "enum": list(SAFE_ACTION_TYPES)},
             "target": {"type": "string", "maxLength": 512},
             "purpose": {"type": "string", "maxLength": 500},
-            "payload": {"type": "string", "maxLength": MAX_ACTION_PAYLOAD_CHARS},
+            "payload": {"type": "string", "maxLength": MAX_ACTION_PAYLOAD_CHARS,
+                        "description": "Must be exactly the empty string for every action except repo.patch. For repo.patch only, this is the raw unified diff."},
         },
     },
 }
