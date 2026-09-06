@@ -4,6 +4,7 @@ import json
 import time
 
 from .ingress import ingest_observation
+from .read_budget import RANGED_READ_MAX_WINDOWS, RANGED_READ_WINDOW_SECONDS, parse_ranged_read_target
 from .read_tools import ReadActionError, load_tool_bindings
 from .safe_tools import SafeToolExecutor
 from .store import BrowserlessStore
@@ -47,14 +48,24 @@ def execute_once(store, executor):
         return {"status":"idle", "external_read":False}
     error_code = ""
     error_detail = ""
-    try:
-        result = executor.execute(action)
-    except ReadActionError as exc:
-        error_code = exc.code
-        error_detail = getattr(exc, "detail", "")
-        result = {"ok":False, "error_code":error_code, "kind":action["type"], "target":action["target"]}
-        if error_detail:
-            result["error_detail"] = error_detail
+    performed_external_read = False
+    ranged = parse_ranged_read_target(action["target"]) if action["type"] == "repo.read" else None
+    streak = store.ranged_read_streak(action["project_id"], action["target"], action["id"], RANGED_READ_WINDOW_SECONDS) if ranged else 0
+    if ranged and streak >= RANGED_READ_MAX_WINDOWS:
+        error_code = "repo_ranged_read_budget_exhausted"
+        result = {"ok":False, "error_code":error_code, "kind":action["type"], "target":action["target"],
+                  "read_budget_exhausted":True, "blocked_file":ranged["file_key"],
+                  "max_windows":RANGED_READ_MAX_WINDOWS, "window_seconds":RANGED_READ_WINDOW_SECONDS}
+    else:
+        try:
+            result = executor.execute(action)
+            performed_external_read = True
+        except ReadActionError as exc:
+            error_code = exc.code
+            error_detail = getattr(exc, "detail", "")
+            result = {"ok":False, "error_code":error_code, "kind":action["type"], "target":action["target"]}
+            if error_detail:
+                result["error_detail"] = error_detail
     material = _context_material(result)
     if error_code:
         failure_attempt = store.action_failure_count(action["project_id"], action["type"], action["target"], action["id"]) + 1
@@ -87,7 +98,7 @@ def execute_once(store, executor):
                                          _suppression_subject(action), suppression_document)
     store.finish_action(action["id"], status, result, error_code)
     event_created = observation["event_created"] if suppression is None else suppression["event_created"]
-    return {"status":status, "external_read":True, "action_id":action["id"],
+    return {"status":status, "external_read":performed_external_read, "action_id":action["id"],
             "evidence_changed":observation["changed"], "event_created":event_created,
             "suppression_event_created":bool(suppression and suppression["event_created"])}
 

@@ -1,6 +1,7 @@
 from .context import compile_context
 from .cost import BudgetGovernor, luna_cost
 from .openai_client import InvalidModelResponse, MissingCredentialError, MODEL
+from .read_budget import same_ranged_file
 
 
 def process_once(store, client, governor=None, capabilities_by_project=None, github_quiet_seconds=0):
@@ -46,6 +47,13 @@ def process_once(store, client, governor=None, capabilities_by_project=None, git
                for action in list(decision.get("actions") or [])):
             store.block_job(job["id"], "repeated_action_failure")
             return {"status":"blocked", "reason":"repeated_action_failure", "api_called":True,
+                    "job_id":job["id"], "cost_usd":cost}
+    if isinstance(material, dict) and material.get("read_budget_exhausted") and decision.get("decision") == "continue":
+        blocked_file = str(material.get("blocked_file") or "")
+        if any(action.get("type") == "repo.read" and same_ranged_file(action.get("target"), blocked_file)
+               for action in list(decision.get("actions") or [])):
+            store.block_job(job["id"], "repeated_ranged_read_budget")
+            return {"status":"blocked", "reason":"repeated_ranged_read_budget", "api_called":True,
                     "job_id":job["id"], "cost_usd":cost}
     if isinstance(material, dict) and material.get("suppressed_unchanged") and decision.get("decision") == "continue":
         suppressed_type = str(material.get("action_type") or "")
