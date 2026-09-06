@@ -101,6 +101,8 @@ class WorkspaceToolsTest(unittest.TestCase):
         argv=seen["argv"]
         self.assertIn("--unshare-all",argv); self.assertIn("--clearenv",argv)
         self.assertIn("--tmpfs",argv); self.assertIn("/home",argv)
+        self.assertIn("--ro-bind",argv); self.assertNotIn("--bind",argv)
+        self.assertIn("PYTHONDONTWRITEBYTECODE",argv); self.assertIn("TMPDIR",argv)
         self.assertNotIn("OPENAI_API_KEY",argv)
         self.assertFalse(seen["kwargs"]["shell"]); self.assertTrue(result["passed"])
 
@@ -209,13 +211,51 @@ class WorkspaceToolsTest(unittest.TestCase):
             self.assertFalse(result["passed"]); self.assertTrue(result["workspace_mutated"]); self.assertFalse(store.active_repo_workspace("p1","autopilot")["last_test_passed"])
         finally: store.close()
 
+    def test_commit_requires_every_required_test_on_same_diff(self):
+        binding=self.bindings["p1"]["repo"]["autopilot"]
+        binding["tests"]={"unit":["python3","-c","print('unit')"],"lint":["python3","-c","print('lint')"]}
+        binding["required_tests"]=["unit","lint"]
+        ex=self.executor(store=self.store)
+        ex.execute(self.action("repo.prepare","autopilot",job_id=61))
+        patched=ex.execute({**self.action("repo.patch","autopilot",job_id=62),"payload":self.app_patch()})
+        tester=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=lambda *_args,**_kwargs: FakeResult())
+        first=tester.execute(self.action("repo.test","autopilot:unit",job_id=63))
+        self.assertFalse(first["required_tests_complete"]); self.assertEqual(first["required_tests_remaining"],["lint"])
+        with self.assertRaises(ReadActionError) as ctx:
+            ex.execute(self.action("repo.commit","autopilot",job_id=64))
+        self.assertEqual(ctx.exception.code,"repo_commit_required_tests_missing")
+        failing=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=lambda *_args,**_kwargs: FakeResult(returncode=1))
+        second=failing.execute(self.action("repo.test","autopilot:lint",job_id=65))
+        self.assertFalse(second["passed"]); self.assertFalse(second["required_tests_complete"]); self.assertEqual(second["required_tests_remaining"],["lint"])
+        with self.assertRaises(ReadActionError): ex.execute(self.action("repo.commit","autopilot",job_id=66))
+        third=tester.execute(self.action("repo.test","autopilot:lint",job_id=67))
+        self.assertTrue(third["required_tests_complete"]); self.assertEqual(third["required_tests_remaining"],[])
+        active=self.store.active_repo_workspace("p1","autopilot")
+        self.assertEqual(active["test_attestations"]["unit"],{"diff_sha":patched["diff_sha"],"passed":True})
+        self.assertEqual(active["test_attestations"]["lint"],{"diff_sha":patched["diff_sha"],"passed":True})
+        committed=ex.execute({**self.action("repo.commit","autopilot",job_id=68),"purpose":"multi test proof"})
+        self.assertTrue(committed["commit_sha"])
+
+    def test_new_patch_clears_all_required_test_attestations(self):
+        binding=self.bindings["p1"]["repo"]["autopilot"]
+        binding["tests"]={"unit":["python3","-c","print('unit')"],"lint":["python3","-c","print('lint')"]}
+        binding["required_tests"]=["unit","lint"]
+        ex=self.executor(store=self.store); ex.execute(self.action("repo.prepare","autopilot",job_id=110))
+        ex.execute({**self.action("repo.patch","autopilot",job_id=111),"payload":self.app_patch()})
+        tester=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=lambda *_args,**_kwargs: FakeResult())
+        tester.execute(self.action("repo.test","autopilot:unit",job_id=112)); tester.execute(self.action("repo.test","autopilot:lint",job_id=113))
+        self.assertEqual(set(self.store.active_repo_workspace("p1","autopilot")["test_attestations"]),{"unit","lint"})
+        ex.execute({**self.action("repo.patch","autopilot",job_id=114),"payload":self.app_patch(old="print('changed')",new="print('changed again')")})
+        active=self.store.active_repo_workspace("p1","autopilot")
+        self.assertEqual(active["test_attestations"],{}); self.assertFalse(active["last_test_passed"]); self.assertEqual(active["last_test_sha"],"")
+
     def test_commit_requires_exact_test_attestation_and_disables_repo_hooks(self):
         ex=self.executor(store=self.store)
         ex.execute(self.action("repo.prepare","autopilot",job_id=70))
         ex.execute({**self.action("repo.patch","autopilot",job_id=71),"payload":self.app_patch()})
         with self.assertRaises(ReadActionError) as ctx:
             ex.execute(self.action("repo.commit","autopilot",job_id=72))
-        self.assertEqual(ctx.exception.code,"repo_commit_test_attestation_required")
+        self.assertEqual(ctx.exception.code,"repo_commit_required_tests_missing")
         tester=self.executor(store=self.store,bwrap_path="/usr/bin/bwrap",sandbox_runner=lambda *_args,**_kwargs: FakeResult())
         tester.execute(self.action("repo.test","autopilot:unit",job_id=73))
         sentinel=Path(self.tmp.name)/"hook-fired"
@@ -298,13 +338,39 @@ class RepoBindingTest(unittest.TestCase):
         import json
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)/"repo"; root.mkdir(); workspace=Path(tmp)/"workspaces"; p=Path(tmp)/"tools.json"
-            base={"path":str(root),"workspaceRoot":str(workspace),"writeEnabled":True,"writePaths":["src/"],"tests":{}}
+            base={"path":str(root),"workspaceRoot":str(workspace),"writeEnabled":True,"writePaths":["src/"],"tests":{"unit":["python3","-c","print(1)"]}}
             for bad in ("", "https://github.com/o/r", "o/r/extra", "../r", "o/..", "o/."):
                 doc={"projects":{"p":{"repo":{"r":{**base,"publishRepository":bad}}}}}; p.write_text(json.dumps(doc))
                 with self.assertRaises(ValueError, msg=bad): load_tool_bindings(p,{})
             doc={"projects":{"p":{"repo":{"r":{**base,"publishRepository":"o/r"}}}}}; p.write_text(json.dumps(doc))
             loaded=load_tool_bindings(p,{})
             self.assertEqual(loaded["p"]["repo"]["r"]["publish_repository"],"o/r")
+
+    def test_required_tests_default_to_all_and_explicit_subset_is_validated(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"repo"; root.mkdir(); workspace=Path(tmp)/"workspaces"; p=Path(tmp)/"tools.json"
+            base={"path":str(root),"workspaceRoot":str(workspace),"writeEnabled":True,"writePaths":["src/"],
+                  "publishRepository":"o/r","tests":{"unit":["python3","-c","print(1)"],"lint":["python3","-c","print(2)"]}}
+            p.write_text(json.dumps({"projects":{"p":{"repo":{"r":base}}}}))
+            loaded=load_tool_bindings(p,{})
+            self.assertEqual(loaded["p"]["repo"]["r"]["required_tests"],["lint","unit"])
+            explicit={**base,"requiredTests":["unit"]}; p.write_text(json.dumps({"projects":{"p":{"repo":{"r":explicit}}}}))
+            loaded=load_tool_bindings(p,{})
+            self.assertEqual(loaded["p"]["repo"]["r"]["required_tests"],["unit"])
+            for bad in (["missing"],["unit","unit"],"unit"):
+                doc={**base,"requiredTests":bad}; p.write_text(json.dumps({"projects":{"p":{"repo":{"r":doc}}}}))
+                with self.assertRaises(ValueError): load_tool_bindings(p,{})
+
+    def test_write_enabled_repo_requires_nonempty_required_test_gate(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"repo"; root.mkdir(); workspace=Path(tmp)/"workspaces"; p=Path(tmp)/"tools.json"
+            base={"path":str(root),"workspaceRoot":str(workspace),"writeEnabled":True,"writePaths":["src/"],"publishRepository":"o/r"}
+            p.write_text(json.dumps({"projects":{"p":{"repo":{"r":{**base,"tests":{}}}}}}))
+            with self.assertRaises(ValueError): load_tool_bindings(p,{})
+            p.write_text(json.dumps({"projects":{"p":{"repo":{"r":{**base,"tests":{"unit":["python3","-c","print(1)"]},"requiredTests":[]}}}}}))
+            with self.assertRaises(ValueError): load_tool_bindings(p,{})
 
     def test_repo_binding_rejects_sensitive_write_paths(self):
         import json

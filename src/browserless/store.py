@@ -64,6 +64,7 @@ class BrowserlessStore:
           id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id),
           alias TEXT NOT NULL, branch TEXT NOT NULL, workspace_path TEXT NOT NULL, base_sha TEXT NOT NULL,
           diff_sha TEXT NOT NULL DEFAULT '', last_test_sha TEXT NOT NULL DEFAULT '', last_test_passed INTEGER NOT NULL DEFAULT 0,
+          test_attestations_json TEXT NOT NULL DEFAULT '{}',
           commit_sha TEXT NOT NULL DEFAULT '', pr_number INTEGER NOT NULL DEFAULT 0, pr_url TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_repo_workspaces_active
@@ -91,6 +92,8 @@ class BrowserlessStore:
             self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN last_test_sha TEXT NOT NULL DEFAULT ''")
         if "last_test_passed" not in workspace_columns:
             self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN last_test_passed INTEGER NOT NULL DEFAULT 0")
+        if "test_attestations_json" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN test_attestations_json TEXT NOT NULL DEFAULT '{}'")
         if "commit_sha" not in workspace_columns:
             self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''")
         if "pr_number" not in workspace_columns:
@@ -327,6 +330,7 @@ class BrowserlessStore:
                 "branch": row["branch"], "workspace_path": row["workspace_path"],
                 "base_sha": row["base_sha"], "diff_sha": row["diff_sha"],
                 "last_test_sha": row["last_test_sha"], "last_test_passed": bool(row["last_test_passed"]),
+                "test_attestations": json.loads(row["test_attestations_json"] or "{}"),
                 "commit_sha": row["commit_sha"], "pr_number": int(row["pr_number"]), "pr_url": row["pr_url"],
                 "status": row["status"],
                 "created_at": int(row["created_at"]), "updated_at": int(row["updated_at"])}
@@ -342,21 +346,40 @@ class BrowserlessStore:
 
     def set_repo_workspace_diff(self, project_id: str, alias: str, diff_sha: str):
         cur = self.db.execute(
-            """UPDATE repo_workspaces SET diff_sha=?,last_test_sha='',last_test_passed=0,updated_at=?
+            """UPDATE repo_workspaces SET diff_sha=?,last_test_sha='',last_test_passed=0,test_attestations_json='{}',updated_at=?
                WHERE project_id=? AND alias=? AND status='active' AND commit_sha=''""",
             (str(diff_sha), self._now(), project_id, alias),
         )
         if cur.rowcount != 1:
             raise ValueError('active_repo_workspace_missing')
 
-    def set_repo_workspace_test(self, project_id: str, alias: str, diff_sha: str, passed: bool):
-        cur = self.db.execute(
-            """UPDATE repo_workspaces SET last_test_sha=?,last_test_passed=?,updated_at=?
-               WHERE project_id=? AND alias=? AND status='active'""",
-            (str(diff_sha), 1 if passed else 0, self._now(), project_id, alias),
-        )
-        if cur.rowcount != 1:
-            raise ValueError('active_repo_workspace_missing')
+    def set_repo_workspace_test(self, project_id: str, alias: str, test_alias: str, diff_sha: str, passed: bool):
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.db.execute(
+                "SELECT test_attestations_json FROM repo_workspaces WHERE project_id=? AND alias=? AND status='active'",
+                (project_id, alias),
+            ).fetchone()
+            if not row:
+                raise ValueError('active_repo_workspace_missing')
+            try:
+                attestations = json.loads(row["test_attestations_json"] or "{}")
+            except json.JSONDecodeError:
+                attestations = {}
+            if not isinstance(attestations, dict):
+                attestations = {}
+            attestations[str(test_alias)] = {"diff_sha": str(diff_sha), "passed": bool(passed)}
+            cur = self.db.execute(
+                """UPDATE repo_workspaces SET last_test_sha=?,last_test_passed=?,test_attestations_json=?,updated_at=?
+                   WHERE project_id=? AND alias=? AND status='active'""",
+                (str(diff_sha), 1 if passed else 0, json.dumps(attestations, sort_keys=True), self._now(), project_id, alias),
+            )
+            if cur.rowcount != 1:
+                raise ValueError('active_repo_workspace_missing')
+            self.db.execute("COMMIT")
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
 
     def set_repo_workspace_commit(self, project_id: str, alias: str, diff_sha: str, commit_sha: str):
         cur = self.db.execute(

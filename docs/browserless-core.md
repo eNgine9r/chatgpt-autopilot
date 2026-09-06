@@ -86,6 +86,12 @@ Workspace continuity is durable: `repo.prepare` records the active repository al
 `repo.commit` can create one local commit only when the durable workspace has a passing test attestation for the exact current diff SHA. Repository hooks, fsmonitor, interactive credential prompts, and commit signing are disabled; a durable-state failure restores the previously attested working diff.
 
 `repo.publish` may push only the generated Browserless workspace branch to the exact configured `publishRepository` and create or reuse a pull request against the configured base branch. It never force-pushes, merges, enables auto-merge, or deploys. Repeated publish is idempotent and the confirmed commit SHA, PR number, and PR URL are persisted in SQLite.
+
+## Required test attestations
+Writable repository bindings must define at least one sandboxed test. `requiredTests` defaults to all configured test aliases; an explicit non-empty subset may be used when the repository policy requires it. Each test result is stored durably by test alias and exact `diff_sha`.
+
+`repo.commit` and `repo.publish` fail closed until every required test alias has `passed=true` for the current durable diff SHA. A later PASS from one test never replaces or hides a failed/missing different required test. Applying any new patch clears the entire attestation set, so all required tests must be rerun for the new diff. The Luna capability manifest exposes only the safe `requiredTestAliases` names.
+
 ## Action failure circuit breaker
 Failed actions are not treated like unchanged successful reads. The first failure emits retry evidence; the second failure for the same action in the current workspace session marks `retry_exhausted=true`. A successful same action resets that workspace-local failure streak. Luna must not request the same exhausted action again. If it does, Browserless blocks the job as `repeated_action_failure` instead of silently idling or executing another retry.
 

@@ -29,6 +29,10 @@
           "writeEnabled": true,
           "testTimeoutSeconds": 600,
           "tests": {
+            "legacy": [
+              "npm",
+              "test"
+            ],
             "browserless": [
               "python3",
               "-m",
@@ -38,6 +42,11 @@
               "test_browserless",
               "-p",
               "test_*.py"
+            ],
+            "check": [
+              "npm",
+              "run",
+              "check"
             ]
           },
           "writePaths": [
@@ -47,7 +56,12 @@
             "config/browserless-tools.example.json",
             "package.json"
           ],
-          "publishRepository": "eNgine9r/chatgpt-autopilot"
+          "publishRepository": "eNgine9r/chatgpt-autopilot",
+          "requiredTests": [
+            "legacy",
+            "browserless",
+            "check"
+          ]
         }
       }
     }

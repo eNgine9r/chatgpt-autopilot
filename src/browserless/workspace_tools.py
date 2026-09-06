@@ -168,6 +168,20 @@ def _workspace_identity(project_id, job_id):
     return f"autopilot/browserless/{slug}/job-{int(job_id)}", f"job-{int(job_id)}"
 
 
+def _required_tests_remaining(active, binding):
+    required = list(binding.get("required_tests") if "required_tests" in binding else sorted((binding.get("tests") or {}).keys()))
+    diff_sha = str(active.get("diff_sha") or "")
+    attestations = active.get("test_attestations") if isinstance(active.get("test_attestations"), dict) else {}
+    if not required or not diff_sha:
+        return required or ["__required_tests_unconfigured__"]
+    remaining = []
+    for alias in required:
+        item = attestations.get(alias) if isinstance(attestations.get(alias), dict) else {}
+        if item.get("diff_sha") != diff_sha or item.get("passed") is not True:
+            remaining.append(alias)
+    return remaining
+
+
 class WorkspaceToolExecutor:
     def __init__(self, bindings, store=None, bwrap_path="/usr/bin/bwrap", sandbox_runner=None, gh_runner=None, source_url_resolver=None):
         self.bindings = bindings
@@ -355,13 +369,14 @@ class WorkspaceToolExecutor:
         workspace=Path(active["workspace_path"])
         try: workspace.resolve().relative_to(Path(binding["workspace_root"]).resolve())
         except ValueError: raise ReadActionError("repo_workspace_path_mismatch") from None
+        remaining_tests=_required_tests_remaining(active,binding)
+        if remaining_tests:
+            raise ReadActionError("repo_commit_required_tests_missing")
         if active.get("commit_sha"):
             head=_run(["git","-C",str(workspace),"rev-parse","HEAD"]).stdout.strip()
             if head!=active["commit_sha"]: raise ReadActionError("repo_workspace_commit_mismatch")
             return {"ok":True,"kind":"repo","operation":"commit","alias":alias,"commit_sha":head,
                     "diff_sha":active["diff_sha"],"reused":True}
-        if not active.get("diff_sha") or not active.get("last_test_passed") or active.get("last_test_sha")!=active.get("diff_sha"):
-            raise ReadActionError("repo_commit_test_attestation_required")
         current=_run(["git","-C",str(workspace),"branch","--show-current"]).stdout.strip()
         if current!=active["branch"]: raise ReadActionError("repo_workspace_identity_mismatch")
         diff,diff_sha=_current_diff(workspace)
@@ -429,8 +444,8 @@ class WorkspaceToolExecutor:
         if self.store is None: raise ReadActionError("repo_workspace_store_unavailable")
         active=self.store.active_repo_workspace(project_id,alias)
         if not active or not active.get("commit_sha"): raise ReadActionError("repo_publish_commit_required")
-        if not active.get("last_test_passed") or active.get("last_test_sha")!=active.get("diff_sha"):
-            raise ReadActionError("repo_publish_test_attestation_required")
+        if _required_tests_remaining(active,binding):
+            raise ReadActionError("repo_publish_required_tests_missing")
         workspace=Path(active["workspace_path"])
         current=_run(["git","-C",str(workspace),"branch","--show-current"]).stdout.strip()
         head=_run(["git","-C",str(workspace),"rev-parse","HEAD"]).stdout.strip()
@@ -499,9 +514,9 @@ class WorkspaceToolExecutor:
         argv=[self.bwrap_path,"--die-with-parent","--unshare-all",
               "--ro-bind","/usr","/usr","--ro-bind","/bin","/bin","--ro-bind","/lib","/lib",
               "--ro-bind","/etc","/etc","--proc","/proc","--dev","/dev","--tmpfs","/tmp","--tmpfs","/home",
-              "--dir","/tmp/home","--dir","/workspace","--bind",str(workspace),"/workspace","--chdir","/workspace",
-              "--clearenv","--setenv","PATH","/usr/bin:/bin","--setenv","HOME","/tmp/home","--setenv","CI","1",
-              "--setenv","NO_COLOR","1",*command]
+              "--dir","/tmp/home","--dir","/workspace","--ro-bind",str(workspace),"/workspace","--chdir","/workspace",
+              "--clearenv","--setenv","PATH","/usr/bin:/bin","--setenv","HOME","/tmp/home","--setenv","TMPDIR","/tmp",
+              "--setenv","PYTHONDONTWRITEBYTECODE","1","--setenv","CI","1","--setenv","NO_COLOR","1",*command]
         try:
             result=self.sandbox_runner(argv,capture_output=True,text=True,shell=False,timeout=binding["test_timeout"],check=False)
         except (OSError,subprocess.TimeoutExpired): raise ReadActionError("repo_test_failed") from None
@@ -509,8 +524,12 @@ class WorkspaceToolExecutor:
         after_diff,after_sha=_current_diff(workspace)
         mutation=after_sha!=before_sha
         passed=result.returncode==0 and not mutation
-        self.store.set_repo_workspace_test(project_id,alias,before_sha,passed)
+        self.store.set_repo_workspace_test(project_id,alias,test_alias,before_sha,passed)
+        refreshed=self.store.active_repo_workspace(project_id,alias) or active
+        remaining=_required_tests_remaining(refreshed,binding)
         return {"ok":True,"kind":"repo","operation":"test","alias":alias,"test":test_alias,
                 "passed":passed,"returncode":int(result.returncode),
                 "output":output[:60000],"output_sha256":hashlib.sha256(output.encode()).hexdigest(),
-                "diff_sha":before_sha,"workspace_mutated":mutation}
+                "diff_sha":before_sha,"workspace_mutated":mutation,
+                "required_tests_complete":not bool(remaining),
+                "required_tests_remaining":[x for x in remaining if x != "__required_tests_unconfigured__"]}

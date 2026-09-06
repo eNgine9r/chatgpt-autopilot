@@ -126,6 +126,7 @@ class ToolBindingTest(unittest.TestCase):
         self.assertIn("repo.patch",text); self.assertIn("<repo-alias>",text)
         self.assertEqual(manifest["aliases"]["github"],["gh"])
         self.assertEqual(manifest["repo"]["work"]["testAliases"],["unit"])
+        self.assertEqual(manifest["repo"]["work"]["requiredTestAliases"],["unit"])
         self.assertEqual(manifest["repo"]["work"]["writePaths"],["src/browserless/"])
         self.assertTrue(manifest["repo"]["work"]["publishEnabled"])
         for secret in ("TOP_SECRET_TOKEN","/very/private/repo","secret-health","/private/evidence","owner/private-repo"):

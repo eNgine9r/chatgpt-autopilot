@@ -29,6 +29,25 @@ class StoreTest(unittest.TestCase):
         self.assertTrue(self.store.close_repo_workspace("p1","repo","abandoned"))
         self.assertIsNone(self.store.active_repo_workspace("p1","repo"))
 
+    def test_old_workspace_schema_adds_test_attestations_column(self):
+        import sqlite3
+        legacy = str(Path(self.tmp.name) / "legacy.sqlite3")
+        db = sqlite3.connect(legacy)
+        db.execute("""CREATE TABLE repo_workspaces(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, alias TEXT NOT NULL,
+          branch TEXT NOT NULL, workspace_path TEXT NOT NULL, base_sha TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""")
+        db.commit(); db.close()
+        migrated=BrowserlessStore(legacy)
+        try:
+            columns={row[1] for row in migrated.db.execute("PRAGMA table_info(repo_workspaces)")}
+            self.assertIn("test_attestations_json",columns)
+            row=migrated.db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='repo_workspaces'").fetchone()
+            self.assertIsNotNone(row)
+        finally:
+            migrated.close()
+        self.assertEqual(Path(legacy).stat().st_mode & 0o777,0o600)
+
     def test_event_key_is_idempotent(self):
         self.assertTrue(self.store.enqueue_event("p1", "evt-1", "github", {"summary":"x"}))
         self.assertFalse(self.store.enqueue_event("p1", "evt-1", "github", {"summary":"x"}))
