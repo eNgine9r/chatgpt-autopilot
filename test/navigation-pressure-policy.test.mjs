@@ -22,26 +22,24 @@ test("shared minimum gap prevents adjacent project navigation bursts", () => {
 });
 
 test("rate-limit backoff blocks even forced navigation and only extends monotonically", () => {
-  const until = Pressure.nextRateLimitBackoff({ now: 2_000_000, currentBackoffUntil: 0, durationMs: 600_000 });
-  assert.equal(until, 2_600_000);
+  const until = Pressure.nextRateLimitBackoff({ now: 2_000_000, currentBackoffUntil: 0, durationMs: 900_000 });
+  assert.equal(until, 2_900_000);
   assert.equal(Pressure.canStartNavigation({ paused: false, forced: true, now: 2_100_000, lastNavigationAt: 0, backoffUntil: until }), false);
-  assert.equal(Pressure.nextRateLimitBackoff({ now: 2_050_000, currentBackoffUntil: 2_900_000, durationMs: 600_000 }), 2_900_000);
+  assert.equal(Pressure.nextRateLimitBackoff({ now: 2_050_000, currentBackoffUntil: 2_900_000, durationMs: 900_000 }), 2_950_000);
 });
 
-test("v19 worker applies pressure policy to mirror, discovery and recovery paths", () => {
+test("v20 worker applies host pressure policy to all browser mutation paths", () => {
   assert.match(worker, /project\.control\?\.paused\) continue;/);
-  assert.match(worker, /if \(status\.rateLimited\) \{ await markRateLimitBackoff\(\); return; \}/);
+  assert.match(worker, /blockForRateLimit\(project/);
+  assert.match(worker, /case "RATE_LIMIT_DETECTED"/);
   assert.match(worker, /claimBrowserNavigation\(\{ paused: Boolean\(project\.control\?\.paused\) \}\)/);
   assert.match(worker, /claimBrowserNavigation\(\{ paused: Boolean\(project\.control\?\.paused\), forced \}\)/);
   assert.match(worker, /if \(stage === "idle" \|\| project\.control\?\.paused\) continue;/);
   assert.match(worker, /rate_limited_backoff/);
-  assert.match(worker, /NAVIGATION_MIN_GAP_MS = 90000/);
   assert.match(worker, /action: "claim_navigation"/);
   assert.match(worker, /bridge\("\/navigation-pressure"/);
   assert.doesNotMatch(worker, /chrome\.storage\.session\.get\(NAVIGATION_PRESSURE_KEY/);
   assert.match(worker, /const forced = mode === "manual"/);
   assert.match(worker, /navigation_pressure_backoff/);
   assert.match(worker, /claimBrowserNavigation\(\)[\s\S]*stage: "browser_restart"[\s\S]*browser-restart-request/);
-  assert.match(worker, /operator_paused/);
-  assert.match(worker, /navigation_pressure_backoff/);
 });

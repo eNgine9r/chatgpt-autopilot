@@ -82,7 +82,8 @@ export function createBridgeServer({
             : null;
         if (!state) return json(res, 400, { error: "unsupported_navigation_pressure_action" });
         logger.info("navigation_pressure", {
-          action, allowed: state.allowed, backoffUntil: state.backoffUntil, lastNavigationAt: state.lastNavigationAt
+          action, allowed: state.allowed, backoffUntil: state.backoffUntil, lastNavigationAt: state.lastNavigationAt,
+          rateLimitStrikes: Number(state.rateLimitStrikes || 0), lastRateLimitAt: Number(state.lastRateLimitAt || 0)
         });
         return json(res, 200, { ok: true, ...state });
       }

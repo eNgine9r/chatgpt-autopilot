@@ -56,6 +56,8 @@ test("service worker routes all rollover triggers through one serialized process
   const manifest = JSON.parse(fs.readFileSync(new URL("../extension/manifest.json", import.meta.url), "utf8"));
   const worker = fs.readFileSync(new URL(`../extension/${manifest.background.service_worker}`, import.meta.url), "utf8");
   assert.match(worker, /const processPendingRolloversSerial = AutopilotRolloverPolicy\.serialProcessor\(processPendingRollovers\);/);
-  assert.equal((worker.match(/processPendingRolloversSerial\(\)\.catch/g) || []).length, 3);
+  assert.match(worker, /await processPendingRolloversSerial\(\);/);
+  assert.equal((worker.match(/processPendingRolloversSerial\(\)\.catch/g) || []).length, 2);
+  assert.equal((worker.match(/processPendingRolloversSerial\(\)/g) || []).length, 3);
   assert.doesNotMatch(worker, /processPendingRollovers\(\)\.catch/);
 });

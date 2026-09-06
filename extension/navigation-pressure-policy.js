@@ -1,6 +1,6 @@
 (() => {
   const DEFAULT_MIN_GAP_MS = 90000;
-  const DEFAULT_RATE_LIMIT_BACKOFF_MS = 600000;
+  const DEFAULT_RATE_LIMIT_BACKOFF_MS = 900000;
 
   function canStartNavigation({ paused = false, forced = false, now = Date.now(), lastNavigationAt = 0,
     backoffUntil = 0, minGapMs = DEFAULT_MIN_GAP_MS } = {}) {

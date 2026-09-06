@@ -23,19 +23,22 @@ test("mirror snapshot exposes bounded ordered turn history and safety state", ()
   assert.match(content, /\.\.\.recoveryBlockers\(\)/);
 });
 
-test("mirror lifecycle is driven by the pulse alarm and cleaned with tab removal", () => {
-  assert.match(worker, /processPendingMirrorProbes\(\)\.catch/);
-  assert.match(worker, /maybeStartMirrorProbe\(\)\.catch/);
+test("mirror lifecycle is serialized by the priority pulse and cleaned with tab removal", () => {
+  assert.match(worker, /async function runPulse\(\)/);
+  assert.match(worker, /await processPendingMirrorProbes\(\);/);
+  assert.match(worker, /await maybeStartMirrorProbe\(\);/);
+  assert.match(worker, /enqueuePulse\(\)\.catch/);
   assert.match(worker, /cleanupMirrorEntriesForTab\(tabId\)\.catch/);
   assert.match(worker, /MIRROR_TIMEOUT_MS = 300000/);
   assert.match(worker, /MIRROR_SETTLE_MS = 30000/);
 });
 
-test("mirror timeout starts the retry interval from timeout completion", () => {
-  const timeoutAt = worker.indexOf('result: "timeout"');
-  const cooldownAt = worker.lastIndexOf('[lastKey]: { ...last, lastProbeAt: now, lastTimeoutAt: now }', timeoutAt);
-  assert.ok(cooldownAt >= 0 && cooldownAt < timeoutAt);
-  assert.match(worker, /const due = now - Number\(last\.lastProbeAt \|\| 0\) >= intervalMs/);
+test("mirror timeout schedules the next adaptive audit from timeout completion", () => {
+  const scheduleAt = worker.indexOf('updateMirrorSchedule(project, lastKey, last, "timeout", now');
+  const timeoutAt = worker.indexOf('result: "timeout"', scheduleAt);
+  assert.ok(scheduleAt >= 0 && timeoutAt > scheduleAt);
+  assert.match(worker, /initialMirrorAuditAt\(/);
+  assert.doesNotMatch(worker, /const due = now - Number\(last\.lastProbeAt \|\| 0\) >= intervalMs/);
 });
 
 test("mirror refresh revalidates the owning tab immediately before mutation", () => {

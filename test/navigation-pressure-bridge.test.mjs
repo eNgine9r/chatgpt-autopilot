@@ -36,8 +36,13 @@ test("loopback pressure endpoint atomically claims navigation and exposes shared
   const limited = await post(base, { action:"rate_limit" });
   assert.equal(limited.response.status, 200);
   assert.ok(limited.json.backoffUntil > Date.now());
+  assert.equal(limited.json.rateLimitStrikes, 1);
+  const duplicate = await post(base, { action:"rate_limit" });
+  assert.equal(duplicate.json.rateLimitStrikes, 1);
+  assert.equal(duplicate.json.backoffUntil, limited.json.backoffUntil);
   const snapshot = await (await fetch(`${base}/navigation-pressure`)).json();
   assert.equal(snapshot.ok, true);
+  assert.equal(snapshot.rateLimitStrikes, 1);
   assert.equal(snapshot.backoffUntil, limited.json.backoffUntil);
   assert.equal((await post(base, { action:"claim_navigation" })).json.allowed, false);
 });

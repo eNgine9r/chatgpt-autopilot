@@ -32,6 +32,7 @@
   let requestCounter = 0;
   let lastHeartbeatAt = 0;
   let lastHeartbeatKey = "";
+  let rateLimitReported = false;
 
   function first(selectors) {
     for (const selector of selectors) {
@@ -232,6 +233,18 @@
       rateLimited: /rate limit|too many requests|usage limit|try again later|ліміт/.test(surface),
       safetyBlocked: /verify you are human|captcha|unusual activity|cloudflare/.test(surface)
     };
+  }
+
+  async function reportRateLimitIfPresent(blockers = recoveryBlockers()) {
+    if (!blockers.rateLimited) {
+      rateLimitReported = false;
+      return false;
+    }
+    if (!rateLimitReported) {
+      rateLimitReported = true;
+      await message({ type: "RATE_LIMIT_DETECTED", projectId: project?.id || "" });
+    }
+    return true;
   }
 
   function latestActivityFingerprint() {
@@ -473,7 +486,10 @@
     if (inspecting) return;
     inspecting = true;
     try {
-      if (!await refreshProject()) return;
+      const configured = await refreshProject();
+      const blockers = recoveryBlockers();
+      if (await reportRateLimitIfPresent(blockers)) return;
+      if (!configured) return;
       if (!await claim()) return;
       let state = await loadState();
       if (state.rolloverInProgress) return;
