@@ -5,5 +5,14 @@
     return `${boundedPreamble}\n\n=== BOUNDED CHAT TAIL ===\n${boundedHandoff}\n=== END CHAT TAIL ===`.slice(0, 20000);
   }
 
-  globalThis.AutopilotRolloverPolicy = Object.freeze({ composeHandoff });
+  function serialProcessor(task) {
+    let tail = Promise.resolve();
+    return (...args) => {
+      const run = tail.catch(() => {}).then(() => task(...args));
+      tail = run;
+      return run;
+    };
+  }
+
+  globalThis.AutopilotRolloverPolicy = Object.freeze({ composeHandoff, serialProcessor });
 })();
