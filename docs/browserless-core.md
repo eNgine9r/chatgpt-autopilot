@@ -86,3 +86,7 @@ Workspace continuity is durable: `repo.prepare` records the active repository al
 `repo.commit` can create one local commit only when the durable workspace has a passing test attestation for the exact current diff SHA. Repository hooks, fsmonitor, interactive credential prompts, and commit signing are disabled; a durable-state failure restores the previously attested working diff.
 
 `repo.publish` may push only the generated Browserless workspace branch to the exact configured `publishRepository` and create or reuse a pull request against the configured base branch. It never force-pushes, merges, enables auto-merge, or deploys. Repeated publish is idempotent and the confirmed commit SHA, PR number, and PR URL are persisted in SQLite.
+## Action failure circuit breaker
+Failed actions are not treated like unchanged successful reads. The first identical action failure emits retry evidence; the second identical failure marks `retry_exhausted=true`. Luna must not request the same action type/target again after exhaustion. If it does, Browserless blocks the job as `repeated_action_failure` instead of silently idling or executing another retry.
+
+`repo.patch` payloads must be raw git-style unified diffs beginning with `diff --git a/<path> b/<path>` and containing matching `--- a/<path>` / `+++ b/<path>` headers. Markdown fences are not valid patch payload.

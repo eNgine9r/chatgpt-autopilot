@@ -110,3 +110,15 @@ class CoreTest(unittest.TestCase):
         self.assertEqual(result["status"],"done")
         self.assertIn("mine",client.context); self.assertIn("unit",client.context)
         self.assertNotIn("SECRET_OTHER",client.context)
+    def test_retry_exhausted_same_action_is_blocked_before_replanning(self):
+        payload={"material":{"ok":False,"kind":"repo.patch","target":"repo","error_code":"repo_patch_invalid",
+                             "failure_attempt":2,"retry_exhausted":True},"summary":"patch failed twice"}
+        self.store.enqueue_event("p1","evt-exhausted","observation.evidence",payload)
+        class RetryClient:
+            def decide(self,*_args,**_kwargs):
+                return {"response_id":"retry","decision":{"decision":"continue","message":"retry",
+                    "actions":[{"type":"repo.patch","target":"repo","purpose":"retry","payload":"diff"}],
+                    "checkpoint":CHECKPOINT},"usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":50}}
+        result=process_once(self.store,RetryClient())
+        self.assertEqual(result["status"],"blocked"); self.assertEqual(result["reason"],"repeated_action_failure")
+        self.assertEqual(self.store.counts()["planned_actions"],0)

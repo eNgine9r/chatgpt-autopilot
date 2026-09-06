@@ -36,6 +36,14 @@ def process_once(store, client, governor=None, capabilities_by_project=None):
     cost = luna_cost(usage["input_tokens"], usage["cached_input_tokens"], usage["output_tokens"])
     store.record_usage(project["id"], MODEL, usage, cost, result.get("response_id", ""))
     decision = result["decision"]
+    material = (job.get("payload") or {}).get("material")
+    if isinstance(material, dict) and material.get("retry_exhausted") and decision.get("decision") == "continue":
+        failed_type, failed_target = str(material.get("kind") or ""), str(material.get("target") or "")
+        if any(action.get("type") == failed_type and action.get("target") == failed_target
+               for action in list(decision.get("actions") or [])):
+            store.block_job(job["id"], "repeated_action_failure")
+            return {"status":"blocked", "reason":"repeated_action_failure", "api_called":True,
+                    "job_id":job["id"], "cost_usd":cost}
     store.update_checkpoint(project["id"], decision["checkpoint"])
     store.finish_job(job["id"], decision)
     return {"status": "done", "api_called": True, "job_id": job["id"], "decision": decision["decision"], "cost_usd": cost}
