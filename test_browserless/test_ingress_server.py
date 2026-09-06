@@ -54,6 +54,18 @@ class IngressServerTest(unittest.TestCase):
         self.assertEqual(status, 200); self.assertTrue(data["ok"])
         self.assertEqual(data["events"], 0)
 
+    def test_signed_github_ping_returns_200_without_creating_event(self):
+        payload = {"repository":{"full_name":"eNgine9r/chatgpt-autopilot"}, "zen":"keep it logically awesome"}
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        headers = {"X-Hub-Signature-256":signature(GH_SECRET, body), "X-GitHub-Event":"ping"}
+        status, data = self.request("POST", "/v1/github/p1", payload, headers)
+        self.assertEqual(status, 200); self.assertTrue(data["ping"]); self.assertEqual(data["projectId"], "p1")
+        store = BrowserlessStore(self.db)
+        try:
+            self.assertEqual(store.counts()["events"], 0)
+            self.assertEqual(store.counts()["jobs"], 0)
+        finally: store.close()
+
     def test_valid_github_webhook_deduplicates_without_creating_jobs(self):
         payload = self.github_payload(); body = json.dumps(payload, separators=(",", ":")).encode()
         headers = {"X-Hub-Signature-256":signature(GH_SECRET, body), "X-GitHub-Event":"workflow_run"}
