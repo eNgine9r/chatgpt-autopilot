@@ -27,6 +27,9 @@ class OpenAIClientTest(unittest.TestCase):
         self.assertEqual(result["decision"]["actions"], [])
         self.assertEqual(seen["body"]["text"]["format"]["schema"]["properties"]["actions"]["items"]["properties"]["type"]["enum"],
                          ["github.read", "runtime.read", "git.read", "evidence.read", "repo.read", "repo.prepare", "repo.patch", "repo.test", "repo.commit", "repo.publish"])
+        instructions = seen["body"]["instructions"]
+        self.assertIn("return exactly one action total in that decision", instructions)
+        self.assertIn("one repo.test action per Luna turn", instructions)
 
     def test_missing_key_fails_closed(self):
         with self.assertRaises(MissingCredentialError):
