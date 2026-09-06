@@ -63,6 +63,7 @@ class BrowserlessStore:
           id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id),
           alias TEXT NOT NULL, branch TEXT NOT NULL, workspace_path TEXT NOT NULL, base_sha TEXT NOT NULL,
           diff_sha TEXT NOT NULL DEFAULT '', last_test_sha TEXT NOT NULL DEFAULT '', last_test_passed INTEGER NOT NULL DEFAULT 0,
+          commit_sha TEXT NOT NULL DEFAULT '', pr_number INTEGER NOT NULL DEFAULT 0, pr_url TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_repo_workspaces_active
           ON repo_workspaces(project_id,alias) WHERE status='active';
@@ -89,6 +90,12 @@ class BrowserlessStore:
             self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN last_test_sha TEXT NOT NULL DEFAULT ''")
         if "last_test_passed" not in workspace_columns:
             self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN last_test_passed INTEGER NOT NULL DEFAULT 0")
+        if "commit_sha" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''")
+        if "pr_number" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN pr_number INTEGER NOT NULL DEFAULT 0")
+        if "pr_url" not in workspace_columns:
+            self.db.execute("ALTER TABLE repo_workspaces ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''")
 
     @staticmethod
     def _now():
@@ -287,6 +294,7 @@ class BrowserlessStore:
                 "branch": row["branch"], "workspace_path": row["workspace_path"],
                 "base_sha": row["base_sha"], "diff_sha": row["diff_sha"],
                 "last_test_sha": row["last_test_sha"], "last_test_passed": bool(row["last_test_passed"]),
+                "commit_sha": row["commit_sha"], "pr_number": int(row["pr_number"]), "pr_url": row["pr_url"],
                 "status": row["status"],
                 "created_at": int(row["created_at"]), "updated_at": int(row["updated_at"])}
 
@@ -302,7 +310,7 @@ class BrowserlessStore:
     def set_repo_workspace_diff(self, project_id: str, alias: str, diff_sha: str):
         cur = self.db.execute(
             """UPDATE repo_workspaces SET diff_sha=?,last_test_sha='',last_test_passed=0,updated_at=?
-               WHERE project_id=? AND alias=? AND status='active'""",
+               WHERE project_id=? AND alias=? AND status='active' AND commit_sha=''""",
             (str(diff_sha), self._now(), project_id, alias),
         )
         if cur.rowcount != 1:
@@ -316,6 +324,25 @@ class BrowserlessStore:
         )
         if cur.rowcount != 1:
             raise ValueError('active_repo_workspace_missing')
+
+    def set_repo_workspace_commit(self, project_id: str, alias: str, diff_sha: str, commit_sha: str):
+        cur = self.db.execute(
+            """UPDATE repo_workspaces SET commit_sha=?,updated_at=?
+               WHERE project_id=? AND alias=? AND status='active' AND commit_sha=''
+                 AND diff_sha=? AND last_test_sha=? AND last_test_passed=1""",
+            (str(commit_sha), self._now(), project_id, alias, str(diff_sha), str(diff_sha)),
+        )
+        if cur.rowcount != 1:
+            raise ValueError('repo_workspace_commit_precondition_failed')
+
+    def set_repo_workspace_pr(self, project_id: str, alias: str, commit_sha: str, pr_number: int, pr_url: str):
+        cur = self.db.execute(
+            """UPDATE repo_workspaces SET pr_number=?,pr_url=?,updated_at=?
+               WHERE project_id=? AND alias=? AND status='active' AND commit_sha=?""",
+            (int(pr_number), str(pr_url)[:1000], self._now(), project_id, alias, str(commit_sha)),
+        )
+        if cur.rowcount != 1:
+            raise ValueError('repo_workspace_publish_precondition_failed')
 
     def close_repo_workspace(self, project_id: str, alias: str, status='closed'):
         if status not in {'closed', 'published', 'abandoned'}:

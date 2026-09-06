@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from .sources import runtime_observation
 
-REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+REPO = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/(?!(?:\.|\..)($))[A-Za-z0-9_.-]{1,100}$")
 ALIAS = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 SENSITIVE_KEY = re.compile(r"(?:secret|password|passwd|token|api[_-]?key|authorization|cookie)", re.I)
 SENSITIVE_REPO_PATH = re.compile(r"(^|/)(?:\.env(?:\..*)?|id_rsa|id_ed25519|credentials(?:\..*)?|[^/]+\.(?:pem|key|p12|pfx))$", re.I)
@@ -67,12 +67,15 @@ def load_tool_bindings(path, env=None):
             workspace_root = Path(str((raw or {}).get("workspaceRoot") or ""))
             base_branch = str((raw or {}).get("baseBranch") or "main")
             write_enabled = bool((raw or {}).get("writeEnabled", False))
+            publish_repository = str((raw or {}).get("publishRepository") or "")
             tests = (raw or {}).get("tests") or {}
             write_paths = (raw or {}).get("writePaths") or []
             if not ALIAS.fullmatch(str(alias)) or not root.is_absolute():
                 raise ValueError(f"invalid repo binding: {project_id}/{alias}")
             if write_enabled and not workspace_root.is_absolute():
                 raise ValueError(f"invalid repo workspace root: {project_id}/{alias}")
+            if write_enabled and not REPO.fullmatch(publish_repository):
+                raise ValueError(f"invalid repo publish repository: {project_id}/{alias}")
             root_resolved = root.resolve()
             workspace_resolved = workspace_root.resolve() if write_enabled else None
             if write_enabled:
@@ -109,7 +112,7 @@ def load_tool_bindings(path, env=None):
                 raise ValueError(f"invalid repo test timeout: {project_id}/{alias}")
             project["repo"][str(alias)] = {"path": str(root_resolved), "workspace_root": str(workspace_resolved) if write_enabled else "",
                                                 "base_branch": base_branch, "write_enabled": write_enabled,
-                                                "write_paths": normalized_write_paths,
+                                                "write_paths": normalized_write_paths, "publish_repository": publish_repository,
                                                 "tests": normalized_tests, "test_timeout": timeout}
         projects[str(project_id)] = project
     return projects

@@ -10,7 +10,7 @@ def action(kind, target="x", purpose="test", payload=""):
 class ActionContractTest(unittest.TestCase):
     def test_v1_contract_contains_only_safe_evidence_and_workspace_actions(self):
         self.assertEqual(READ_ONLY_ACTION_TYPES, ("github.read", "runtime.read", "git.read", "evidence.read", "repo.read"))
-        self.assertEqual(WORKSPACE_ACTION_TYPES, ("repo.prepare", "repo.patch", "repo.test"))
+        self.assertEqual(WORKSPACE_ACTION_TYPES, ("repo.prepare", "repo.patch", "repo.test", "repo.commit", "repo.publish"))
         self.assertEqual(SAFE_ACTION_TYPES, READ_ONLY_ACTION_TYPES + WORKSPACE_ACTION_TYPES)
         self.assertEqual(validate_actions([action("repo.prepare","autopilot","isolated workspace")])[0]["type"], "repo.prepare")
 
@@ -25,7 +25,9 @@ class ActionContractTest(unittest.TestCase):
         with self.assertRaises(ValueError): validate_actions([action("repo.patch","autopilot","change","")])
         with self.assertRaises(ValueError): validate_actions([action("repo.read","autopilot:tree","read","extra")])
         with self.assertRaises(ValueError): validate_actions([action("repo.patch","autopilot","change","x"*20001)])
+        self.assertEqual(validate_actions([action("repo.commit","autopilot","commit")])[0]["payload"],"")
+        self.assertEqual(validate_actions([action("repo.publish","autopilot","publish")])[0]["payload"],"")
 
     def test_mutating_or_browser_actions_fail_closed(self):
-        for kind in ("repo.commit", "repo.push", "github.write", "runtime.restart", "trading.execute", "hardware.write", "modbus.write", "browser.navigate", "deploy.execute"):
+        for kind in ("repo.push", "github.write", "runtime.restart", "trading.execute", "hardware.write", "modbus.write", "browser.navigate", "deploy.execute"):
             with self.assertRaises(ValueError, msg=kind): validate_actions([action(kind)])
