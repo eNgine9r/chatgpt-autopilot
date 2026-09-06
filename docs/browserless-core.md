@@ -19,3 +19,8 @@ Every call has a conservative preflight against a configurable monthly hard budg
 
 ## Safety
 Browser fallback remains disabled during Browserless development. Autopilot must not perform product trading, hardware/Modbus writes, or unapproved production/site cutovers.
+
+## Legacy continuity import
+Use `python3 -m src.browserless.import_legacy` to copy only governed Plan Anchors and durable checkpoints from the legacy private project config/state files into a Browserless SQLite database. The importer deliberately does not enqueue AI work and ignores legacy ChatGPT URLs, browser telemetry, raw conversations, and Codex-shadow projects without a Plan Anchor. Re-running the importer updates the governed anchor but never overwrites a newer Browserless checkpoint.
+
+After a database has imported projects, `src.browserless.daemon` can run without `--config`; the SQLite store becomes the durable continuity source.

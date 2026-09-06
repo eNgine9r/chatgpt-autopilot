@@ -137,8 +137,12 @@ class BrowserlessStore:
         row = self.db.execute("SELECT COALESCE(SUM(cost_usd),0) AS cost FROM usage WHERE created_at>=?", (start,)).fetchone()
         return float(row['cost'])
 
+    def project_ids(self):
+        return [row[0] for row in self.db.execute("SELECT id FROM projects ORDER BY id").fetchall()]
+
     def counts(self) -> dict:
         return {
+            'projects': self.db.execute("SELECT COUNT(*) FROM projects").fetchone()[0],
             'events': self.db.execute("SELECT COUNT(*) FROM events").fetchone()[0],
             'jobs': self.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0],
             'pending_jobs': self.db.execute("SELECT COUNT(*) FROM jobs WHERE status='pending'").fetchone()[0],
