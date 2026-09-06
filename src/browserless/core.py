@@ -3,9 +3,9 @@ from .cost import BudgetGovernor, luna_cost
 from .openai_client import InvalidModelResponse, MissingCredentialError, MODEL
 
 
-def process_once(store, client, governor=None, capabilities_by_project=None):
+def process_once(store, client, governor=None, capabilities_by_project=None, github_quiet_seconds=0):
     governor = governor or BudgetGovernor()
-    store.ensure_jobs()
+    store.ensure_jobs(github_quiet_seconds=github_quiet_seconds)
     job = store.claim_job()
     if not job:
         return {"status": "idle", "api_called": False}
