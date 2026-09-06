@@ -12,6 +12,7 @@ from .sources import runtime_observation
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ALIAS = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 SENSITIVE_KEY = re.compile(r"(?:secret|password|passwd|token|api[_-]?key|authorization|cookie)", re.I)
+SENSITIVE_REPO_PATH = re.compile(r"(^|/)(?:\.env(?:\..*)?|id_rsa|id_ed25519|credentials(?:\..*)?|[^/]+\.(?:pem|key|p12|pfx))$", re.I)
 MAX_HTTP_BYTES = 131072
 MAX_FILE_BYTES = 65536
 
@@ -67,6 +68,7 @@ def load_tool_bindings(path, env=None):
             base_branch = str((raw or {}).get("baseBranch") or "main")
             write_enabled = bool((raw or {}).get("writeEnabled", False))
             tests = (raw or {}).get("tests") or {}
+            write_paths = (raw or {}).get("writePaths") or []
             if not ALIAS.fullmatch(str(alias)) or not root.is_absolute():
                 raise ValueError(f"invalid repo binding: {project_id}/{alias}")
             if write_enabled and not workspace_root.is_absolute():
@@ -79,6 +81,18 @@ def load_tool_bindings(path, env=None):
                     raise ValueError(f"repo workspace must be disjoint from canonical repo: {project_id}/{alias}")
             if not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", base_branch) or ".." in base_branch or base_branch.startswith("-"):
                 raise ValueError(f"invalid repo base branch: {project_id}/{alias}")
+            normalized_write_paths = []
+            for item in write_paths:
+                value = str(item).replace("\\", "/")
+                rel = Path(value.rstrip("/"))
+                if (not value or len(value) > 240 or value.startswith("/") or ".." in rel.parts
+                        or value.startswith("./") or SENSITIVE_KEY.search(value) or SENSITIVE_REPO_PATH.search(value)):
+                    raise ValueError(f"invalid repo write path: {project_id}/{alias}")
+                if not re.fullmatch(r"[A-Za-z0-9_.\-/]+", value):
+                    raise ValueError(f"invalid repo write path: {project_id}/{alias}")
+                normalized_write_paths.append(value)
+            if write_enabled and not normalized_write_paths:
+                raise ValueError(f"repo write paths required: {project_id}/{alias}")
             normalized_tests = {}
             for test_alias, command in tests.items():
                 if not ALIAS.fullmatch(str(test_alias)) or not isinstance(command, list) or not (1 <= len(command) <= 20):
@@ -95,6 +109,7 @@ def load_tool_bindings(path, env=None):
                 raise ValueError(f"invalid repo test timeout: {project_id}/{alias}")
             project["repo"][str(alias)] = {"path": str(root_resolved), "workspace_root": str(workspace_resolved) if write_enabled else "",
                                                 "base_branch": base_branch, "write_enabled": write_enabled,
+                                                "write_paths": normalized_write_paths,
                                                 "tests": normalized_tests, "test_timeout": timeout}
         projects[str(project_id)] = project
     return projects

@@ -11,6 +11,6 @@ class SafeToolExecutor:
         kind = str(action.get("type") or "")
         if kind in {"github.read", "runtime.read", "git.read", "evidence.read"}:
             return self.read.execute(action)
-        if kind in {"repo.read", "repo.prepare", "repo.test"}:
+        if kind in {"repo.read", "repo.prepare", "repo.patch", "repo.test"}:
             return self.workspace.execute(action)
         raise ReadActionError("action_not_allowed")
