@@ -34,7 +34,7 @@ GitHub normalizers support workflow runs, pull requests, issues, and issue comme
 Example producer call: `python3 -m src.browserless.observe --db <db> --project-id <id> --source runtime --input snapshot.json`. The observation producer may run from a webhook, a local service, or another low-cost event source; the Browserless core remains transport-independent.
 
 ## Read-only action contract
-Luna v1 structured output can request only `github.read`, `runtime.read`, `git.read`, or `evidence.read`. Such requests are durably stored as `planned` action requests for audit but are not executed by this phase. Browser, write, restart, trading, hardware, Modbus, secret, and production-cutover actions are absent from the schema and fail closed. Non-`continue` decisions cannot leave queued actions.
+Luna v1 structured output can request only `github.read`, `runtime.read`, `git.read`, or `evidence.read`. Such requests are durably stored as `planned` action requests and are executed only by the separate allowlisted read-only executor. Browser, write, restart, trading, hardware, Modbus, secret, and production-cutover actions are absent from the schema and fail closed. Non-`continue` decisions cannot leave queued actions.
 
 
 ## Authenticated event transport
@@ -65,3 +65,8 @@ GitHub sends a signed `ping` when a hook is created. Browserless validates HMAC 
 `python3 -m src.browserless.webhook_config --bindings config/browserless-ingress.json --base-url https://HOST/autopilot-events` is dry-run by default. `--apply` is the explicit mutation gate. On apply, webhook secrets are read from a mode-600 env file and sent to `gh api` through stdin, never command arguments. Existing hooks with the exact callback URL are updated rather than duplicated.
 
 Configured GitHub events are `workflow_run`, `pull_request`, `issues`, and `issue_comment`; each received payload still passes through content-hash deduplication before any Luna job exists.
+
+## Checkpoint bootstrap and operator task ingress
+On supervisor startup, every imported project whose governed checkpoint is still `active` and has a current task or next action receives one deterministic `bootstrap.resume` event. The idempotency key is derived only from governed checkpoint contract fields, so restarts and legacy-only revision noise do not duplicate Luna work. A material checkpoint change produces a new resume event; `stage=complete` produces none.
+
+New manual work can be submitted without Chromium using `python3 -m src.browserless.operator --db <db> --project <id> --request-id <id>`. Task text may be supplied with `--task` or via stdin. A repeated request id is idempotent, and task text is capped before it can enter the event queue.

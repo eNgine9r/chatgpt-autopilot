@@ -4,6 +4,7 @@ import threading
 import time
 
 from .action_runner import execute_once as execute_action_once
+from .bootstrap import enqueue_checkpoint_bootstraps
 from .core import process_once
 from .cost import BudgetGovernor
 from .ingress_server import create_server, load_bindings
@@ -38,6 +39,7 @@ def main(argv=None):
             parser.error("Browserless store has no projects; import legacy state first")
         store.recover_running_jobs()
         store.recover_running_actions()
+        enqueue_checkpoint_bootstraps(store)
         client = LunaResponsesClient()
         governor = BudgetGovernor(hard_budget_usd=args.hard_budget_usd)
         executor = ReadToolExecutor(load_tool_bindings(args.tools))
