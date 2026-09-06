@@ -151,6 +151,7 @@ def capability_manifest(bindings):
                 "runtime": sorted(str(x)[:80] for x in (project.get("runtime") or {}))[:16],
                 "git": sorted(str(x)[:80] for x in (project.get("git") or {}))[:16],
                 "evidence": sorted(str(x)[:80] for x in (project.get("evidence") or {}))[:16],
+                "repo": sorted(str(x)[:80] for x in (project.get("repo") or {}))[:16],
             },
             "repo": repos,
         }

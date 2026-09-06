@@ -139,3 +139,10 @@ class CapabilityPatchGrammarTest(unittest.TestCase):
         self.assertIn("diff --git a/<path> b/<path>",grammar)
         self.assertIn("--- a/<path>",grammar); self.assertIn("+++ b/<path>",grammar)
         self.assertIn("no Markdown fences",grammar)
+
+class RepoAliasManifestTest(unittest.TestCase):
+    def test_repo_alias_is_explicitly_listed_for_luna(self):
+        from src.browserless.read_tools import capability_manifest
+        manifest=capability_manifest({"p":{"github":{},"runtime":{},"git":{},"evidence":{},"repo":{"shadow":{"write_enabled":True,"write_paths":["x.txt"],"tests":{},"publish_repository":"x/y"}}}})
+        self.assertEqual(manifest["p"]["aliases"]["repo"],["shadow"])
+        self.assertIn("shadow",manifest["p"]["repo"])
