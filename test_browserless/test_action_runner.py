@@ -33,18 +33,31 @@ class ActionRunnerTest(unittest.TestCase):
         self.store.finish_job(job["id"],{"decision":"continue","actions":[action]})
         return job
 
-    def test_action_result_creates_one_evidence_event_then_unchanged_repeat_is_suppressed(self):
-        self.plan_action("seed-1")
+    def test_action_result_creates_one_suppression_signal_and_repeat_state_is_idempotent(self):
+        action={"type":"github.read","target":"repo:issue:107","purpose":"fresh","payload":""}
+        self.plan_action("seed-1", action)
         executor=FakeExecutor()
         first=execute_once(self.store,executor)
         self.assertEqual(first["status"],"done"); self.assertTrue(first["event_created"])
         # Process the evidence event as if Luna requested the same read again.
         self.store.ensure_jobs(); evidence_job=self.store.claim_job()
-        self.store.finish_job(evidence_job["id"],{"decision":"continue","actions":[{"type":"github.read","target":"repo:issue:107","purpose":"recheck"}]})
+        self.store.finish_job(evidence_job["id"],{"decision":"continue","actions":[action]})
         second=execute_once(self.store,executor)
-        self.assertEqual(second["status"],"suppressed"); self.assertFalse(second["event_created"])
-        self.assertEqual(executor.calls,2)
-        self.assertEqual(self.store.counts()["events"],2)  # seed + first evidence only
+        self.assertEqual(second["status"],"suppressed"); self.assertTrue(second["event_created"])
+        self.assertTrue(second["suppression_event_created"])
+        row=self.store.db.execute("SELECT material_json FROM observations WHERE source='evidence' AND subject LIKE 'suppressed:%'").fetchone()
+        import json
+        material=json.loads(row[0])
+        self.assertTrue(material["suppressed_unchanged"]); self.assertEqual(material["action_type"],"github.read")
+        self.assertEqual(material["target"],"repo:issue:107"); self.assertEqual(len(material["result_sha256"]),64)
+        # Bypass core once to prove the suppression observation itself is idempotent for the same result state.
+        self.store.ensure_jobs(); suppression_job=self.store.claim_job()
+        self.store.finish_job(suppression_job["id"],{"decision":"continue","actions":[action]})
+        third=execute_once(self.store,executor)
+        self.assertEqual(third["status"],"suppressed"); self.assertFalse(third["event_created"])
+        self.assertFalse(third["suppression_event_created"])
+        self.assertEqual(executor.calls,3)
+        self.assertEqual(self.store.counts()["events"],3)  # seed + first evidence + one suppression signal
 
     def test_repeated_identical_failure_creates_bounded_retry_evidence(self):
         action={"type":"repo.patch","target":"repo","purpose":"patch","payload":"diff"}

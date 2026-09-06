@@ -47,6 +47,14 @@ def process_once(store, client, governor=None, capabilities_by_project=None, git
             store.block_job(job["id"], "repeated_action_failure")
             return {"status":"blocked", "reason":"repeated_action_failure", "api_called":True,
                     "job_id":job["id"], "cost_usd":cost}
+    if isinstance(material, dict) and material.get("suppressed_unchanged") and decision.get("decision") == "continue":
+        suppressed_type = str(material.get("action_type") or "")
+        suppressed_target = str(material.get("target") or "")
+        if any(action.get("type") == suppressed_type and action.get("target") == suppressed_target
+               for action in list(decision.get("actions") or [])):
+            store.block_job(job["id"], "repeated_suppressed_action")
+            return {"status":"blocked", "reason":"repeated_suppressed_action", "api_called":True,
+                    "job_id":job["id"], "cost_usd":cost}
     store.update_checkpoint(project["id"], decision["checkpoint"])
     store.finish_job(job["id"], decision)
     return {"status": "done", "api_called": True, "job_id": job["id"], "decision": decision["decision"], "cost_usd": cost}

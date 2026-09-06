@@ -122,6 +122,34 @@ class CoreTest(unittest.TestCase):
         result=process_once(self.store,RetryClient())
         self.assertEqual(result["status"],"blocked"); self.assertEqual(result["reason"],"repeated_action_failure")
         self.assertEqual(self.store.counts()["planned_actions"],0)
+    def test_suppressed_unchanged_same_action_is_blocked_before_executor(self):
+        payload={"material":{"suppressed_unchanged":True,"action_type":"github.read",
+                             "target":"repo:pr:351","result_sha256":"a"*64},
+                 "summary":"unchanged evidence already authoritative"}
+        self.store.enqueue_event("p1","evt-suppressed","observation.evidence",payload)
+        class RepeatClient:
+            def decide(self,*_args,**_kwargs):
+                return {"response_id":"repeat","decision":{"decision":"continue","message":"repeat",
+                    "actions":[{"type":"github.read","target":"repo:pr:351","purpose":"again","payload":""}],
+                    "checkpoint":CHECKPOINT},"usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":50}}
+        result=process_once(self.store,RepeatClient())
+        self.assertEqual(result["status"],"blocked"); self.assertEqual(result["reason"],"repeated_suppressed_action")
+        self.assertEqual(self.store.counts()["planned_actions"],0)
+
+    def test_suppressed_unchanged_allows_distinct_next_action(self):
+        payload={"material":{"suppressed_unchanged":True,"action_type":"github.read",
+                             "target":"repo:pr:351","result_sha256":"a"*64},
+                 "summary":"unchanged evidence already authoritative"}
+        self.store.enqueue_event("p1","evt-suppressed-distinct","observation.evidence",payload)
+        class DistinctClient:
+            def decide(self,*_args,**_kwargs):
+                return {"response_id":"distinct","decision":{"decision":"continue","message":"inspect files",
+                    "actions":[{"type":"github.read","target":"repo:prfiles:351","purpose":"files","payload":""}],
+                    "checkpoint":CHECKPOINT},"usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":50}}
+        result=process_once(self.store,DistinctClient())
+        self.assertEqual(result["status"],"done"); self.assertEqual(result["decision"],"continue")
+        self.assertEqual(self.store.counts()["planned_actions"],1)
+
     def test_invalid_model_response_usage_is_recorded_before_block(self):
         self.store.enqueue_event("p1","evt-invalid-usage","github",{"summary":"invalid model output"})
         class InvalidClient:
