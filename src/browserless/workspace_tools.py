@@ -44,8 +44,9 @@ def _workspace_identity(project_id, job_id):
 
 
 class WorkspaceToolExecutor:
-    def __init__(self, bindings, bwrap_path="/usr/bin/bwrap", sandbox_runner=None):
+    def __init__(self, bindings, store=None, bwrap_path="/usr/bin/bwrap", sandbox_runner=None):
         self.bindings = bindings
+        self.store = store
         self.bwrap_path = bwrap_path
         self.sandbox_runner = sandbox_runner or subprocess.run
 
@@ -111,17 +112,25 @@ class WorkspaceToolExecutor:
         if ":" in target: raise ReadActionError("invalid_repo_prepare_target")
         binding=self._binding(project,target)
         if not binding.get("write_enabled"): raise ReadActionError("repo_write_disabled")
+        if self.store is None: raise ReadActionError("repo_workspace_store_unavailable")
         root=binding["path"]; base=binding["base_branch"]
-        branch, dirname=_workspace_identity(project_id, action["job_id"])
         workspace_root=Path(binding["workspace_root"]); workspace_root.mkdir(parents=True,exist_ok=True); workspace_root.chmod(0o700)
-        workspace=workspace_root/dirname
-        if workspace.exists():
+        active=self.store.active_repo_workspace(project_id,target)
+        if active:
+            workspace=Path(active["workspace_path"])
+            try: workspace.resolve().relative_to(workspace_root.resolve())
+            except ValueError: raise ReadActionError("repo_workspace_path_mismatch") from None
+            if not workspace.is_dir(): raise ReadActionError("repo_workspace_missing")
             top=_run(["git","-C",str(workspace),"rev-parse","--show-toplevel"]).stdout.strip()
             current=_run(["git","-C",str(workspace),"branch","--show-current"]).stdout.strip()
-            if Path(top).resolve()!=workspace.resolve() or current!=branch: raise ReadActionError("repo_workspace_identity_mismatch")
-            base_sha=_run(["git","-C",str(workspace),"rev-parse","HEAD"]).stdout.strip()
+            if Path(top).resolve()!=workspace.resolve() or current!=active["branch"]:
+                raise ReadActionError("repo_workspace_identity_mismatch")
             return {"ok":True,"kind":"repo","operation":"prepare","alias":target,"workspace":str(workspace),
-                    "branch":branch,"base_sha":base_sha,"reused":True}
+                    "branch":active["branch"],"base_sha":active["base_sha"],"reused":True,
+                    "workspace_id":active["id"]}
+        branch, dirname=_workspace_identity(project_id, action["job_id"])
+        workspace=workspace_root/dirname
+        if workspace.exists(): raise ReadActionError("repo_workspace_untracked_collision")
         remote=_run(["git","-C",root,"ls-remote","origin",f"refs/heads/{base}"]).stdout.strip().split()
         if len(remote)<2 or not re.fullmatch(r"[0-9a-fA-F]{40,64}",remote[0]): raise ReadActionError("repo_remote_head_unavailable")
         base_sha=remote[0]
@@ -129,8 +138,14 @@ class WorkspaceToolExecutor:
         exists=_run(["git","-C",root,"show-ref","--verify","--quiet",f"refs/heads/{branch}"],allow=(0,1)).returncode==0
         if exists: raise ReadActionError("repo_branch_already_exists")
         _run(["git","-C",root,"worktree","add","-b",branch,str(workspace),base_sha],timeout=60)
+        try:
+            active=self.store.register_repo_workspace(project_id,target,branch,str(workspace),base_sha)
+        except Exception:
+            _run(["git","-C",root,"worktree","remove","--force",str(workspace)],timeout=60,allow=(0,128))
+            _run(["git","-C",root,"branch","-D",branch],timeout=30,allow=(0,1,128))
+            raise ReadActionError("repo_workspace_state_failed") from None
         return {"ok":True,"kind":"repo","operation":"prepare","alias":target,"workspace":str(workspace),
-                "branch":branch,"base_sha":base_sha,"reused":False}
+                "branch":branch,"base_sha":base_sha,"reused":False,"workspace_id":active["id"]}
 
     def _test(self, project_id, project, action, target):
         parts=target.split(":",1)
@@ -139,11 +154,16 @@ class WorkspaceToolExecutor:
         if not binding.get("write_enabled"): raise ReadActionError("repo_write_disabled")
         command=binding.get("tests",{}).get(test_alias)
         if not command: raise ReadActionError("repo_test_alias_not_allowed")
-        branch,dirname=_workspace_identity(project_id,action["job_id"])
-        workspace=Path(binding["workspace_root"])/dirname
+        if self.store is None: raise ReadActionError("repo_workspace_store_unavailable")
+        active=self.store.active_repo_workspace(project_id,alias)
+        if not active: raise ReadActionError("repo_workspace_missing")
+        workspace=Path(active["workspace_path"])
+        workspace_root=Path(binding["workspace_root"])
+        try: workspace.resolve().relative_to(workspace_root.resolve())
+        except ValueError: raise ReadActionError("repo_workspace_path_mismatch") from None
         if not workspace.is_dir(): raise ReadActionError("repo_workspace_missing")
         current=_run(["git","-C",str(workspace),"branch","--show-current"]).stdout.strip()
-        if current!=branch: raise ReadActionError("repo_workspace_identity_mismatch")
+        if current!=active["branch"]: raise ReadActionError("repo_workspace_identity_mismatch")
         if self.sandbox_runner is subprocess.run and not Path(self.bwrap_path).is_file():
             raise ReadActionError("repo_test_sandbox_unavailable")
         argv=[self.bwrap_path,"--die-with-parent","--unshare-all",

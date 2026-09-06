@@ -18,6 +18,17 @@ class StoreTest(unittest.TestCase):
     def test_database_file_is_private_by_default(self):
         self.assertEqual(Path(self.db).stat().st_mode & 0o777, 0o600)
 
+    def test_repo_workspace_is_durable_unique_and_closeable(self):
+        created=self.store.register_repo_workspace("p1","repo","autopilot/browserless/p1/job-1","/tmp/ws-1","a"*40)
+        self.assertEqual(created["branch"],"autopilot/browserless/p1/job-1")
+        self.store.close(); self.store=BrowserlessStore(self.db)
+        active=self.store.active_repo_workspace("p1","repo")
+        self.assertEqual(active["workspace_path"],"/tmp/ws-1")
+        with self.assertRaises(Exception):
+            self.store.register_repo_workspace("p1","repo","other","/tmp/ws-2","b"*40)
+        self.assertTrue(self.store.close_repo_workspace("p1","repo","abandoned"))
+        self.assertIsNone(self.store.active_repo_workspace("p1","repo"))
+
     def test_event_key_is_idempotent(self):
         self.assertTrue(self.store.enqueue_event("p1", "evt-1", "github", {"summary":"x"}))
         self.assertFalse(self.store.enqueue_event("p1", "evt-1", "github", {"summary":"x"}))

@@ -71,11 +71,12 @@ def load_tool_bindings(path, env=None):
                 raise ValueError(f"invalid repo binding: {project_id}/{alias}")
             if write_enabled and not workspace_root.is_absolute():
                 raise ValueError(f"invalid repo workspace root: {project_id}/{alias}")
+            root_resolved = root.resolve()
+            workspace_resolved = workspace_root.resolve() if write_enabled else None
             if write_enabled:
-                root_resolved = root.resolve()
-                workspace_resolved = workspace_root.resolve()
-                if workspace_resolved == root_resolved or root_resolved in workspace_resolved.parents:
-                    raise ValueError(f"repo workspace must be outside canonical repo: {project_id}/{alias}")
+                if (workspace_resolved == root_resolved or root_resolved in workspace_resolved.parents
+                        or workspace_resolved in root_resolved.parents):
+                    raise ValueError(f"repo workspace must be disjoint from canonical repo: {project_id}/{alias}")
             if not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", base_branch) or ".." in base_branch or base_branch.startswith("-"):
                 raise ValueError(f"invalid repo base branch: {project_id}/{alias}")
             normalized_tests = {}
@@ -92,7 +93,7 @@ def load_tool_bindings(path, env=None):
             timeout = int((raw or {}).get("testTimeoutSeconds") or 600)
             if timeout < 1 or timeout > 900:
                 raise ValueError(f"invalid repo test timeout: {project_id}/{alias}")
-            project["repo"][str(alias)] = {"path": str(root), "workspace_root": str(workspace_root) if write_enabled else "",
+            project["repo"][str(alias)] = {"path": str(root_resolved), "workspace_root": str(workspace_resolved) if write_enabled else "",
                                                 "base_branch": base_branch, "write_enabled": write_enabled,
                                                 "tests": normalized_tests, "test_timeout": timeout}
         projects[str(project_id)] = project
