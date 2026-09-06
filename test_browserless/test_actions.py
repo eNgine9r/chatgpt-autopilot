@@ -10,6 +10,14 @@ class ActionContractTest(unittest.TestCase):
         self.assertEqual(SAFE_ACTION_TYPES, READ_ONLY_ACTION_TYPES + WORKSPACE_ACTION_TYPES)
         self.assertEqual(validate_actions([{"type":"repo.prepare","target":"autopilot","purpose":"isolated workspace"}])[0]["type"], "repo.prepare")
 
+    def test_workspace_action_must_be_single_step(self):
+        with self.assertRaises(ValueError):
+            validate_actions([
+                {"type":"repo.prepare","target":"autopilot","purpose":"prepare"},
+                {"type":"repo.test","target":"autopilot:browserless","purpose":"test"},
+            ])
+        self.assertEqual(validate_actions([{"type":"repo.prepare","target":"autopilot","purpose":"prepare"}])[0]["type"], "repo.prepare")
+
     def test_mutating_or_browser_actions_fail_closed(self):
         for kind in ("repo.patch", "repo.commit", "repo.push", "github.write", "runtime.restart", "trading.execute", "hardware.write", "modbus.write", "browser.navigate", "deploy.execute"):
             with self.assertRaises(ValueError, msg=kind):

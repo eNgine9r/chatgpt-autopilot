@@ -4,7 +4,8 @@ import json
 import time
 
 from .ingress import ingest_observation
-from .read_tools import ReadActionError, ReadToolExecutor, load_tool_bindings
+from .read_tools import ReadActionError, load_tool_bindings
+from .safe_tools import SafeToolExecutor
 from .store import BrowserlessStore
 
 
@@ -24,7 +25,7 @@ def execute_once(store, executor):
         error_code = exc.code
         result = {"ok":False, "error_code":error_code, "kind":action["type"], "target":action["target"]}
     document = {"material":result,
-                "summary":f"Read-only evidence action {action['type']}: {'ok' if result.get('ok') else 'failed'}",
+                "summary":f"Safe evidence/workspace action {action['type']}: {'ok' if result.get('ok') else 'failed'}",
                 "metadata":{"actionId":action["id"], "actionType":action["type"], "target":action["target"]},
                 "evidence":[]}
     observation = ingest_observation(store, action["project_id"], "evidence", _subject(action), document)
@@ -38,7 +39,7 @@ def execute_once(store, executor):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Execute planned Browserless read-only evidence actions")
+    parser = argparse.ArgumentParser(description="Execute planned Browserless safe evidence/workspace actions")
     parser.add_argument("--db", required=True)
     parser.add_argument("--tools", required=True)
     parser.add_argument("--once", action="store_true")
@@ -47,7 +48,7 @@ def main(argv=None):
     store = BrowserlessStore(args.db)
     try:
         store.recover_running_actions()
-        executor = ReadToolExecutor(load_tool_bindings(args.tools))
+        executor = SafeToolExecutor(load_tool_bindings(args.tools), store=store)
         while True:
             result = execute_once(store, executor)
             print(json.dumps(result, ensure_ascii=False), flush=True)

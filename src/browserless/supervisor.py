@@ -43,7 +43,7 @@ def main(argv=None):
         enqueue_checkpoint_bootstraps(store)
         client = LunaResponsesClient()
         governor = BudgetGovernor(hard_budget_usd=args.hard_budget_usd)
-        executor = SafeToolExecutor(load_tool_bindings(args.tools))
+        executor = SafeToolExecutor(load_tool_bindings(args.tools), store=store)
         if args.ingress_bindings:
             server = create_server(args.db, load_bindings(args.ingress_bindings), args.ingress_host, args.ingress_port)
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)

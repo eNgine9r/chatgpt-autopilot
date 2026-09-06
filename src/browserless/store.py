@@ -59,6 +59,12 @@ class BrowserlessStore:
           response_id TEXT NOT NULL DEFAULT '', model TEXT NOT NULL, input_tokens INTEGER NOT NULL,
           cached_input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
           cost_usd REAL NOT NULL, created_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS repo_workspaces(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id),
+          alias TEXT NOT NULL, branch TEXT NOT NULL, workspace_path TEXT NOT NULL, base_sha TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_repo_workspaces_active
+          ON repo_workspaces(project_id,alias) WHERE status='active';
         CREATE INDEX IF NOT EXISTS idx_events_status ON events(status,id);
         CREATE INDEX IF NOT EXISTS idx_jobs_status_project ON jobs(status,project_id,id);
         CREATE INDEX IF NOT EXISTS idx_usage_created ON usage(created_at);
@@ -258,6 +264,37 @@ class BrowserlessStore:
                 "sequence": int(row["sequence"]), "type": row["action_type"], "target": row["target"],
                 "purpose": row["purpose"], "status": row["status"],
                 "result": json.loads(row["result_json"] or "{}"), "last_error": row["last_error"]}
+
+
+    def active_repo_workspace(self, project_id: str, alias: str):
+        row = self.db.execute(
+            "SELECT * FROM repo_workspaces WHERE project_id=? AND alias=? AND status='active' ORDER BY id DESC LIMIT 1",
+            (project_id, alias),
+        ).fetchone()
+        if not row:
+            return None
+        return {"id": int(row["id"]), "project_id": row["project_id"], "alias": row["alias"],
+                "branch": row["branch"], "workspace_path": row["workspace_path"],
+                "base_sha": row["base_sha"], "status": row["status"],
+                "created_at": int(row["created_at"]), "updated_at": int(row["updated_at"])}
+
+    def register_repo_workspace(self, project_id: str, alias: str, branch: str, workspace_path: str, base_sha: str):
+        now = self._now()
+        self.db.execute(
+            """INSERT INTO repo_workspaces(project_id,alias,branch,workspace_path,base_sha,status,created_at,updated_at)
+               VALUES(?,?,?,?,?,'active',?,?)""",
+            (project_id, alias, branch, workspace_path, base_sha, now, now),
+        )
+        return self.active_repo_workspace(project_id, alias)
+
+    def close_repo_workspace(self, project_id: str, alias: str, status='closed'):
+        if status not in {'closed', 'published', 'abandoned'}:
+            raise ValueError('invalid_repo_workspace_status')
+        cur = self.db.execute(
+            "UPDATE repo_workspaces SET status=?,updated_at=? WHERE project_id=? AND alias=? AND status='active'",
+            (status, self._now(), project_id, alias),
+        )
+        return cur.rowcount == 1
 
     def block_job(self, job_id: int, reason: str):
         now = self._now()

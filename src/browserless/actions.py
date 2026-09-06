@@ -32,4 +32,6 @@ def validate_actions(actions):
         if not target or not purpose:
             raise ValueError("invalid_action_fields")
         normalized.append({"type": kind, "target": target, "purpose": purpose})
+    if any(item["type"] in WORKSPACE_ACTION_TYPES for item in normalized) and len(normalized) != 1:
+        raise ValueError("workspace_action_requires_single_step")
     return normalized
