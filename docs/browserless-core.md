@@ -98,3 +98,6 @@ Failed actions are not treated like unchanged successful reads. The first failur
 Patch apply failures keep the stable error code `repo_patch_apply_failed` and may include only a bounded machine-safe `error_detail`: `hunk_mismatch`, `corrupt_patch`, `whitespace_error`, `apply_check_failed`, or `apply_after_check_failed`. Raw git stderr, local filesystem paths, and arbitrary error text are never forwarded into Luna context. For `hunk_mismatch`, Luna should re-read the exact tracked file before regenerating the patch.
 
 `repo.patch` payloads must be raw git-style unified diffs beginning with `diff --git a/<path> b/<path>` and containing matching `--- a/<path>` / `+++ b/<path>` headers. Markdown fences are not valid patch payload.
+
+## Structured-action production contract
+Only `repo.patch` may carry a non-empty action `payload`; every other safe action must use exactly `payload=""` and place human-readable intent in `purpose`. The validator remains fail-closed on any non-patch payload. If an OpenAI response is received but rejected by structured validation, its returned token usage is still recorded in the durable cost ledger before the job is blocked, so invalid model output cannot bypass the budget governor.

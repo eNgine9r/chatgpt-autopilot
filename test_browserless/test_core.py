@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from src.browserless.core import process_once
 from src.browserless.cost import BudgetGovernor
-from src.browserless.openai_client import LunaResponsesClient
+from src.browserless.openai_client import LunaResponsesClient, InvalidModelResponse
 from src.browserless.store import BrowserlessStore
 from src.browserless.ingress import ingest_observation
 
@@ -122,3 +122,17 @@ class CoreTest(unittest.TestCase):
         result=process_once(self.store,RetryClient())
         self.assertEqual(result["status"],"blocked"); self.assertEqual(result["reason"],"repeated_action_failure")
         self.assertEqual(self.store.counts()["planned_actions"],0)
+    def test_invalid_model_response_usage_is_recorded_before_block(self):
+        self.store.enqueue_event("p1","evt-invalid-usage","github",{"summary":"invalid model output"})
+        class InvalidClient:
+            def decide(self,*_args,**_kwargs):
+                raise InvalidModelResponse("action_payload_not_allowed",
+                    usage={"input_tokens":321,"cached_input_tokens":21,"output_tokens":45},
+                    response_id="resp_bad")
+        result=process_once(self.store,InvalidClient())
+        self.assertEqual(result["status"],"blocked")
+        self.assertEqual(result["reason"],"invalid_model_response")
+        self.assertGreater(result["cost_usd"],0)
+        row=self.store.db.execute("SELECT model,input_tokens,cached_input_tokens,output_tokens,cost_usd,response_id FROM usage").fetchone()
+        self.assertEqual(tuple(row[:4]),("gpt-5.6-luna",321,21,45))
+        self.assertGreater(row[4],0); self.assertEqual(row[5],"resp_bad")
