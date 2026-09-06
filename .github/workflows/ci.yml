@@ -17,10 +17,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install dependencies
         run: npm install --ignore-scripts
       - name: Policy tests
         run: npm test
+      - name: Browserless core tests
+        run: npm run test:browserless
+      - name: Browserless syntax checks
+        run: npm run check:browserless
       - name: JavaScript syntax checks
         run: npm run check
       - name: Shell syntax checks

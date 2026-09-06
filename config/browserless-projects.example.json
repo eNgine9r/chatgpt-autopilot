@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "id": "example-project",
+      "planVersion": "2026-09-04-v1",
+      "planAnchor": "Replace this with the governed Plan Anchor for the project.",
+      "checkpoint": {
+        "goal": "Bootstrap Browserless project",
+        "stage": "active"
+      }
+    }
+  ]
+}
