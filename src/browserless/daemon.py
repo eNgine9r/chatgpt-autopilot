@@ -20,7 +20,7 @@ def load_projects(store, config_path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Luna-first Browserless Autopilot Core")
     parser.add_argument("--db", required=True)
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--idle-seconds", type=float, default=30.0)
     parser.add_argument("--hard-budget-usd", type=float, default=30.0)
@@ -28,7 +28,10 @@ def main(argv=None):
 
     store = BrowserlessStore(args.db)
     try:
-        load_projects(store, args.config)
+        if args.config:
+            load_projects(store, args.config)
+        if not store.project_ids():
+            parser.error("Browserless store has no projects; provide --config or import legacy state first")
         store.recover_running_jobs()
         client = LunaResponsesClient()
         governor = BudgetGovernor(hard_budget_usd=args.hard_budget_usd)
