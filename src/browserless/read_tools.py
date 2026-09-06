@@ -118,6 +118,45 @@ def load_tool_bindings(path, env=None):
     return projects
 
 
+def capability_manifest(bindings):
+    """Return a bounded, non-secret tool contract for Luna context."""
+    syntax = {
+        "github.read": "<github-alias>:issue|pr|commit|run:<identity>",
+        "runtime.read": "<runtime-alias>",
+        "git.read": "<git-alias>:head|branch|status|diffstat OR <git-alias>:log:<1-20>",
+        "evidence.read": "<evidence-alias>:<relative .json/.md/.txt file>",
+        "repo.read": "<repo-alias>:file:<tracked-path> OR <repo-alias>:tree[:prefix] OR <repo-alias>:search:<literal>",
+        "repo.prepare": "<repo-alias>",
+        "repo.patch": "<repo-alias>; put unified diff only in payload",
+        "repo.test": "<repo-alias>:<test-alias>",
+        "repo.commit": "<repo-alias>",
+        "repo.publish": "<repo-alias>",
+    }
+    result = {}
+    for project_id, project in sorted((bindings or {}).items()):
+        repos = {}
+        for alias, repo in sorted((project.get("repo") or {}).items())[:8]:
+            write_enabled = bool(repo.get("write_enabled"))
+            repos[str(alias)] = {
+                "readModes": ["file", "tree", "search"],
+                "writeEnabled": write_enabled,
+                "writePaths": [str(x)[:240] for x in list(repo.get("write_paths") or [])[:16]] if write_enabled else [],
+                "testAliases": sorted(str(x)[:80] for x in (repo.get("tests") or {}))[:16] if write_enabled else [],
+                "publishEnabled": bool(write_enabled and repo.get("publish_repository")),
+            }
+        result[str(project_id)] = {
+            "syntax": syntax,
+            "aliases": {
+                "github": sorted(str(x)[:80] for x in (project.get("github") or {}))[:16],
+                "runtime": sorted(str(x)[:80] for x in (project.get("runtime") or {}))[:16],
+                "git": sorted(str(x)[:80] for x in (project.get("git") or {}))[:16],
+                "evidence": sorted(str(x)[:80] for x in (project.get("evidence") or {}))[:16],
+            },
+            "repo": repos,
+        }
+    return result
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, _req, _fp, _code, _msg, _headers, _newurl):
         return None

@@ -3,7 +3,7 @@ from .cost import BudgetGovernor, luna_cost
 from .openai_client import InvalidModelResponse, MissingCredentialError, MODEL
 
 
-def process_once(store, client, governor=None):
+def process_once(store, client, governor=None, capabilities_by_project=None):
     governor = governor or BudgetGovernor()
     store.ensure_jobs()
     job = store.claim_job()
@@ -11,7 +11,8 @@ def process_once(store, client, governor=None):
         return {"status": "idle", "api_called": False}
 
     project = store.project(job["project_id"])
-    context = compile_context(project, job)
+    capabilities = (capabilities_by_project or {}).get(project["id"], {})
+    context = compile_context(project, job, capabilities)
     preflight = governor.preflight(store.month_cost(), context)
     if not preflight["allowed"]:
         store.block_job(job["id"], "monthly_budget_exhausted")

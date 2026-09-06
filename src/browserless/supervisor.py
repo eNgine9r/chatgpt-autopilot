@@ -9,13 +9,13 @@ from .core import process_once
 from .cost import BudgetGovernor
 from .ingress_server import create_server, load_bindings
 from .openai_client import LunaResponsesClient
-from .read_tools import load_tool_bindings
+from .read_tools import capability_manifest, load_tool_bindings
 from .safe_tools import SafeToolExecutor
 from .store import BrowserlessStore
 
 
-def run_once(store, client, executor, governor):
-    ai = process_once(store, client, governor)
+def run_once(store, client, executor, governor, capabilities_by_project=None):
+    ai = process_once(store, client, governor, capabilities_by_project)
     action = execute_action_once(store, executor)
     return {"ai": ai, "action": action}
 
@@ -43,13 +43,15 @@ def main(argv=None):
         enqueue_checkpoint_bootstraps(store)
         client = LunaResponsesClient()
         governor = BudgetGovernor(hard_budget_usd=args.hard_budget_usd)
-        executor = SafeToolExecutor(load_tool_bindings(args.tools), store=store)
+        tool_bindings = load_tool_bindings(args.tools)
+        capabilities = capability_manifest(tool_bindings)
+        executor = SafeToolExecutor(tool_bindings, store=store)
         if args.ingress_bindings:
             server = create_server(args.db, load_bindings(args.ingress_bindings), args.ingress_host, args.ingress_port)
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
             thread.start()
         while True:
-            result = run_once(store, client, executor, governor)
+            result = run_once(store, client, executor, governor, capabilities)
             print(json.dumps(result, ensure_ascii=False), flush=True)
             if args.once:
                 return 0
