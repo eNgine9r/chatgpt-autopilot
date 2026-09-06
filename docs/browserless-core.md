@@ -101,3 +101,6 @@ Patch apply failures keep the stable error code `repo_patch_apply_failed` and ma
 
 ## Structured-action production contract
 Only `repo.patch` may carry a non-empty action `payload`; every other safe action must use exactly `payload=""` and place human-readable intent in `purpose`. The validator remains fail-closed on any non-patch payload. If an OpenAI response is received but rejected by structured validation, its returned token usage is still recorded in the durable cost ledger before the job is blocked, so invalid model output cannot bypass the budget governor.
+
+## Private GitHub read authentication
+A GitHub read binding may use either `tokenEnv` or `useGhAuth: true`; the two modes are mutually exclusive. `useGhAuth` reuses the local GitHub CLI credential store without copying a token into Browserless configuration or environment files. Browserless invokes only fixed `gh api --hostname github.com --method GET repos/<configured-repository>/<allowlisted-resource>` commands with `shell=False`, prompts disabled, and a minimal subprocess environment that excludes OpenAI/webhook secrets. Returned issue bodies are not forwarded to Luna; only a SHA-256 body hash and bounded metadata are retained.

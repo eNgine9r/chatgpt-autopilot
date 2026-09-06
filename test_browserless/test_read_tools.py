@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import tempfile
@@ -37,6 +38,43 @@ class ReadToolsTest(unittest.TestCase):
         self.assertNotIn("Authorization", seen["headers"])
         self.assertNotIn("private body", str(result))
         self.assertEqual(len(result["data"]["body_sha256"]), 64)
+
+    def test_github_read_via_gh_uses_fixed_get_and_minimal_env(self):
+        bindings={"p1":{"github":{"private":{"repository":"owner/private-repo","token":"","use_gh_auth":True}},
+                        "runtime":{},"git":{},"evidence":{}}}
+        seen={}
+        class Result:
+            returncode=0; stderr=""
+            stdout=json.dumps({"number":7,"title":"Private issue","state":"open","labels":[],"body":"secret body"})
+        def runner(command, **kwargs):
+            seen.update(command=command, kwargs=kwargs)
+            return Result()
+        previous=os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"]="SHOULD_NOT_LEAK"
+        try:
+            result=ReadToolExecutor(bindings,gh_runner=runner).execute(self.action("github.read","private:issue:7"))
+        finally:
+            if previous is None: os.environ.pop("OPENAI_API_KEY",None)
+            else: os.environ["OPENAI_API_KEY"]=previous
+        self.assertEqual(seen["command"],["gh","api","--hostname","github.com","--method","GET","repos/owner/private-repo/issues/7"])
+        self.assertFalse(seen["kwargs"]["check"]); self.assertNotIn("shell",seen["kwargs"])
+        self.assertEqual(seen["kwargs"]["timeout"],15)
+        env=seen["kwargs"]["env"]
+        self.assertEqual(env["GH_HOST"],"github.com"); self.assertEqual(env["GH_PROMPT_DISABLED"],"1")
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"],"0"); self.assertNotIn("OPENAI_API_KEY",env)
+        self.assertNotIn("secret body",str(result)); self.assertEqual(result["data"]["title"],"Private issue")
+
+    def test_github_read_via_gh_fails_closed_on_process_or_json_error(self):
+        bindings={"p1":{"github":{"private":{"repository":"owner/private-repo","token":"","use_gh_auth":True}},
+                        "runtime":{},"git":{},"evidence":{}}}
+        class Failed: returncode=1; stdout=""; stderr="auth"
+        with self.assertRaises(ReadActionError) as ctx:
+            ReadToolExecutor(bindings,gh_runner=lambda *_a,**_k:Failed()).execute(self.action("github.read","private:issue:7"))
+        self.assertEqual(ctx.exception.code,"github_read_failed")
+        class Invalid: returncode=0; stdout="not-json"; stderr=""
+        with self.assertRaises(ReadActionError) as ctx:
+            ReadToolExecutor(bindings,gh_runner=lambda *_a,**_k:Invalid()).execute(self.action("github.read","private:issue:7"))
+        self.assertEqual(ctx.exception.code,"github_invalid_json")
 
     def test_github_target_cannot_be_arbitrary_url_or_write_resource(self):
         executor = ReadToolExecutor(self.bindings, github_get=lambda *_: {})
@@ -110,6 +148,11 @@ class ToolBindingTest(unittest.TestCase):
             loaded = load_tool_bindings(p,{"GH_TOKEN":"dummy"})
             self.assertEqual(loaded["p"]["github"]["r"]["repository"], "o/r")
             self.assertNotIn("dummy", json.dumps({"repository":loaded["p"]["github"]["r"]["repository"]}))
+            p.write_text(json.dumps({"projects":{"p":{"github":{"r":{"repository":"o/r","useGhAuth":True}}}}}))
+            loaded = load_tool_bindings(p,{})
+            self.assertTrue(loaded["p"]["github"]["r"]["use_gh_auth"]); self.assertEqual(loaded["p"]["github"]["r"]["token"],"")
+            p.write_text(json.dumps({"projects":{"p":{"github":{"r":{"repository":"o/r","tokenEnv":"GH_TOKEN","useGhAuth":True}}}}}))
+            with self.assertRaises(ValueError): load_tool_bindings(p,{"GH_TOKEN":"dummy"})
 
     def test_capability_manifest_exposes_grammar_not_secrets_or_local_targets(self):
         bindings={"p":{
