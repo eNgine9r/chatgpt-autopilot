@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .store import BrowserlessStore
 
-ALLOWED_SOURCES = {"github", "runtime", "git", "operator", "scheduler"}
+ALLOWED_SOURCES = {"github", "runtime", "git", "evidence", "operator", "scheduler"}
 VOLATILE_KEYS = {
     "timestamp", "time", "observedat", "observed_at", "checkedat", "checked_at",
     "generatedat", "generated_at", "fetchedat", "fetched_at", "lastseenat", "last_seen_at",

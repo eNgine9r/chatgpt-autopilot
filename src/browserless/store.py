@@ -42,7 +42,8 @@ class BrowserlessStore:
           id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES jobs(id),
           project_id TEXT NOT NULL REFERENCES projects(id), sequence INTEGER NOT NULL,
           action_type TEXT NOT NULL, target TEXT NOT NULL, purpose TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'planned', created_at INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'planned', result_json TEXT NOT NULL DEFAULT '{}',
+          last_error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0,
           UNIQUE(job_id,sequence));
         CREATE TABLE IF NOT EXISTS usage(
           id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id),
@@ -56,6 +57,13 @@ class BrowserlessStore:
         columns = {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}
         if "available_at" not in columns:
             self.db.execute("ALTER TABLE jobs ADD COLUMN available_at INTEGER NOT NULL DEFAULT 0")
+        action_columns = {row[1] for row in self.db.execute("PRAGMA table_info(action_requests)")}
+        if "result_json" not in action_columns:
+            self.db.execute("ALTER TABLE action_requests ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
+        if "last_error" not in action_columns:
+            self.db.execute("ALTER TABLE action_requests ADD COLUMN last_error TEXT NOT NULL DEFAULT ''")
+        if "updated_at" not in action_columns:
+            self.db.execute("ALTER TABLE action_requests ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
 
     @staticmethod
     def _now():
@@ -177,9 +185,9 @@ class BrowserlessStore:
             self.db.execute("UPDATE events SET status='done' WHERE id=?", (row["event_id"],))
             for sequence, action in enumerate(list(decision.get("actions") or [])):
                 self.db.execute(
-                    """INSERT OR IGNORE INTO action_requests(job_id,project_id,sequence,action_type,target,purpose,status,created_at)
-                    VALUES(?,?,?,?,?,?,'planned',?)""",
-                    (job_id, row["project_id"], sequence, action["type"], action["target"], action["purpose"], now),
+                    """INSERT OR IGNORE INTO action_requests(job_id,project_id,sequence,action_type,target,purpose,status,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,'planned',?,?)""",
+                    (job_id, row["project_id"], sequence, action["type"], action["target"], action["purpose"], now, now),
                 )
             self.db.execute("COMMIT")
         except Exception:
@@ -193,6 +201,54 @@ class BrowserlessStore:
         ).fetchall()
         return [{"sequence": int(row["sequence"]), "type": row["action_type"], "target": row["target"],
                  "purpose": row["purpose"], "status": row["status"]} for row in rows]
+
+
+    def recover_running_actions(self):
+        now = self._now()
+        self.db.execute(
+            "UPDATE action_requests SET status='planned',last_error='recovered_after_restart',updated_at=? WHERE status='running'",
+            (now,),
+        )
+
+    def claim_action(self):
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.db.execute("""SELECT a.* FROM action_requests a
+              WHERE a.status='planned' AND NOT EXISTS(
+                SELECT 1 FROM action_requests r WHERE r.project_id=a.project_id AND r.status='running')
+              ORDER BY a.id LIMIT 1""").fetchone()
+            if not row:
+                self.db.execute("COMMIT")
+                return None
+            now = self._now()
+            self.db.execute("UPDATE action_requests SET status='running',updated_at=? WHERE id=?", (now, row["id"]))
+            self.db.execute("COMMIT")
+            return {"id": int(row["id"]), "job_id": int(row["job_id"]), "project_id": row["project_id"],
+                    "sequence": int(row["sequence"]), "type": row["action_type"],
+                    "target": row["target"], "purpose": row["purpose"]}
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
+
+    def finish_action(self, action_id: int, status: str, result=None, last_error=""):
+        allowed = {"done", "suppressed", "failed"}
+        if status not in allowed:
+            raise ValueError("invalid_action_status")
+        cur = self.db.execute(
+            "UPDATE action_requests SET status=?,result_json=?,last_error=?,updated_at=? WHERE id=? AND status='running'",
+            (status, json.dumps(result or {}, ensure_ascii=False), str(last_error)[:300], self._now(), action_id),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("action_not_running")
+
+    def action(self, action_id: int):
+        row = self.db.execute("SELECT * FROM action_requests WHERE id=?", (action_id,)).fetchone()
+        if not row:
+            return None
+        return {"id": int(row["id"]), "job_id": int(row["job_id"]), "project_id": row["project_id"],
+                "sequence": int(row["sequence"]), "type": row["action_type"], "target": row["target"],
+                "purpose": row["purpose"], "status": row["status"],
+                "result": json.loads(row["result_json"] or "{}"), "last_error": row["last_error"]}
 
     def block_job(self, job_id: int, reason: str):
         now = self._now()
