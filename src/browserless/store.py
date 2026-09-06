@@ -227,6 +227,7 @@ class BrowserlessStore:
                             "summary": str(payload.get("summary") or "")[:500],
                             "githubEvent": str(metadata.get("githubEvent") or "")[:80],
                             "number": str(metadata.get("number") or "")[:80],
+                            "runId": str(metadata.get("runId") or "")[:80],
                             "material": payload.get("material") if isinstance(payload.get("material"), dict) else {},
                         })
                     batch_payload = {
@@ -348,6 +349,26 @@ class BrowserlessStore:
             self.db.execute("ROLLBACK")
             raise
 
+    def recent_action_result(self, project_id: str, action_type: str, target: str, before_action_id=None, within_seconds=60):
+        upper = int(before_action_id or (2**63 - 1))
+        cutoff = self._now() - max(1, int(within_seconds))
+        row = self.db.execute(
+            """SELECT result_json,status,updated_at FROM action_requests
+               WHERE project_id=? AND action_type=? AND target=? AND id<?
+                 AND status IN ('done','suppressed') AND updated_at>=?
+               ORDER BY id DESC LIMIT 1""",
+            (project_id, action_type, target, upper, cutoff),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            result = json.loads(row["result_json"] or "{}")
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(result, dict) or not result.get("ok"):
+            return None
+        return result
+
     def ranged_read_streak(self, project_id: str, target: str, before_action_id=None, window_seconds=900) -> int:
         from .read_budget import parse_ranged_read_target
         current = parse_ranged_read_target(target)
@@ -356,7 +377,7 @@ class BrowserlessStore:
         upper = int(before_action_id or (2**63 - 1))
         cutoff = self._now() - max(1, int(window_seconds))
         rows = self.db.execute(
-            """SELECT action_type,target,status,updated_at FROM action_requests
+            """SELECT action_type,target,status,updated_at,result_json FROM action_requests
                WHERE project_id=? AND id<? AND updated_at>=? ORDER BY id DESC LIMIT 32""",
             (project_id, upper, cutoff),
         ).fetchall()
@@ -365,6 +386,12 @@ class BrowserlessStore:
             previous = parse_ranged_read_target(row["target"]) if row["action_type"] == "repo.read" else None
             if not previous or previous["file_key"] != current["file_key"] or row["status"] not in {"done", "suppressed"}:
                 break
+            try:
+                prior_result = json.loads(row["result_json"] or "{}")
+            except json.JSONDecodeError:
+                prior_result = {}
+            if prior_result.get("cached_duplicate"):
+                continue
             count += 1
         return count
 

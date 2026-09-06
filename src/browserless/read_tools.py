@@ -138,7 +138,7 @@ def load_tool_bindings(path, env=None):
 def capability_manifest(bindings):
     """Return a bounded, non-secret tool contract for Luna context."""
     syntax = {
-        "github.read": "<github-alias>:issue|pr|prfiles|commit|run:<identity>",
+        "github.read": "<github-alias>:issue|pr|prfiles|commit:<identity> OR <github-alias>:run:<GitHub-run-id from runId>",
         "runtime.read": "<runtime-alias>",
         "git.read": "<git-alias>:head|branch|status|diffstat OR <git-alias>:log:<1-20>",
         "evidence.read": "<evidence-alias>:<relative .json/.md/.txt file>",

@@ -11,6 +11,7 @@ class SourceNormalizationTest(unittest.TestCase):
             "repository":{"huge":"ignored"},"logs_url":"ignored"}})
         self.assertEqual(subject, "workflow:9:abc")
         self.assertEqual(doc["material"]["conclusion"], "success")
+        self.assertEqual(doc["metadata"]["runId"], 12)
         self.assertNotIn("repository", doc["material"])
         self.assertNotIn("logs_url", doc["material"])
 

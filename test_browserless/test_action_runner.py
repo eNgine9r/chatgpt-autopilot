@@ -108,6 +108,29 @@ class ActionRunnerTest(unittest.TestCase):
         action=self.store.claim_action(); self.store.finish_action(action["id"],status,{"ok":True})
         return action
 
+    def test_exact_ranged_duplicate_reuses_recent_result_without_external_read(self):
+        action={"type":"repo.read","target":"btc:lines:100:80:app/db/stats.py","purpose":"window","payload":""}
+        self.plan_action("cooldown-first",action)
+        first_executor=FakeExecutor({"ok":True,"kind":"repo","alias":"btc","operation":"lines","content":"window","sha256":"a"*64})
+        first=execute_once(self.store,first_executor)
+        self.assertEqual(first["status"],"done"); self.assertTrue(first["external_read"]); self.assertEqual(first_executor.calls,1)
+        self.plan_action("cooldown-second",action)
+        second_executor=FakeExecutor({"ok":True,"kind":"repo","content":"must-not-run"})
+        second=execute_once(self.store,second_executor)
+        self.assertEqual(second["status"],"suppressed"); self.assertFalse(second["external_read"]); self.assertEqual(second_executor.calls,0)
+        stored=self.store.action(second["action_id"]); self.assertTrue(stored["result"]["cached_duplicate"])
+        self.assertEqual(self.store.ranged_read_streak("p",action["target"]),1)
+
+    def test_exact_ranged_duplicate_cache_expires_after_sixty_seconds(self):
+        action={"type":"repo.read","target":"btc:lines:200:80:app/db/stats.py","purpose":"window","payload":""}
+        self.plan_action("cooldown-expire-first",action)
+        first=execute_once(self.store,FakeExecutor({"ok":True,"kind":"repo","content":"old"}))
+        self.store.db.execute("UPDATE action_requests SET updated_at=updated_at-120 WHERE id=?",(first["action_id"],))
+        self.plan_action("cooldown-expire-second",action)
+        executor=FakeExecutor({"ok":True,"kind":"repo","content":"fresh"})
+        second=execute_once(self.store,executor)
+        self.assertTrue(second["external_read"]); self.assertEqual(executor.calls,1)
+
     def test_seventh_consecutive_ranged_read_is_blocked_before_executor(self):
         for i in range(6):
             self._finish_direct_action(f"range-{i}",f"btc:lines:{1+i*100}:100:app/db/stats.py")
