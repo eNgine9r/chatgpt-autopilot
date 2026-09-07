@@ -34,6 +34,12 @@ const completionLabel = (value) => ({
   complete_pending_evidence:"очікує доказів",
   blocked:"заблокована"
 }[String(value || "")] || oneLine(value, "активна"));
+
+const money = (value) => `$${Number(value || 0).toFixed(Number(value || 0) < 10 ? 2 : 0)}`;
+const compactNumber = (value) => new Intl.NumberFormat("uk-UA", { notation:"compact", maximumFractionDigits:1 }).format(Number(value || 0));
+const percent = (value) => `${Number(value || 0).toFixed(0)}%`;
+const aiProject = (id) => (lastData?.browserless?.projects || []).find((item) => item.id === id) || null;
+const aiDecisionLabel = (value) => ({ continue:"продовжує", wait:"очікує", user_action_required:"дія користувача", escalation_required:"потрібна увага" }[String(value || "")] || oneLine(value, "очікує"));
 let currentFilter = "all";
 let lastData = null;
 const expandedProjects = new Set();
@@ -44,6 +50,22 @@ async function api(path, options={}) {
   if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
   return payload;
 }function projectStatus(p) {
+  const ai = aiProject(p.id);
+  const browserless = lastData?.browserless;
+  if (browserless?.available && ai) {
+    const serviceOnline = browserless.service?.online !== false;
+    const latest = ai.latestJob || {};
+    const cp = ai.checkpoint || {};
+    const queued = Number(ai.jobs?.pending || 0) + Number(ai.jobs?.running || 0);
+    const blockers = Array.isArray(cp.blockers) ? cp.blockers.length : 0;
+    const attentionDecision = ["user_action_required","escalation_required"].includes(latest.decision);
+    if (!serviceOnline) return { label:"AI офлайн", tone:"bad", paused:false, attention:true, active:false };
+    if (latest.status === "blocked" || blockers) return { label:"Потрібна увага", tone:"bad", paused:false, attention:true, active:false };
+    if (attentionDecision) return { label:"Потрібна дія", tone:"warn", paused:false, attention:true, active:false };
+    if (queued || ["pending","running"].includes(latest.status)) return { label:"Обробка", tone:"info", paused:false, attention:false, active:true };
+    if (["complete","complete_verified"].includes(cp.stage)) return { label:"Завершено", tone:"ok", paused:false, attention:false, active:false };
+    return { label:"Очікує події", tone:"ok", paused:false, attention:false, active:false };
+  }
   const runtime = p.state?.runtime || {};
   const paused = Boolean(p.state?.control?.paused);
   const online = p.worker?.online !== false;
@@ -71,6 +93,16 @@ function checkpointSummary(p) {
   return { label:c.fingerprint ? `#${Number(c.revision || 0)}` : "—", tone:verified ? "ok" : c.fingerprint ? "warn" : "", state:c };
 }function chip(label, value, tone="") {
   return `<span class="chip ${tone}">${esc(label)}<strong>${esc(value)}</strong></span>`;
+}
+
+function browserlessProjectBlock(ai) {
+  if (!ai) return "";
+  const cp = ai.checkpoint || {};
+  const latest = ai.latestJob || {};
+  const usage = ai.usageMonth || {};
+  const queue = Number(ai.jobs?.pending || 0) + Number(ai.jobs?.running || 0);
+  const blockers = (cp.blockers || []).length ? cp.blockers.join(" • ") : "Немає";
+  return `<section class="detail-panel ai-project-panel"><div class="detail-title">AI-автопілот <span class="detail-meta">${esc(aiDecisionLabel(latest.decision))}</span></div><div class="kv-list"><div class="kv-row kv-stack"><span>Поточна задача</span><b>${esc(cp.currentTask || "Очікує нової матеріальної події")}</b></div><div class="kv-row kv-stack"><span>Наступний крок</span><b>${esc(cp.nextAction || "—")}</b></div><div class="kv-row"><span>Job</span><b>${esc(latest.status || "—")} · ${queue} активних</b></div><div class="kv-row"><span>Luna за місяць</span><b>${Number(usage.calls || 0)} · ${money(usage.costUsd)}</b></div><div class="kv-row kv-stack"><span>Перешкоди</span><b>${esc(blockers)}</b></div></div></section>`;
 }
 
 function checkpointBlock(p) {
@@ -107,16 +139,20 @@ function discoveryBlock(p) {
   return `<section class="detail-panel"><div class="detail-title">Чати <span class="detail-meta">лише цей проєкт</span></div>${candidate}<div class="detail-actions"><button data-id="${esc(p.id)}" data-action="scan_chats">Перевірити чати</button>${adopt}</div></section>`;
 }
 
-function technicalActions(p, online) {
-  const disabled = online ? "" : " disabled";
-  return `<section class="detail-panel"><div class="detail-title">Технічні дії <span class="detail-meta">розширені</span></div><div class="detail-actions"><button data-id="${esc(p.id)}" data-action="restart"${disabled}>Оновити вкладку</button><button data-id="${esc(p.id)}" data-action="rollover" class="danger-lite"${disabled}>Новий чат</button></div></section>`;
+function technicalActions(p, online, forceDisabled=false) {
+  const disabled = online && !forceDisabled ? "" : " disabled";
+  return `<section class="detail-panel"><div class="detail-title">Резервний Chromium <span class="detail-meta">окреме підтвердження</span></div><div class="detail-actions"><button data-id="${esc(p.id)}" data-action="restart"${disabled}>Оновити вкладку</button><button data-id="${esc(p.id)}" data-action="rollover" class="danger-lite"${disabled}>Новий чат</button></div></section>`;
 }function projectTask(p) {
+  const ai = aiProject(p.id);
+  if (lastData?.browserless?.available && ai) return oneLine(ai.checkpoint?.currentTask || ai.checkpoint?.nextAction, "Очікує нової матеріальної події");
   const c = p.state?.checkpoint || {};
   return oneLine(c.currentTask || p.state?.runtime?.latestAssistantExcerpt, "Немає активної задачі");
 }
 
 function card(p) {
   const status = projectStatus(p);
+  const ai = aiProject(p.id);
+  const browserlessActive = Boolean(lastData?.browserless?.available && ai);
   const checkpoint = checkpointSummary(p);
   const mirror = mirrorSummary(p);
   const online = p.worker?.online !== false;
@@ -124,10 +160,24 @@ function card(p) {
   const workerName = p.worker?.name || p.worker?.id || "воркер недоступний";
   const open = expandedProjects.has(p.id) ? " open" : "";
   const disabled = online ? "" : " disabled";
-  const primaryAction = status.paused ? "resume" : "pause";
-  const primaryLabel = status.paused ? "▶ Відновити" : "Ⅱ Пауза";
   const chatLink = p.chatUrl ? `<a class="chat-link" href="${esc(p.chatUrl)}">Чат ↗</a>` : `<span class="chat-link">Без чату</span>`;
-  return `<article class="project-card" data-project="${esc(p.id)}"><div class="card-main"><div class="card-head"><div class="project-heading"><h2 class="project-name">${esc(p.name)}</h2><div class="worker-line">Воркер: ${esc(workerName)} · ${online ? "онлайн" : "офлайн"}</div></div><span class="status-pill ${status.tone}">${esc(status.label)}</span></div><div class="chip-row">${chip("Пульс",ago(runtime.lastSeenAt),online?"ok":"bad")}${chip("КТ",checkpoint.label,checkpoint.tone)}${chip("Синхр.",mirror.label,mirror.tone)}${chip("План",String(p.planVersion || "v1").replace(/^2026-/,""))}</div><div class="task-box"><span class="task-label">Поточна задача</span><p class="task-text">${esc(projectTask(p))}</p></div><div class="primary-actions"><button data-id="${esc(p.id)}" data-action="${primaryAction}" class="action-button primary"${disabled}>${primaryLabel}</button>${chatLink}</div></div><details class="project-details" data-project-id="${esc(p.id)}"${open}><summary>Технічні деталі</summary><div class="details-body"><section class="detail-panel"><div class="detail-title">Остання відповідь <span class="detail-meta">прогрес ${ago(runtime.lastProgressAt)}</span></div><p class="detail-text">${esc(cleanPreview(runtime.latestAssistantExcerpt))}</p></section>${checkpointBlock(p)}${recoveryBlock(p)}${mirrorBlock(p)}${discoveryBlock(p)}${technicalActions(p,online)}</div></details></article>`;
+  let subtitle; let chips; let actions; let details;
+  if (browserlessActive) {
+    const latest = ai.latestJob || {};
+    const aiTone = status.tone === "bad" ? "bad" : status.tone === "warn" ? "warn" : "ok";
+    subtitle = `AI: Browserless · Luna · ${lastData.browserless.service?.online ? "онлайн" : "офлайн"}`;
+    chips = `${chip("AI",aiDecisionLabel(latest.decision),aiTone)}${chip("Luna",`${Number(ai.usageMonth?.calls || 0)} викл.`)}${chip("КТ",completionLabel(ai.checkpoint?.stage || "active"))}${chip("План",String(ai.planVersion || p.planVersion || "v1").replace(/^2026-/,""))}`;
+    actions = `<div class="primary-actions ai-primary"><span class="mode-badge">Подієвий режим</span>${chatLink}</div>`;
+    details = `${browserlessProjectBlock(ai)}${technicalActions(p,online,true)}`;
+  } else {
+    subtitle = `Воркер: ${workerName} · ${online ? "онлайн" : "офлайн"}`;
+    chips = `${chip("Пульс",ago(runtime.lastSeenAt),online?"ok":"bad")}${chip("КТ",checkpoint.label,checkpoint.tone)}${chip("Синхр.",mirror.label,mirror.tone)}${chip("План",String(p.planVersion || "v1").replace(/^2026-/,""))}`;
+    const primaryAction = status.paused ? "resume" : "pause";
+    const primaryLabel = status.paused ? "▶ Відновити" : "Ⅱ Пауза";
+    actions = `<div class="primary-actions"><button data-id="${esc(p.id)}" data-action="${primaryAction}" class="action-button primary"${disabled}>${primaryLabel}</button>${chatLink}</div>`;
+    details = `<section class="detail-panel"><div class="detail-title">Остання відповідь <span class="detail-meta">прогрес ${ago(runtime.lastProgressAt)}</span></div><p class="detail-text">${esc(cleanPreview(runtime.latestAssistantExcerpt))}</p></section>${checkpointBlock(p)}${recoveryBlock(p)}${mirrorBlock(p)}${discoveryBlock(p)}${technicalActions(p,online)}`;
+  }
+  return `<article class="project-card" data-project="${esc(p.id)}"><div class="card-main"><div class="card-head"><div class="project-heading"><h2 class="project-name">${esc(p.name)}</h2><div class="worker-line">${esc(subtitle)}</div></div><span class="status-pill ${status.tone}">${esc(status.label)}</span></div><div class="chip-row">${chips}</div><div class="task-box"><span class="task-label">Поточна задача</span><p class="task-text">${esc(projectTask(p))}</p></div>${actions}</div><details class="project-details" data-project-id="${esc(p.id)}"${open}><summary>Технічні деталі</summary><div class="details-body">${details}</div></details></article>`;
 }
 
 function matchesFilter(p) {
@@ -136,7 +186,26 @@ function matchesFilter(p) {
   if (currentFilter === "paused") return s.paused;
   if (currentFilter === "attention") return s.attention;
   return true;
-}function renderOverview(data) {
+}function renderBrowserless(data) {
+  const root = $("browserless");
+  const b = data.browserless;
+  if (!b) { root.hidden = true; return; }
+  root.hidden = false;
+  if (!b.available) {
+    root.innerHTML = `<div class="ai-card-head"><div><span class="section-kicker">AI-АВТОПІЛОТ</span><h2>Browserless + Luna</h2><p>Телеметрія тимчасово недоступна.</p></div><span class="status-pill bad">Недоступно</span></div>`;
+    return;
+  }
+  const q = b.queue || {}; const month = b.usage?.month || {}; const budget = b.budget || {}; const activity = b.activity || {};
+  const activeJobs = Number(q.jobsPending || 0) + Number(q.jobsRunning || 0);
+  const activeEvents = Number(q.eventsPending || 0) + Number(q.eventsQueued || 0);
+  const activeActions = Number(q.actionsPlanned || 0) + Number(q.actionsRunning || 0);
+  const online = b.service?.online !== false;
+  const hardPct = Math.min(100, Math.max(0, Number(budget.hardUtilizationPct || 0)));
+  const queueTone = activeJobs || activeEvents || activeActions ? "info" : "ok";
+  root.innerHTML = `<div class="ai-card-head"><div><span class="section-kicker">AI-АВТОПІЛОТ</span><h2>Browserless + Luna</h2><p>Подієвий режим · без Chromium polling · остання подія ${ago(activity.lastEventAt)}</p></div><span class="status-pill ${online ? "ok" : "bad"}">${online ? "Онлайн" : "Офлайн"}</span></div><div class="budget-head"><div><span class="budget-value">${money(budget.monthCostUsd)}</span><span class="budget-label">за місяць · ціль ${money(budget.targetMonthlyUsd)} · hard ${money(budget.hardMonthlyUsd)}</span></div><span class="budget-remaining">залишок ${money(budget.remainingHardUsd)}</span></div><div class="budget-track"><span style="width:${hardPct.toFixed(2)}%"></span></div><div class="ai-metrics"><div class="ai-metric"><strong>${Number(month.calls || 0)}</strong><span>Luna виклики</span></div><div class="ai-metric"><strong>${compactNumber(month.inputTokens)}</strong><span>Вхідні токени</span></div><div class="ai-metric"><strong>${compactNumber(month.cachedInputTokens)}</strong><span>Кеш · ${percent(b.usage?.cacheRatioPct)}</span></div><div class="ai-metric"><strong>${compactNumber(month.outputTokens)}</strong><span>Вихідні токени</span></div><div class="ai-metric ${activeJobs ? "attention" : ""}"><strong>${activeJobs}</strong><span>Активні jobs</span></div><div class="ai-metric"><strong>${Number(activity.eventsToday || 0)}</strong><span>Події сьогодні</span></div></div><div class="ai-foot"><span class="chip ${queueTone}">Черга<strong>${activeEvents} подій · ${activeJobs} jobs · ${activeActions} дій</strong></span><span class="ai-last">Luna ${ago(activity.lastUsageAt)}</span></div>`;
+}
+
+function renderOverview(data) {
   const projects = data.projects || [];
   const stats = projects.reduce((acc,p)=>{
     const s = projectStatus(p);
@@ -157,12 +226,23 @@ function renderProjects(data) {
 function render(data) {
   lastData = data;
   renderOverview(data);
+  renderBrowserless(data);
   renderProjects(data);
   const workers = data.workers || [];
   const onlineWorkers = workers.filter(w => w.online).length;
-  $("workersStatus").textContent = `${onlineWorkers}/${workers.length} ${pluralUk(workers.length,"воркер","воркери","воркерів")} онлайн · безпечний перезапуск залишає проєкти на паузі.`;
+  const browserlessActive = Boolean(data.browserless?.available && data.browserless?.service?.online);
+  if (browserlessActive) {
+    $("workersStatus").textContent = `Резервний Chromium: ${onlineWorkers}/${workers.length} онлайн · production працює через Browserless. Резерв потребує окремого підтвердження.`;
+    $("restartService").disabled = true;
+    $("restartService").textContent = "Резервний Chromium вимкнено";
+  } else {
+    $("workersStatus").textContent = `${onlineWorkers}/${workers.length} ${pluralUk(workers.length,"воркер","воркери","воркерів")} онлайн · fallback режим.`;
+    $("restartService").disabled = false;
+    $("restartService").textContent = "Перезапустити резервні воркери";
+  }
   const projectCount = (data.projects || []).length;
-  $("updated").textContent = `${projectCount} ${pluralUk(projectCount,"проєкт","проєкти","проєктів")} · ${onlineWorkers}/${workers.length} ${pluralUk(workers.length,"воркер","воркери","воркерів")} · ${new Date(data.generatedAt).toLocaleTimeString("uk-UA",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
+  const runtimeLabel = data.browserless?.available ? `Browserless ${data.browserless.service?.online ? "онлайн" : "офлайн"}` : `${onlineWorkers}/${workers.length} воркерів`;
+  $("updated").textContent = `${projectCount} ${pluralUk(projectCount,"проєкт","проєкти","проєктів")} · ${runtimeLabel} · ${new Date(data.generatedAt).toLocaleTimeString("uk-UA",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
 }function showMessage(text) {
   $("message").textContent = text || "";
 }

@@ -15,6 +15,7 @@
       <button id="refresh" class="icon-button" type="button" aria-label="Оновити статус">↻</button>
     </header>
     <section id="overview" class="overview-grid" aria-label="Огляд проєктів"></section>
+    <section id="browserless" class="ai-card" aria-label="AI-автопілот"></section>
     <nav id="filters" class="filter-bar" aria-label="Фільтр проєктів">
       <button type="button" class="filter active" data-filter="all">Усі</button>
       <button type="button" class="filter" data-filter="active">Активні</button>
@@ -23,11 +24,11 @@
     </nav>    <section id="projects" class="projects" aria-live="polite"></section>
     <section class="maintenance-card" aria-labelledby="maintenanceTitle">
       <div class="maintenance-copy">
-        <span class="section-kicker">ОБСЛУГОВУВАННЯ</span>
-        <h2 id="maintenanceTitle">Воркери Autopilot</h2>
-        <p id="workersStatus">Безпечний перезапуск усіх воркерів із перевіркою стану.</p>
+        <span class="section-kicker">РЕЗЕРВ</span>
+        <h2 id="maintenanceTitle">Резервний Chromium</h2>
+        <p id="workersStatus">Браузерний fallback вимкнено у production.</p>
       </div>
-      <button id="restartService" class="danger-button" type="button">Перезапустити воркери</button>
+      <button id="restartService" class="danger-button" type="button">Перезапустити резервні воркери</button>
     </section>
     <p id="message" class="toast" role="status" aria-live="polite"></p>
   </main>

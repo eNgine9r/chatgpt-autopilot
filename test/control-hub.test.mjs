@@ -29,7 +29,8 @@ test("Telegram control hub authenticates owner and routes worker actions", async
   const server = await createControlServer({
     host: "127.0.0.1", port: 0, projects: [], runtimeStore: null, progressWatchdog: null,
     logger: { info() {}, error() {} }, telegramBotToken: "123:test", telegramOwnerUserId: "42",
-    miniappDir: miniapp(), controlRegistry: registry
+    miniappDir: miniapp(), controlRegistry: registry,
+    statusProvider: async () => ({ available:true, mode:"event-driven", model:"gpt-5.6-luna", projects:[] })
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -40,7 +41,10 @@ test("Telegram control hub authenticates owner and routes worker actions", async
   const headers = { authorization: `tma ${signed("123:test", 42)}`, "content-type": "application/json" };
   const status = await fetch(`${base}/api/status`, { headers });
   assert.equal(status.status, 200);
-  assert.equal((await status.json()).projects[0].id, "btc");
+  const statusBody = await status.json();
+  assert.equal(statusBody.projects[0].id, "btc");
+  assert.equal(statusBody.browserless.available, true);
+  assert.equal(statusBody.browserless.model, "gpt-5.6-luna");
   const pause = await fetch(`${base}/api/projects/btc/action`, { method: "POST", headers, body: JSON.stringify({ action: "pause" }) });
   assert.equal(pause.status, 200);
   assert.deepEqual(calls[0], ["btc", "pause"]);
