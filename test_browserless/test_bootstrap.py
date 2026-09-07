@@ -118,3 +118,37 @@ class BootstrapQuiescenceTest(unittest.TestCase):
                     self.assertIsNotNone(store.claim_action())
                 self.assertEqual(enqueue_checkpoint_bootstraps(store), [])
                 store.close()
+    def test_latest_blocked_job_quiesces_reboot_bootstrap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.make_store(tmp); self.finish_decision(store, "continue")
+            store.enqueue_event("p1", "budget-block", "operator.task", {"summary":"x","material":{},"metadata":{},"evidence":[]})
+            store.ensure_jobs(); job=store.claim_job(); self.assertIsNotNone(job)
+            store.block_job(job["id"], "monthly_budget_exhausted")
+            self.assertEqual(store.latest_job_state("p1")["status"], "blocked")
+            before=store.counts()["events"]
+            self.assertEqual(enqueue_checkpoint_bootstraps(store), [])
+            self.assertEqual(store.counts()["events"], before)
+            store.close()
+
+    def test_new_done_continue_after_blocked_job_reenables_bootstrap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.make_store(tmp); self.finish_decision(store, "continue")
+            store.enqueue_event("p1", "budget-block", "operator.task", {"summary":"x","material":{},"metadata":{},"evidence":[]})
+            store.ensure_jobs(); blocked=store.claim_job(); store.block_job(blocked["id"], "monthly_budget_exhausted")
+            store.enqueue_event("p1", "fresh-recovery", "operator.task", {"summary":"fresh","material":{},"metadata":{},"evidence":[]})
+            store.ensure_jobs(); recovered=store.claim_job(); self.assertIsNotNone(recovered)
+            store.finish_job(recovered["id"], {"decision":"continue","actions":[]})
+            result=enqueue_checkpoint_bootstraps(store)
+            self.assertEqual(len(result),1); self.assertTrue(result[0]["inserted"])
+            store.close()
+
+    def test_fresh_event_after_blocked_job_queues_without_bootstrap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.make_store(tmp); self.finish_decision(store, "continue")
+            store.enqueue_event("p1", "budget-block", "operator.task", {"summary":"x","material":{},"metadata":{},"evidence":[]})
+            store.ensure_jobs(); blocked=store.claim_job(); store.block_job(blocked["id"], "monthly_budget_exhausted")
+            store.enqueue_event("p1", "fresh-after-block", "observation.github", {"summary":"fresh","material":{},"metadata":{},"evidence":[]})
+            self.assertEqual(enqueue_checkpoint_bootstraps(store), [])
+            self.assertEqual(store.ensure_jobs(),1)
+            job=store.claim_job(); self.assertEqual(job["kind"],"observation.github")
+            store.close()
