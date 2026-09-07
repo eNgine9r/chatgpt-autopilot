@@ -52,5 +52,8 @@ test("Mini App makes Browserless telemetry primary and Chromium controls fallbac
   assert.match(app, /Резервний Chromium вимкнено/);
   assert.match(css, /\.ai-metrics\{[^}]*grid-template-columns:repeat\(3/s);
   assert.match(css, /@media\(max-width:520px\)[\s\S]*\.ai-metrics\{grid-template-columns:repeat\(2/s);
+  assert.match(app, /const aiProjectIds = new Set/);
+  assert.match(app, /const browserlessMode = Boolean\(data.browserless\)/);
+  assert.match(app, /Browserless потребує уваги/);
   assert.match(css, /\.budget-track/);
 });

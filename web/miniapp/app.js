@@ -52,7 +52,9 @@ async function api(path, options={}) {
 }function projectStatus(p) {
   const ai = aiProject(p.id);
   const browserless = lastData?.browserless;
-  if (browserless?.available && ai) {
+  if (browserless) {
+    if (!browserless.available) return { label:"AI недоступний", tone:"bad", paused:false, attention:true, active:false };
+    if (!ai) return { label:"Немає AI-стану", tone:"bad", paused:false, attention:true, active:false };
     const serviceOnline = browserless.service?.online !== false;
     const latest = ai.latestJob || {};
     const cp = ai.checkpoint || {};
@@ -152,7 +154,8 @@ function technicalActions(p, online, forceDisabled=false) {
 function card(p) {
   const status = projectStatus(p);
   const ai = aiProject(p.id);
-  const browserlessActive = Boolean(lastData?.browserless?.available && ai);
+  const browserlessMode = Boolean(lastData?.browserless);
+  const browserlessActive = Boolean(browserlessMode && lastData.browserless.available && ai);
   const checkpoint = checkpointSummary(p);
   const mirror = mirrorSummary(p);
   const online = p.worker?.online !== false;
@@ -162,11 +165,15 @@ function card(p) {
   const disabled = online ? "" : " disabled";
   const chatLink = p.chatUrl ? `<a class="chat-link" href="${esc(p.chatUrl)}">Чат ↗</a>` : `<span class="chat-link">Без чату</span>`;
   let subtitle; let chips; let actions; let details;
-  if (browserlessActive) {
-    const latest = ai.latestJob || {};
+  if (browserlessMode) {
+    const latest = ai?.latestJob || {};
     const aiTone = status.tone === "bad" ? "bad" : status.tone === "warn" ? "warn" : "ok";
-    subtitle = `AI: Browserless · Luna · ${lastData.browserless.service?.online ? "онлайн" : "офлайн"}`;
-    chips = `${chip("AI",aiDecisionLabel(latest.decision),aiTone)}${chip("Luna",`${Number(ai.usageMonth?.calls || 0)} викл.`)}${chip("КТ",completionLabel(ai.checkpoint?.stage || "active"))}${chip("План",String(ai.planVersion || p.planVersion || "v1").replace(/^2026-/,""))}`;
+    subtitle = browserlessActive
+      ? `AI: Browserless · Luna · ${lastData.browserless.service?.online ? "онлайн" : "офлайн"}`
+      : "AI: Browserless · телеметрія недоступна";
+    chips = ai
+      ? `${chip("AI",aiDecisionLabel(latest.decision),aiTone)}${chip("Luna",`${Number(ai.usageMonth?.calls || 0)} викл.`)}${chip("КТ",completionLabel(ai.checkpoint?.stage || "active"))}${chip("План",String(ai.planVersion || p.planVersion || "v1").replace(/^2026-/,""))}`
+      : `${chip("AI","недоступно","bad")}${chip("План",String(p.planVersion || "v1").replace(/^2026-/,""))}`;
     actions = `<div class="primary-actions ai-primary"><span class="mode-badge">Подієвий режим</span>${chatLink}</div>`;
     details = `${browserlessProjectBlock(ai)}${technicalActions(p,online,true)}`;
   } else {
@@ -207,9 +214,11 @@ function matchesFilter(p) {
 
 function renderOverview(data) {
   const projects = data.projects || [];
+  const aiProjectIds = new Set((data.browserless?.projects || []).map(item => item.id));
+  const aiOnline = Boolean(data.browserless?.available && data.browserless?.service?.online !== false);
   const stats = projects.reduce((acc,p)=>{
     const s = projectStatus(p);
-    if (p.worker?.online !== false) acc.online += 1;
+    if (data.browserless ? (aiOnline && aiProjectIds.has(p.id)) : p.worker?.online !== false) acc.online += 1;
     if (s.active) acc.active += 1;
     if (s.paused) acc.paused += 1;
     if (s.attention) acc.attention += 1;
@@ -230,18 +239,21 @@ function render(data) {
   renderProjects(data);
   const workers = data.workers || [];
   const onlineWorkers = workers.filter(w => w.online).length;
+  const browserlessMode = Boolean(data.browserless);
   const browserlessActive = Boolean(data.browserless?.available && data.browserless?.service?.online);
-  if (browserlessActive) {
-    $("workersStatus").textContent = `Резервний Chromium: ${onlineWorkers}/${workers.length} онлайн · production працює через Browserless. Резерв потребує окремого підтвердження.`;
+  if (browserlessMode) {
+    $("workersStatus").textContent = browserlessActive
+      ? `Резервний Chromium: ${onlineWorkers}/${workers.length} онлайн · production працює через Browserless. Резерв потребує окремого підтвердження.`
+      : "Browserless потребує уваги. Резервний Chromium заблоковано до окремого підтвердження.";
     $("restartService").disabled = true;
     $("restartService").textContent = "Резервний Chromium вимкнено";
   } else {
-    $("workersStatus").textContent = `${onlineWorkers}/${workers.length} ${pluralUk(workers.length,"воркер","воркери","воркерів")} онлайн · fallback режим.`;
+    $("workersStatus").textContent = `${onlineWorkers}/${workers.length} ${pluralUk(workers.length,"воркер","воркери","воркерів")} онлайн · резервний режим.`;
     $("restartService").disabled = false;
     $("restartService").textContent = "Перезапустити резервні воркери";
   }
   const projectCount = (data.projects || []).length;
-  const runtimeLabel = data.browserless?.available ? `Browserless ${data.browserless.service?.online ? "онлайн" : "офлайн"}` : `${onlineWorkers}/${workers.length} воркерів`;
+  const runtimeLabel = browserlessMode ? `Browserless ${browserlessActive ? "онлайн" : "потребує уваги"}` : `${onlineWorkers}/${workers.length} воркерів`;
   $("updated").textContent = `${projectCount} ${pluralUk(projectCount,"проєкт","проєкти","проєктів")} · ${runtimeLabel} · ${new Date(data.generatedAt).toLocaleTimeString("uk-UA",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
 }function showMessage(text) {
   $("message").textContent = text || "";
