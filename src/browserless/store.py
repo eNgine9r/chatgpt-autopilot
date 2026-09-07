@@ -339,6 +339,16 @@ class BrowserlessStore:
         ).fetchone()
         return bool(action)
 
+    def latest_job_state(self, project_id: str) -> dict:
+        row = self.db.execute(
+            "SELECT id,status,last_error,decision_json FROM jobs WHERE project_id=? ORDER BY id DESC LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if not row:
+            return {}
+        return {"id": int(row["id"]), "status": str(row["status"]),
+                "last_error": str(row["last_error"] or "")}
+
     def latest_completed_decision(self, project_id: str) -> dict:
         row = self.db.execute(
             "SELECT decision_json FROM jobs WHERE project_id=? AND status='done' AND decision_json!='{}' ORDER BY id DESC LIMIT 1",

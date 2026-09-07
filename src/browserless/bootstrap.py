@@ -24,6 +24,9 @@ def enqueue_checkpoint_bootstraps(store):
             continue
         if store.has_unfinished_work(project_id):
             continue
+        latest_job = store.latest_job_state(project_id)
+        if latest_job.get("status") == "blocked":
+            continue
         latest_decision = store.latest_completed_decision(project_id)
         if latest_decision.get("decision") in {"wait", "user_action_required", "escalation_required"}:
             continue
