@@ -64,6 +64,32 @@ class StoreTest(unittest.TestCase):
         self.store.finish_job(first["id"], {"decision":"wait"})
         self.assertIsNotNone(self.store.claim_job())
 
+    def test_same_project_job_waits_until_planned_and_running_actions_drain(self):
+        self.store.enqueue_event("p1", "seed-action", "seed", {})
+        self.store.ensure_jobs(); first=self.store.claim_job()
+        self.store.finish_job(first["id"], {"decision":"continue","actions":[
+            {"type":"github.read","target":"repo:issue:1","purpose":"read","payload":""}]})
+        self.store.enqueue_event("p1", "next-job", "seed", {})
+        self.store.ensure_jobs()
+        self.assertIsNone(self.store.claim_job())
+        action=self.store.claim_action(); self.assertIsNotNone(action)
+        self.assertIsNone(self.store.claim_job())
+        self.store.finish_action(action["id"], "done", {"ok":True}, "")
+        next_job=self.store.claim_job(); self.assertIsNotNone(next_job)
+        self.assertEqual(next_job["project_id"], "p1")
+
+    def test_other_project_job_can_run_while_first_project_actions_are_pending(self):
+        self.store.register_project("p2", "2026-09-04-v1", "anchor", {})
+        self.store.enqueue_event("p1", "seed-action", "seed", {})
+        self.store.ensure_jobs(); first=self.store.claim_job()
+        self.store.finish_job(first["id"], {"decision":"continue","actions":[
+            {"type":"github.read","target":"repo:issue:1","purpose":"read","payload":""}]})
+        self.store.enqueue_event("p1", "p1-next", "seed", {})
+        self.store.enqueue_event("p2", "p2-next", "seed", {})
+        self.store.ensure_jobs()
+        claimed=self.store.claim_job(); self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["project_id"], "p2")
+
     def test_register_project_preserves_newer_durable_checkpoint(self):
         self.store.update_checkpoint("p1", {"goal":"new"})
         self.store.register_project("p1", "2026-09-04-v1", "anchor2", {"goal":"stale"})

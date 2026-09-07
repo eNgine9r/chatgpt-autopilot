@@ -285,6 +285,8 @@ class BrowserlessStore:
             row = self.db.execute("""SELECT j.*,e.kind,e.payload_json FROM jobs j JOIN events e ON e.id=j.event_id
               WHERE j.status='pending' AND j.available_at<=? AND NOT EXISTS(
                 SELECT 1 FROM jobs r WHERE r.project_id=j.project_id AND r.status='running')
+              AND NOT EXISTS(
+                SELECT 1 FROM action_requests a WHERE a.project_id=j.project_id AND a.status IN ('planned','running'))
               ORDER BY j.id LIMIT 1""", (self._now(),)).fetchone()
             if not row:
                 self.db.execute("COMMIT")
