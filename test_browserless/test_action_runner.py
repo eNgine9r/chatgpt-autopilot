@@ -54,10 +54,17 @@ class ActionRunnerTest(unittest.TestCase):
         self.store.ensure_jobs(); suppression_job=self.store.claim_job()
         self.store.finish_job(suppression_job["id"],{"decision":"continue","actions":[action]})
         third=execute_once(self.store,executor)
-        self.assertEqual(third["status"],"suppressed"); self.assertFalse(third["event_created"])
-        self.assertFalse(third["suppression_event_created"])
+        self.assertEqual(third["status"],"suppressed"); self.assertTrue(third["event_created"])
+        self.assertFalse(third["suppression_event_created"]); self.assertTrue(third["suppression_reused_event_created"])
+        reused=self.store.db.execute("SELECT payload_json FROM events WHERE event_key LIKE 'suppression-reused:%'").fetchone()
+        self.assertIsNotNone(reused)
+        reused_payload=json.loads(reused[0]); self.assertTrue(reused_payload["material"]["suppressed_unchanged"])
+        self.assertTrue(reused_payload["material"]["suppression_reused"])
+        self.assertEqual(reused_payload["material"]["target"],"repo:issue:107")
         self.assertEqual(executor.calls,3)
-        self.assertEqual(self.store.counts()["events"],3)  # seed + first evidence + one suppression signal
+        self.assertEqual(self.store.counts()["events"],4)  # seed + first evidence + suppression signal + reused continuation
+        count=self.store.db.execute("SELECT COUNT(*) FROM observations WHERE source='evidence' AND subject LIKE 'suppressed:%'").fetchone()[0]
+        self.assertEqual(count,1)
 
     def test_repeated_identical_failure_creates_bounded_retry_evidence(self):
         action={"type":"repo.patch","target":"repo","purpose":"patch","payload":"diff"}
