@@ -101,11 +101,24 @@ def execute_once(store, executor):
         }
         suppression = ingest_observation(store, action["project_id"], "evidence",
                                          _suppression_subject(action), suppression_document)
+    suppression_reused_event_created = False
+    if suppression is not None and not suppression["event_created"]:
+        reused_document = {
+            **suppression_document,
+            "material": {**suppression_document["material"], "suppression_reused": True},
+            "summary": "Previously suppressed unchanged evidence is still authoritative; choose a distinct action, wait, complete, or escalate",
+            "metadata": {**suppression_document["metadata"], "reason": "unchanged_suppression_already_seen",
+                         "actionId": action["id"]},
+        }
+        suppression_reused_event_created = store.enqueue_event(
+            action["project_id"], f"suppression-reused:{action['project_id']}:{action['id']}",
+            "observation.evidence", reused_document)
     store.finish_action(action["id"], status, result, error_code)
-    event_created = observation["event_created"] if suppression is None else suppression["event_created"]
+    event_created = observation["event_created"] if suppression is None else (suppression["event_created"] or suppression_reused_event_created)
     return {"status":status, "external_read":performed_external_read, "action_id":action["id"],
             "evidence_changed":observation["changed"], "event_created":event_created,
-            "suppression_event_created":bool(suppression and suppression["event_created"])}
+            "suppression_event_created":bool(suppression and suppression["event_created"]),
+            "suppression_reused_event_created":suppression_reused_event_created}
 
 
 def main(argv=None):
