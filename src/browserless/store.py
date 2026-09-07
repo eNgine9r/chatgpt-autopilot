@@ -318,6 +318,38 @@ class BrowserlessStore:
             self.db.execute("ROLLBACK")
             raise
 
+    def has_unfinished_work(self, project_id: str) -> bool:
+        event = self.db.execute(
+            "SELECT 1 FROM events WHERE project_id=? AND status IN ('pending','queued') LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if event:
+            return True
+        job = self.db.execute(
+            "SELECT 1 FROM jobs WHERE project_id=? AND status IN ('pending','running') LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if job:
+            return True
+        action = self.db.execute(
+            "SELECT 1 FROM action_requests WHERE project_id=? AND status IN ('planned','running') LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        return bool(action)
+
+    def latest_completed_decision(self, project_id: str) -> dict:
+        row = self.db.execute(
+            "SELECT decision_json FROM jobs WHERE project_id=? AND status='done' AND decision_json!='{}' ORDER BY id DESC LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if not row:
+            return {}
+        try:
+            decision = json.loads(row["decision_json"] or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return decision if isinstance(decision, dict) else {}
+
     def actions_for_job(self, job_id: int):
         rows = self.db.execute(
             "SELECT sequence,action_type,target,purpose,payload_text,status FROM action_requests WHERE job_id=? ORDER BY sequence",

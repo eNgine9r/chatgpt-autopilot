@@ -22,6 +22,11 @@ def enqueue_checkpoint_bootstraps(store):
         checkpoint = project.get("checkpoint") if isinstance(project.get("checkpoint"), dict) else {}
         if checkpoint.get("stage") != "active":
             continue
+        if store.has_unfinished_work(project_id):
+            continue
+        latest_decision = store.latest_completed_decision(project_id)
+        if latest_decision.get("decision") in {"wait", "user_action_required", "escalation_required"}:
+            continue
         current_task = str(checkpoint.get("currentTask") or "").strip()
         next_action = str(checkpoint.get("nextAction") or "").strip()
         if not current_task and not next_action:
