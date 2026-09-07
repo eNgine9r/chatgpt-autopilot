@@ -37,7 +37,7 @@ function authHeader(req) {
 export function createControlServer({
   host, port, projects, runtimeStore, progressWatchdog, logger,
   telegramBotToken, telegramOwnerUserId, miniappDir,
-  onServiceRestart = null, controlRegistry = null
+  onServiceRestart = null, controlRegistry = null, statusProvider = null
 }) {
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const staticFiles = new Map([
@@ -54,12 +54,18 @@ export function createControlServer({
   }
 
   async function statusPayload() {
-    if (controlRegistry) return controlRegistry.status();
-    return {
+    const base = controlRegistry ? await controlRegistry.status() : {
       ok: true,
       generatedAt: Date.now(),
       projects: projects.map((project) => operatorProjectStatus(project, runtimeStore, progressWatchdog))
     };
+    if (!statusProvider) return base;
+    try {
+      return { ...base, browserless: await statusProvider() };
+    } catch (error) {
+      logger.error("control_status_provider_failed", { error: String(error?.message || error) });
+      return { ...base, browserless: { available: false, mode: "event-driven", error: "telemetry_unavailable", projects: [] } };
+    }
   }
 
   const server = http.createServer(async (req, res) => {
