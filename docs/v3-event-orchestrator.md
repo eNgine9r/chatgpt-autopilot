@@ -87,3 +87,15 @@ A host without Node.js can run the gateway with Python 3 only. `config/v3-remote
 The cutover adds a separate `/autopilot-v3-github` Funnel path to the dedicated `127.0.0.1:8781/github` listener, creates or updates one callback hook per configured repository with `issues` events only, creates missing task labels, and enables the v3 service. Existing Browserless `/autopilot-events` hooks are never modified.
 
 Rollback is also dry-run unless combined with `--apply --rollback`. It removes only hooks using the v3 callback URL, removes only the v3 Funnel path, and disables v3; it does not require or modify the legacy webhook secrets.
+
+## Telegram operator bridge
+
+The v3 Telegram bridge is a separate companion process. The deterministic core never receives the Telegram bot token and the bridge exposes no inbound listener.
+
+The companion reads `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_OWNER_USER_ID` from the existing private `.env`, polls Telegram Bot API, and talks only to the local `127.0.0.1:8780` control plane.
+
+Supported commands are `/v3` or `/status`, `/approve <project-id>`, and `/retry <project-id>`. Approval and retry are state-gated; commands from any other user or chat are ignored. The bridge persists the Bot API update offset and notification fingerprints in mode-600 `state-v3/telegram.json`.
+
+Notifications are deduplicated and emitted for `waiting_approval`, `blocked`, and subsequent completion transitions. Initial already-complete states are baselined without startup spam.
+
+`bash scripts/install-v3-telegram-systemd.sh` stages `chatgpt-autopilot-v3-telegram.service` but deliberately does not enable or start it. Live Telegram activation remains a separate production acceptance decision.
