@@ -17,3 +17,7 @@ state-browserless/
 .env.local
 config/browserless-ingress.json
 config/browserless-tools.json
+
+# Autopilot v3 local runtime
+state-v3/
+config/v3-projects.json
