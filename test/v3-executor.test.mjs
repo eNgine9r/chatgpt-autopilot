@@ -84,6 +84,7 @@ test('ssh-gateway executor uses fixed ssh argv and remote operation only', async
   assert.equal(calls[0].command, 'ssh');
   assert.equal(calls[0].args.at(-1), 'inspect');
   assert.equal(calls[1].args.at(-1), 'test required');
+  assert.deepEqual(calls[0].args.slice(0, 2), ['-F', '/dev/null']);
   assert.ok(calls[0].args.includes('StrictHostKeyChecking=yes'));
   await assert.rejects(() => executor.execute(project, {
     action: 'repo.test', params: { alias: 'required;rm -rf /' },
