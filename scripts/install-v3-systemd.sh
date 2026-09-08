@@ -8,6 +8,9 @@ if [[ -z "$node_bin" ]]; then
   exit 1
 fi
 
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit="$unit_dir/chatgpt-autopilot-v3.service"
 template="$repo_dir/systemd/chatgpt-autopilot-v3.service.template"

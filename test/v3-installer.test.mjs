@@ -45,7 +45,7 @@ test('v3 installer renders secret path and preserves private secret', async () =
 
   const systemctlLog = path.join(root, 'systemctl.log');
   const fakeSystemctl = path.join(fakebin, 'systemctl');
-  await fs.writeFile(fakeSystemctl, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$SYSTEMCTL_LOG"\n');
+  await fs.writeFile(fakeSystemctl, '#!/bin/sh\nprintf "%s|%s|%s\\n" "$XDG_RUNTIME_DIR" "$DBUS_SESSION_BUS_ADDRESS" "$*" >> "$SYSTEMCTL_LOG"\n');
   await fs.chmod(fakeSystemctl, 0o755);
 
   const env = {
@@ -75,7 +75,9 @@ test('v3 installer renders secret path and preserves private secret', async () =
   assert.equal(second.code, 0, second.stderr);
   assert.equal(await fs.readFile(secretFile, 'utf8'), firstSecret);
   const calls = (await fs.readFile(systemctlLog, 'utf8')).trim().split('\n');
-  assert.deepEqual(calls, ['--user daemon-reload', '--user daemon-reload']);
+  const runtime = `/run/user/${process.getuid()}`;
+  const expected = `${runtime}|unix:path=${runtime}/bus|--user daemon-reload`;
+  assert.deepEqual(calls, [expected, expected]);
   assert.equal(calls.some((line) => /start|enable/.test(line)), false);
 
   await fs.rm(root, { recursive: true, force: true });
