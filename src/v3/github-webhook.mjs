@@ -42,7 +42,12 @@ export function translateGitHubEvent(config, eventName, deliveryId, payload) {
 
   const labels = labelsOf(payload.issue);
   const taskLabels = project.github?.taskLabels ?? [];
-  if (!taskLabels.some((label) => labels.has(label))) {
+  if (payload.action === 'labeled') {
+    const appliedLabel = typeof payload.label === 'string' ? payload.label : payload.label?.name;
+    if (!taskLabels.includes(appliedLabel)) {
+      return { ignored: true, reason: 'task_label_not_applied' };
+    }
+  } else if (!taskLabels.some((label) => labels.has(label))) {
     return { ignored: true, reason: 'task_label_missing' };
   }
 
