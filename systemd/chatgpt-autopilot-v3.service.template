@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=__REPO_DIR__
 Environment=AUTOPILOT_V3_GITHUB_SECRET_FILE=__GITHUB_SECRET_FILE__
+Environment=AUTOPILOT_V3_GITHUB_PORT=8781
 ExecStart=__NODE_BIN__ __REPO_DIR__/src/v3/index.mjs --config __REPO_DIR__/config/v3-projects.json --state-dir __REPO_DIR__/state-v3
 Restart=on-failure
 RestartSec=5

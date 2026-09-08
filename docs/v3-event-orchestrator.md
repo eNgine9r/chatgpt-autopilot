@@ -26,7 +26,7 @@ The foundation server binds to `127.0.0.1:8780` by default.
 - `GET /projects` reads durable local project state.
 - `POST /events` accepts a bounded JSON event and returns the resulting state plus an optional deterministic dispatch.
 
-`POST /github` is an authenticated GitHub ingress on the same loopback-only listener. It requires an HMAC-SHA256 webhook secret; public exposure and GitHub hook creation remain separate rollout steps.
+`POST /github` is isolated on a second loopback-only listener (default `127.0.0.1:8781`). The local control plane stays on `127.0.0.1:8780` and does not expose `/github`; the GitHub listener does not expose `/events` or `/projects`. A valid HMAC-SHA256 webhook secret is required before the GitHub listener starts.
 
 ## Project configuration
 
@@ -70,4 +70,4 @@ Projects may bind exactly one GitHub repository plus one or more explicit task l
 
 The adapter verifies `X-Hub-Signature-256` against the exact raw request body and uses `X-GitHub-Delivery` as the durable event ID. Cross-repository, unsigned, tampered, unlabelled and unsupported events fail closed or are ignored without running project actions.
 
-The installer generates and preserves a private 32-byte webhook secret under `state-v3/` and injects only its file path into the disabled v3 user service. The listener still binds only to `127.0.0.1`; exposing `/github` and creating repository webhooks are separate acceptance steps.
+The installer generates and preserves a private 32-byte webhook secret under `state-v3/` and injects only its file path into the disabled v3 user service. Both listeners bind only to `127.0.0.1`; exposing the dedicated GitHub port and creating repository webhooks are separate acceptance steps.
