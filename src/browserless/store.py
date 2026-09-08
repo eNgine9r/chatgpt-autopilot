@@ -181,6 +181,31 @@ class BrowserlessStore:
             "last_seen_at": int(row["last_seen_at"]), "changed_at": int(row["changed_at"]),
         }
 
+    def suppress_hash_only_github_comments(self) -> int:
+        rows = self.db.execute(
+            "SELECT id,payload_json FROM events WHERE status='pending' AND kind='observation.github' ORDER BY id"
+        ).fetchall()
+        suppressed = 0
+        for row in rows:
+            payload = json.loads(row["payload_json"] or "{}")
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            material = payload.get("material") if isinstance(payload.get("material"), dict) else {}
+            if str(metadata.get("githubEvent") or "") != "issue_comment":
+                continue
+            if not str(material.get("body_sha256") or "").strip():
+                continue
+            if any(str(material.get(key) or "").strip() for key in ("body", "text", "content")):
+                continue
+            metadata = dict(metadata)
+            metadata["suppressedReason"] = "comment_body_not_persisted"
+            payload["metadata"] = metadata
+            self.db.execute(
+                "UPDATE events SET status='suppressed',payload_json=? WHERE id=? AND status='pending'",
+                (json.dumps(payload, ensure_ascii=False), int(row["id"])),
+            )
+            suppressed += 1
+        return suppressed
+
     def coalesce_pending_github_events(self, quiet_seconds=15, max_items=16, now=None) -> dict:
         now = int(now if now is not None else self._now())
         quiet_seconds = max(0, int(quiet_seconds))
@@ -257,6 +282,7 @@ class BrowserlessStore:
     def ensure_jobs(self, github_quiet_seconds=0, github_batch_max=16, now=None) -> int:
         now = int(now if now is not None else self._now())
         quiet = max(0, int(github_quiet_seconds))
+        self.suppress_hash_only_github_comments()
         if quiet:
             self.coalesce_pending_github_events(quiet, github_batch_max, now=now)
         if quiet:
