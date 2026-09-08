@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+const PROJECT_ID = /^[A-Za-z0-9._-]+$/;
+
 function safeName(id) {
-  if (!/^[A-Za-z0-9._-]+$/.test(id)) throw new Error('unsafe_project_id');
+  if (!PROJECT_ID.test(id)) throw new Error('unsafe_project_id');
   return id;
 }
 
@@ -23,7 +25,6 @@ export class JsonStateStore {
       throw error;
     }
   }
-
   async save(id, state) {
     await this.init();
     const target = this.file(id);
@@ -34,9 +35,17 @@ export class JsonStateStore {
 
   async list() {
     await this.init();
-    const names = (await fs.readdir(this.root)).filter((name) => name.endsWith('.json'));
-    return Promise.all(names.map(async (name) => {
-      return JSON.parse(await fs.readFile(path.join(this.root, name), 'utf8'));
-    }));
+    const names = (await fs.readdir(this.root))
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+    const states = [];
+    for (const name of names) {
+      const id = name.slice(0, -5);
+      if (!PROJECT_ID.test(id)) continue;
+      const value = JSON.parse(await fs.readFile(path.join(this.root, name), 'utf8'));
+      if (value?.version !== 3 || value?.projectId !== id) continue;
+      states.push(value);
+    }
+    return states;
   }
 }
