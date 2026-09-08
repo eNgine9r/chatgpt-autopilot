@@ -7,17 +7,36 @@ export const ALLOWED_TEST_COMMANDS = new Set([
   'npm', 'node', 'python3', 'pytest', 'uv', 'pnpm', 'yarn', 'cargo', 'go', 'make',
 ]);
 
+function isRemote(project) {
+  return project.transport?.type === 'ssh-gateway';
+}
+
+function validateTransport(project) {
+  if (project.transport == null) return;
+  const t = project.transport;
+  if (!t || typeof t !== 'object' || t.type !== 'ssh-gateway') throw new Error(`invalid_transport:${project.id}`);
+  if (!/^[A-Za-z0-9._-]{1,253}$/.test(String(t.host ?? ''))) throw new Error(`invalid_ssh_host:${project.id}`);
+  if (!/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(String(t.user ?? ''))) throw new Error(`invalid_ssh_user:${project.id}`);
+  if (!path.isAbsolute(String(t.identityFile ?? ''))) throw new Error(`invalid_ssh_identity:${project.id}`);
+  const port = Number(t.port ?? 22);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`invalid_ssh_port:${project.id}`);
+}
+
 function validateTests(project) {
   const tests = project.tests ?? {};
   if (!tests || typeof tests !== 'object' || Array.isArray(tests)) throw new Error(`invalid_tests:${project.id}`);
   for (const [alias, spec] of Object.entries(tests)) {
     if (!/^[A-Za-z0-9._-]+$/.test(alias) || !spec || typeof spec !== 'object') throw new Error(`invalid_test:${project.id}`);
+    const timeout = Number(spec.timeoutMs ?? 600000);
+    if (!Number.isFinite(timeout) || timeout < 100 || timeout > 1800000) throw new Error(`invalid_test_timeout:${project.id}:${alias}`);
+    if (isRemote(project)) {
+      if (spec.remote !== true) throw new Error(`invalid_remote_test:${project.id}:${alias}`);
+      continue;
+    }
     if (!ALLOWED_TEST_COMMANDS.has(spec.command)) throw new Error(`test_command_not_allowed:${project.id}:${alias}`);
     if (!Array.isArray(spec.args) || spec.args.some((arg) => typeof arg !== 'string' || arg.includes('\0'))) {
       throw new Error(`invalid_test_args:${project.id}:${alias}`);
     }
-    const timeout = Number(spec.timeoutMs ?? 600000);
-    if (!Number.isFinite(timeout) || timeout < 100 || timeout > 1800000) throw new Error(`invalid_test_timeout:${project.id}:${alias}`);
   }
 }
 
@@ -49,6 +68,7 @@ export function validateConfig(value) {
     }
     ids.add(project.id);
     if (!Array.isArray(project.steps) || project.steps.length === 0) throw new Error(`missing_steps:${project.id}`);
+    validateTransport(project);
     validateTests(project);
     validateGitHub(project, repositories);
 
@@ -59,7 +79,7 @@ export function validateConfig(value) {
       if (!ALLOWED_ACTIONS.has(step.action)) throw new Error(`unsupported_action:${project.id}:${step.id}`);
       const approval = step.approval ?? 'none';
       if (!APPROVALS.has(approval)) throw new Error(`invalid_approval:${project.id}:${step.id}`);
-      if (step.action.startsWith('repo.') && (!project.repoPath || !path.isAbsolute(project.repoPath))) {
+      if (step.action.startsWith('repo.') && !isRemote(project) && (!project.repoPath || !path.isAbsolute(project.repoPath))) {
         throw new Error(`invalid_repo_path:${project.id}`);
       }
       if (step.action === 'repo.test') {

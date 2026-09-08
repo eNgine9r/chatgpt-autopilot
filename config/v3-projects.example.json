@@ -18,10 +18,15 @@
     {
       "id": "nexolab-development",
       "enabled": true,
-      "repoPath": "/srv/nexolab",
+      "transport": {
+        "type": "ssh-gateway",
+        "host": "nexolab-edge-01",
+        "user": "nexolab",
+        "identityFile": "/home/btcradar/.ssh/autopilot-v3-nexolab"
+      },
       "github": { "repository": "eNgine9r/nexolab-platform", "taskLabels": ["autopilot"] },
       "tests": {
-        "required": { "command": "npm", "args": ["test"], "timeoutMs": 900000 }
+        "required": { "remote": true, "timeoutMs": 900000 }
       },
       "steps": [
         { "id": "inspect", "action": "repo.inspect" },

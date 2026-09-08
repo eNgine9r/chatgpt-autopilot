@@ -61,3 +61,31 @@ test('test process timeout fails closed', async () => {
     cwd: process.cwd(), timeoutMs: 100,
   }), /command_timeout/);
 });
+
+
+test('ssh-gateway executor uses fixed ssh argv and remote operation only', async () => {
+  const calls = [];
+  const runner = async (command, args, options) => {
+    calls.push({ command, args, options });
+    return { stdout: JSON.stringify({ ok: true }), stderr: '', exitCode: 0 };
+  };
+  const project = {
+    transport: {
+      type: 'ssh-gateway',
+      host: 'nexolab-edge-01',
+      user: 'nexolab',
+      identityFile: '/home/btcradar/.ssh/autopilot-v3-nexolab',
+    },
+    tests: { required: { remote: true, timeoutMs: 1234 } },
+  };
+  const executor = new DeterministicExecutor({ runner });
+  await executor.execute(project, { action: 'repo.inspect', params: {} });
+  await executor.execute(project, { action: 'repo.test', params: { alias: 'required' } });
+  assert.equal(calls[0].command, 'ssh');
+  assert.equal(calls[0].args.at(-1), 'inspect');
+  assert.equal(calls[1].args.at(-1), 'test required');
+  assert.ok(calls[0].args.includes('StrictHostKeyChecking=yes'));
+  await assert.rejects(() => executor.execute(project, {
+    action: 'repo.test', params: { alias: 'required;rm -rf /' },
+  }), /unknown_test_alias/);
+});
