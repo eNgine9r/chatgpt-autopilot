@@ -30,6 +30,10 @@
     "start:browserless": "PYTHONPATH=. python3 -m src.browserless.supervisor",
     "install:browserless-service": "bash scripts/install-browserless-systemd.sh",
     "configure:browserless-webhooks": "PYTHONPATH=. python3 -m src.browserless.webhook_config",
-    "task:browserless": "python3 -m src.browserless.operator"
+    "task:browserless": "python3 -m src.browserless.operator",
+    "start:v3": "node src/v3/index.mjs",
+    "test:v3": "node --test test/v3-*.test.mjs",
+    "check:v3": "node --check src/v3/config.mjs && node --check src/v3/store.mjs && node --check src/v3/state-machine.mjs && node --check src/v3/orchestrator.mjs && node --check src/v3/index.mjs",
+    "install:v3-service": "bash scripts/install-v3-systemd.sh"
   }
 }

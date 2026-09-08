@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "projects": [
+    {
+      "id": "btc-radar-development",
+      "enabled": true,
+      "steps": [
+        { "id": "inspect", "action": "repo.inspect" },
+        { "id": "test", "action": "repo.test", "params": { "alias": "required" } },
+        { "id": "publish", "action": "repo.publish_pr" },
+        { "id": "review", "action": "operator.review", "approval": "user" }
+      ]
+    },
+    {
+      "id": "nexolab-development",
+      "enabled": true,
+      "steps": [
+        { "id": "inspect", "action": "repo.inspect" },
+        { "id": "test", "action": "repo.test", "params": { "alias": "required" } },
+        { "id": "publish", "action": "repo.publish_pr" },
+        { "id": "review", "action": "operator.review", "approval": "user" }
+      ]
+    }
+  ]
+}
