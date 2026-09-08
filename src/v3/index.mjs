@@ -2,6 +2,8 @@ import http from 'node:http';
 import { loadConfig } from './config.mjs';
 import { JsonStateStore } from './store.mjs';
 import { Orchestrator } from './orchestrator.mjs';
+import { DeterministicExecutor } from './executor.mjs';
+import { ExecutionEngine } from './execution-engine.mjs';
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(name);
@@ -17,6 +19,7 @@ const config = await loadConfig(configPath);
 const store = new JsonStateStore(stateDir);
 await store.init();
 const orchestrator = new Orchestrator(config, store);
+const engine = new ExecutionEngine(orchestrator, new DeterministicExecutor());
 
 function sendJson(res, status, body) {
   const data = JSON.stringify(body);
@@ -48,7 +51,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 404, { error: 'not_found' });
     }
     const event = await readBody(req);
-    return sendJson(res, 200, await orchestrator.handle(event));
+    return sendJson(res, 200, await engine.handle(event));
   } catch (error) {
     return sendJson(res, 400, { error: String(error?.message ?? error) });
   }

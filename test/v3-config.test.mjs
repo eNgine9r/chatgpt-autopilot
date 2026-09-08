@@ -2,26 +2,47 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateConfig } from '../src/v3/config.mjs';
 
-const valid = {
-  version: 3,
-  projects: [{ id: 'demo', enabled: true, steps: [{ id: 'inspect', action: 'repo.inspect' }] }],
+const validProject = {
+  id: 'demo', enabled: true, repoPath: '/tmp/demo',
+  tests: { required: { command: 'node', args: ['--version'], timeoutMs: 1000 } },
+  steps: [
+    { id: 'inspect', action: 'repo.inspect' },
+    { id: 'test', action: 'repo.test', params: { alias: 'required' } },
+  ],
 };
 
-test('v3 config accepts a bounded deterministic workflow', () => {
+const valid = { version: 3, projects: [validProject] };
+
+test('v3 config accepts bounded allowlisted deterministic actions', () => {
   assert.equal(validateConfig(valid), valid);
 });
 
 test('v3 config rejects duplicate project and step identities', () => {
-  assert.throws(() => validateConfig({ version: 3, projects: [valid.projects[0], valid.projects[0]] }), /invalid_project_id/);
-  assert.throws(() => validateConfig({
-    version: 3,
-    projects: [{ id: 'demo', steps: [{ id: 'same', action: 'a' }, { id: 'same', action: 'b' }] }],
-  }), /invalid_step/);
+  assert.throws(() => validateConfig({ version: 3, projects: [validProject, validProject] }), /invalid_project_id/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...validProject,
+    steps: [{ id: 'same', action: 'repo.inspect' }, { id: 'same', action: 'repo.inspect' }],
+  }] }), /invalid_step/);
 });
 
-test('v3 config accepts only explicit supported approval modes', () => {
-  assert.throws(() => validateConfig({
-    version: 3,
-    projects: [{ id: 'demo', steps: [{ id: 'x', action: 'a', approval: 'automatic' }] }],
-  }), /invalid_approval/);
+test('v3 config rejects unsupported actions and unsafe test executables', () => {
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...validProject, steps: [{ id: 'shell', action: 'shell.exec' }],
+  }] }), /unsupported_action/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...validProject, tests: { required: { command: 'bash', args: ['-c', 'echo nope'] } },
+  }] }), /test_command_not_allowed/);
+});
+
+test('repo.test references only a configured alias', () => {
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...validProject,
+    steps: [{ id: 'test', action: 'repo.test', params: { alias: 'from-event' } }],
+  }] }), /unknown_test_alias/);
+});
+
+test('repo actions require an absolute private repo path', () => {
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...validProject, repoPath: '../relative', steps: [{ id: 'inspect', action: 'repo.inspect' }],
+  }] }), /invalid_repo_path/);
 });
