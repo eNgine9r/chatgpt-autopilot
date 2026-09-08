@@ -31,6 +31,6 @@ jobs:
       - name: JavaScript syntax checks
         run: npm run check
       - name: Shell syntax checks
-        run: bash -n scripts/install.sh scripts/install-systemd.sh
+        run: bash -n scripts/install.sh scripts/install-systemd.sh scripts/install-v3-systemd.sh
       - name: Manifest JSON check
         run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json','utf8'))"
