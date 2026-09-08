@@ -51,3 +51,15 @@ No model prompt, token, or OpenAI credential is involved.
 ## Service rollout
 
 `npm run install:v3-service` installs a user service and a local config copy but deliberately does not enable or start it. Runtime enablement is a separate acceptance/cutover decision.
+
+## Deterministic executor
+
+The v3 execution engine may automatically drain consecutive safe actions after one external event. No model decision is inserted between routine steps.
+
+Supported executor actions are intentionally narrow:
+
+- `repo.inspect` runs fixed read-only Git metadata commands;
+- `repo.test` runs only a named private config alias using `execFile` with `shell:false`;
+- `operator.review` is a no-op acknowledgement after the explicit state-machine approval gate.
+
+Test executables are allowlisted, arguments come only from the private local project config, output/time are bounded, and the child environment excludes unrelated Autopilot secrets. Unsupported actions fail closed into a durable blocked state.
