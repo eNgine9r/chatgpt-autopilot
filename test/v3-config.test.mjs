@@ -46,3 +46,21 @@ test('repo actions require an absolute private repo path', () => {
     ...validProject, repoPath: '../relative', steps: [{ id: 'inspect', action: 'repo.inspect' }],
   }] }), /invalid_repo_path/);
 });
+
+test('GitHub task routing requires unique configured repositories and labels', () => {
+  const githubProject = {
+    ...validProject,
+    github: { repository: 'eNgine9r/demo', taskLabels: ['autopilot'] },
+  };
+  assert.equal(validateConfig({ version: 3, projects: [githubProject] }).projects[0], githubProject);
+  assert.throws(() => validateConfig({ version: 3, projects: [
+    githubProject,
+    { ...githubProject, id: 'demo-two' },
+  ] }), /duplicate_repo/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...githubProject, github: { repository: 'not-a-repository', taskLabels: ['autopilot'] },
+  }] }), /invalid_github_repository/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...githubProject, github: { repository: 'eNgine9r/demo', taskLabels: [] },
+  }] }), /invalid_labels/);
+});
