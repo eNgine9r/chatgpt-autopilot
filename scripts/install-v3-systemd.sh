@@ -23,7 +23,9 @@ chmod 600 "$secret_file"
 
 escaped_repo=${repo_dir//|/\\|}
 escaped_node=${node_bin//|/\\|}
-escaped_secret=${secret_file//|/\\|}sed \
+escaped_secret=${secret_file//|/\\|}
+
+sed \
   -e "s|__REPO_DIR__|$escaped_repo|g" \
   -e "s|__NODE_BIN__|$escaped_node|g" \
   -e "s|__GITHUB_SECRET_FILE__|$escaped_secret|g" \
