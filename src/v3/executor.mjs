@@ -42,6 +42,7 @@ function isRemote(project) {
 function sshArgs(project, operation) {
   const t = project.transport;
   const args = [
+    '-F', '/dev/null',
     '-o', 'BatchMode=yes',
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=yes',
