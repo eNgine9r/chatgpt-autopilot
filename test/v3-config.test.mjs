@@ -64,3 +64,28 @@ test('GitHub task routing requires unique configured repositories and labels', (
     ...githubProject, github: { repository: 'eNgine9r/demo', taskLabels: [] },
   }] }), /invalid_labels/);
 });
+
+test('ssh-gateway transport is bounded and uses remote test aliases', () => {
+  const remote = {
+    id: 'remote-demo',
+    enabled: true,
+    transport: {
+      type: 'ssh-gateway',
+      host: 'nexolab-edge-01',
+      user: 'nexolab',
+      identityFile: '/home/btcradar/.ssh/autopilot-v3-nexolab',
+    },
+    tests: { required: { remote: true, timeoutMs: 1000 } },
+    steps: [
+      { id: 'inspect', action: 'repo.inspect' },
+      { id: 'test', action: 'repo.test', params: { alias: 'required' } },
+    ],
+  };
+  assert.equal(validateConfig({ version: 3, projects: [remote] }).projects[0], remote);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...remote, transport: { ...remote.transport, identityFile: '../bad' },
+  }] }), /invalid_ssh_identity/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...remote, tests: { required: { command: 'python3', args: [] } },
+  }] }), /invalid_remote_test/);
+});

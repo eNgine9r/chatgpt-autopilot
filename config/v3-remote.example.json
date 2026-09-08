@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "repoPath": "/home/nexolab/nexolab-platform",
+  "tests": {
+    "required": {
+      "command": "python3",
+      "args": [
+        "-c",
+        "import ast,pathlib; [ast.parse(p.read_text(encoding='utf-8')) for p in pathlib.Path('services').rglob('*.py')]"
+      ],
+      "timeoutMs": 120000
+    }
+  }
+}

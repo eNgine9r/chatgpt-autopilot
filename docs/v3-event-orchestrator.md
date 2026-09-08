@@ -71,3 +71,12 @@ Projects may bind exactly one GitHub repository plus one or more explicit task l
 The adapter verifies `X-Hub-Signature-256` against the exact raw request body and uses `X-GitHub-Delivery` as the durable event ID. Cross-repository, unsigned, tampered, unlabelled and unsupported events fail closed or are ignored without running project actions.
 
 The installer generates and preserves a private 32-byte webhook secret under `state-v3/` and injects only its file path into the disabled v3 user service. Both listeners bind only to `127.0.0.1`; exposing the dedicated GitHub port and creating repository webhooks are separate acceptance steps.
+## Restricted SSH gateway transport
+
+A project may use `transport.type: "ssh-gateway"` instead of a local `repoPath`. This keeps the central v3 orchestrator on one Raspberry while executing only fixed read/test operations on another host.
+
+The central executor invokes `ssh` with `BatchMode=yes`, `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`, a configured identity file, and a fixed operation (`inspect` or `test <alias>`). No command text comes from GitHub events or task payloads.
+
+The remote identity must be a dedicated key whose `authorized_keys` entry forces `scripts/v3-remote-gateway.py`. The existing Codex key or any unrestricted shell key must not be reused. The gateway reads a private local config, maps test aliases to allowlisted argv, runs with `shell=False`, sanitizes the child environment, bounds output/time, and rejects all other `SSH_ORIGINAL_COMMAND` values.
+
+A host without Node.js can run the gateway with Python 3 only. `config/v3-remote.example.json` shows the remote config shape. Installing the forced-command key and enabling remote project routing are separate shadow acceptance steps.
