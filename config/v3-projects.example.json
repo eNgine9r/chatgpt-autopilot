@@ -5,6 +5,7 @@
       "id": "btc-radar-development",
       "enabled": true,
       "repoPath": "/srv/btc-radar",
+      "github": { "repository": "eNgine9r/btc-radar-telegram", "taskLabels": ["autopilot"] },
       "tests": {
         "required": { "command": "python3", "args": ["-m", "pytest", "-q"], "timeoutMs": 900000 }
       },
@@ -18,6 +19,7 @@
       "id": "nexolab-development",
       "enabled": true,
       "repoPath": "/srv/nexolab",
+      "github": { "repository": "eNgine9r/nexolab-platform", "taskLabels": ["autopilot"] },
       "tests": {
         "required": { "command": "npm", "args": ["test"], "timeoutMs": 900000 }
       },

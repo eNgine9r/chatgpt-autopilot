@@ -33,7 +33,7 @@
     "task:browserless": "python3 -m src.browserless.operator",
     "start:v3": "node src/v3/index.mjs",
     "test:v3": "node --test test/v3-*.test.mjs",
-    "check:v3": "node --check src/v3/config.mjs && node --check src/v3/store.mjs && node --check src/v3/state-machine.mjs && node --check src/v3/orchestrator.mjs && node --check src/v3/executor.mjs && node --check src/v3/execution-engine.mjs && node --check src/v3/index.mjs",
+    "check:v3": "node --check src/v3/config.mjs && node --check src/v3/store.mjs && node --check src/v3/state-machine.mjs && node --check src/v3/orchestrator.mjs && node --check src/v3/executor.mjs && node --check src/v3/execution-engine.mjs && node --check src/v3/github-webhook.mjs && node --check src/v3/index.mjs",
     "install:v3-service": "bash scripts/install-v3-systemd.sh"
   }
 }

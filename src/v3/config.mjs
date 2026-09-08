@@ -21,11 +21,28 @@ function validateTests(project) {
   }
 }
 
+function validateGitHub(project, repositories) {
+  if (project.github == null) return;
+  if (!project.github || typeof project.github !== 'object') throw new Error(`invalid_github:${project.id}`);
+  const repository = String(project.github.repository ?? '');
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error(`invalid_github_repository:${project.id}`);
+  if (repositories.has(repository)) throw new Error(`duplicate_repo:${repository}`);
+  repositories.add(repository);
+  const labels = project.github.taskLabels;
+  if (!Array.isArray(labels) || labels.length < 1 || labels.length > 8) throw new Error(`invalid_labels:${project.id}`);
+  const unique = new Set();
+  for (const label of labels) {
+    if (typeof label !== 'string' || label.length < 1 || label.length > 50 || unique.has(label)) throw new Error(`invalid_labels:${project.id}`);
+    unique.add(label);
+  }
+}
+
 export function validateConfig(value) {
   if (!value || typeof value !== 'object' || value.version !== 3 || !Array.isArray(value.projects)) {
     throw new Error('invalid_v3_config');
   }
   const ids = new Set();
+  const repositories = new Set();
   for (const project of value.projects) {
     if (!project || typeof project !== 'object' || !project.id || ids.has(project.id)) {
       throw new Error('invalid_project_id');
@@ -33,6 +50,7 @@ export function validateConfig(value) {
     ids.add(project.id);
     if (!Array.isArray(project.steps) || project.steps.length === 0) throw new Error(`missing_steps:${project.id}`);
     validateTests(project);
+    validateGitHub(project, repositories);
 
     const stepIds = new Set();
     for (const step of project.steps) {
@@ -46,7 +64,9 @@ export function validateConfig(value) {
       }
       if (step.action === 'repo.test') {
         const alias = step.params?.alias;
-        if (typeof alias !== 'string' || !project.tests?.[alias]) throw new Error(`unknown_test_alias:${project.id}:${step.id}`);
+        if (typeof alias !== 'string' || !project.tests?.[alias]) {
+          throw new Error(`unknown_test_alias:${project.id}:${step.id}`);
+        }
       }
     }
   }

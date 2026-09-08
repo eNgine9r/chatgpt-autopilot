@@ -26,13 +26,13 @@ The foundation server binds to `127.0.0.1:8780` by default.
 - `GET /projects` reads durable local project state.
 - `POST /events` accepts a bounded JSON event and returns the resulting state plus an optional deterministic dispatch.
 
-The loopback endpoint is not a public GitHub webhook endpoint. Authenticated GitHub webhook ingress is a later isolated change.
+`POST /github` is an authenticated GitHub ingress on the same loopback-only listener. It requires an HMAC-SHA256 webhook secret; public exposure and GitHub hook creation remain separate rollout steps.
 
 ## Project configuration
 
 Each project has an ordered list of steps. A step contains an ID, an action name, optional parameters, and optional `approval: "user"`.
 
-The foundation does not execute action names. It only emits a dispatch record. Executors for GitHub, Git, tests, and Telegram are added behind separate least-privilege issues and tests.
+The deterministic engine executes only allowlisted local read/test actions. Mutating repository, GitHub, deployment, trading and hardware actions remain outside the v3 capability set.
 
 ## Example event
 
@@ -63,3 +63,11 @@ Supported executor actions are intentionally narrow:
 - `operator.review` is a no-op acknowledgement after the explicit state-machine approval gate.
 
 Test executables are allowlisted, arguments come only from the private local project config, output/time are bounded, and the child environment excludes unrelated Autopilot secrets. Unsupported actions fail closed into a durable blocked state.
+
+## GitHub webhook adapter
+
+Projects may bind exactly one GitHub repository plus one or more explicit task labels. Only signed `issues` events with an accepted action and a configured task label are translated into `task.received` events.
+
+The adapter verifies `X-Hub-Signature-256` against the exact raw request body and uses `X-GitHub-Delivery` as the durable event ID. Cross-repository, unsigned, tampered, unlabelled and unsupported events fail closed or are ignored without running project actions.
+
+The installer generates and preserves a private 32-byte webhook secret under `state-v3/` and injects only its file path into the disabled v3 user service. The listener still binds only to `127.0.0.1`; exposing `/github` and creating repository webhooks are separate acceptance steps.
