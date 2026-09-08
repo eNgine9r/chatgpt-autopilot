@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from src.browserless.store import BrowserlessStore
 
@@ -137,6 +138,58 @@ class StoreTest(unittest.TestCase):
         self.store.finish_job(job["id"],{"decision":"continue","actions":[{"type":"repo.patch","target":"repo","purpose":"x","payload":""}]})
         fresh=self.store.claim_action()
         self.assertEqual(self.store.action_failure_count("p1","repo.patch","repo",fresh["id"]),0)
+    def test_hash_only_github_comment_is_durable_but_never_queued(self):
+        from src.browserless.ingress import ingest_observation
+        ingest_observation(self.store,"p1","github","issue:7:comment:11",{
+            "summary":"comment created",
+            "metadata":{"githubEvent":"issue_comment","number":7,"commentId":11},
+            "material":{"action":"created","comment_id":11,"author":"owner","body_sha256":"a"*64},
+            "evidence":[]})
+        self.store.ensure_jobs()
+        self.assertEqual(self.store.counts()["jobs"],0)
+        row=self.store.db.execute("SELECT status,payload_json FROM events").fetchone()
+        self.assertEqual(row["status"],"suppressed")
+        payload=json.loads(row["payload_json"]); self.assertEqual(payload["metadata"]["suppressedReason"],"comment_body_not_persisted")
+
+    def test_github_comment_with_usable_text_remains_job_eligible(self):
+        from src.browserless.ingress import ingest_observation
+        ingest_observation(self.store,"p1","github","issue:7:comment:12",{
+            "summary":"comment created",
+            "metadata":{"githubEvent":"issue_comment","number":7,"commentId":12},
+            "material":{"action":"created","comment_id":12,"author":"owner","body_sha256":"c"*64,"text":"explicit bounded control text"},
+            "evidence":[]})
+        self.store.ensure_jobs()
+        self.assertEqual(self.store.counts()["jobs"],1)
+        row=self.store.db.execute("SELECT status FROM events").fetchone()
+        self.assertEqual(row["status"],"queued")
+
+    def test_comment_only_github_burst_never_creates_batch_or_job(self):
+        from src.browserless.ingress import ingest_observation
+        now=self.store._now()
+        for n in (11,12,13):
+            ingest_observation(self.store,"p1","github",f"issue:7:comment:{n}",{
+                "summary":"comment created","metadata":{"githubEvent":"issue_comment","number":7,"commentId":n},
+                "material":{"action":"created","comment_id":n,"author":"owner","body_sha256":str(n)*32},"evidence":[]})
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+30)
+        self.assertEqual(self.store.counts()["jobs"],0)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM events WHERE status='suppressed'").fetchone()[0],3)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM events WHERE kind='observation.github.batch'").fetchone()[0],0)
+
+    def test_mixed_comment_and_material_github_burst_keeps_only_material_event(self):
+        from src.browserless.ingress import ingest_observation
+        now=self.store._now()
+        ingest_observation(self.store,"p1","github","issue:7:comment:11",{
+            "summary":"comment created","metadata":{"githubEvent":"issue_comment","number":7,"commentId":11},
+            "material":{"action":"created","comment_id":11,"author":"owner","body_sha256":"b"*64},"evidence":[]})
+        ingest_observation(self.store,"p1","github","pr:9",{
+            "summary":"PR merged","metadata":{"githubEvent":"pull_request","number":9},
+            "material":{"action":"closed","state":"closed","merged":True},"evidence":[]})
+        self.store.ensure_jobs(github_quiet_seconds=15,now=now+30)
+        self.assertEqual(self.store.counts()["jobs"],1)
+        job=self.store.claim_job(); self.assertEqual(job["kind"],"observation.github")
+        self.assertEqual(job["payload"]["metadata"]["githubEvent"],"pull_request")
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM events WHERE status='suppressed'").fetchone()[0],1)
+
     def test_github_quiet_window_coalesces_latest_subject_revisions_into_one_job(self):
         from src.browserless.ingress import ingest_observation
         now = self.store._now()
