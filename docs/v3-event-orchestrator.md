@@ -80,3 +80,10 @@ The central executor invokes `ssh` with `BatchMode=yes`, `IdentitiesOnly=yes`, `
 The remote identity must be a dedicated key whose `authorized_keys` entry forces `scripts/v3-remote-gateway.py`. The existing Codex key or any unrestricted shell key must not be reused. The gateway reads a private local config, maps test aliases to allowlisted argv, runs with `shell=False`, sanitizes the child environment, bounds output/time, and rejects all other `SSH_ORIGINAL_COMMAND` values.
 
 A host without Node.js can run the gateway with Python 3 only. `config/v3-remote.example.json` shows the remote config shape. Installing the forced-command key and enabling remote project routing are separate shadow acceptance steps.
+## Reversible production webhook cutover
+
+`scripts/v3-webhook-cutover.py` is dry-run by default. It reads current Funnel, GitHub hook and label state, then reports the exact parallel v3 operations without mutating anything. `--apply` is the explicit production mutation gate.
+
+The cutover adds a separate `/autopilot-v3-github` Funnel path to the dedicated `127.0.0.1:8781/github` listener, creates or updates one callback hook per configured repository with `issues` events only, creates missing task labels, and enables the v3 service. Existing Browserless `/autopilot-events` hooks are never modified.
+
+Rollback is also dry-run unless combined with `--apply --rollback`. It removes only hooks using the v3 callback URL, removes only the v3 Funnel path, and disables v3; it does not require or modify the legacy webhook secrets.
