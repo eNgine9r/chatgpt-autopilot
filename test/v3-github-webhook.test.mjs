@@ -87,3 +87,37 @@ test('duplicate GitHub delivery is idempotent in durable orchestrator state', as
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+test('labeled event triggers only when the applied label is a configured task label', () => {
+  const accepted = translateGitHubEvent(config, 'issues', 'label-good', payload({
+    action: 'labeled',
+    label: { name: 'autopilot' },
+  }));
+  assert.equal(accepted.ignored, false);
+
+  const ignored = translateGitHubEvent(config, 'issues', 'label-other', payload({
+    action: 'labeled',
+    label: { name: 'priority-high' },
+  }));
+  assert.equal(ignored.ignored, true);
+  assert.equal(ignored.reason, 'task_label_not_applied');
+});
+
+test('opened and labeled deliveries for the same issue collapse to one active task', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'autopilot-v3-github-race-'));
+  try {
+    const store = new JsonStateStore(dir);
+    await store.init();
+    const orchestrator = new Orchestrator(config, store);
+    const opened = translateGitHubEvent(config, 'issues', 'race-opened', payload());
+    const labeled = translateGitHubEvent(config, 'issues', 'race-labeled', payload({
+      action: 'labeled', label: { name: 'autopilot' },
+    }));
+    const first = await orchestrator.handle(opened.event);
+    const second = await orchestrator.handle(labeled.event);
+    assert.equal(first.duplicate, false);
+    assert.equal(second.duplicate, true);
+    assert.equal(second.state.task.id, 'github:eNgine9r/demo#42');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

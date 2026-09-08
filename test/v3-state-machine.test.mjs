@@ -51,3 +51,23 @@ test('duplicate event id is idempotent', () => {
   assert.equal(second.duplicate, true);
   assert.deepEqual(second.state, first.state);
 });
+
+test('same task delivery while active is idempotent but a different task is rejected', () => {
+  const first = transition(project, null, {
+    id: 'task-a-opened',
+    kind: 'task.received',
+    task: { id: 'github:demo#42' },
+  }, 10);
+  const same = transition(project, first.state, {
+    id: 'task-a-labeled',
+    kind: 'task.received',
+    task: { id: 'github:demo#42' },
+  }, 20);
+  assert.equal(same.duplicate, true);
+  assert.deepEqual(same.state, first.state);
+  assert.throws(() => transition(project, first.state, {
+    id: 'task-b-opened',
+    kind: 'task.received',
+    task: { id: 'github:demo#43' },
+  }, 30), /project_busy:ready/);
+});

@@ -58,7 +58,12 @@ export function transition(project, previous, event, now = Date.now()) {
   };
 
   switch (event.kind) {
-    case 'task.received':
+    case 'task.received': {
+      const incomingTaskId = String(event.task?.id ?? event.taskId ?? event.id ?? 'task');
+      const currentTaskId = state.task?.id == null ? '' : String(state.task.id);
+      if (ACTIVE.has(state.status) && incomingTaskId === currentTaskId) {
+        return { state, duplicate: true };
+      }
       if (ACTIVE.has(state.status)) throw new Error(`project_busy:${state.status}`);
       state = {
         ...initialState(project.id),
@@ -67,6 +72,7 @@ export function transition(project, previous, event, now = Date.now()) {
         status: readyStatus(project.steps[0]),
       };
       break;
+    }
     case 'action.started':
       if (state.status !== 'ready') throw new Error(`cannot_start:${state.status}`);
       assertStep();
