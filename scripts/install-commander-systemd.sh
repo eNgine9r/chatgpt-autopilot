@@ -40,6 +40,18 @@ ENV
   chmod 600 "$CONFIG_DIR/gateway.env"
 fi
 
+if [[ ! -e "$CONFIG_DIR/read-policy.json" ]]; then
+  cat > "$CONFIG_DIR/read-policy.json" <<'JSON'
+{
+  "version": 1,
+  "roots": [],
+  "repositories": [],
+  "services": []
+}
+JSON
+  chmod 600 "$CONFIG_DIR/read-policy.json"
+fi
+
 if [[ "${COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD:-0}" != "1" ]]; then
   systemctl --user daemon-reload
 fi
