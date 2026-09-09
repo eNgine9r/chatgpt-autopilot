@@ -110,11 +110,17 @@ function normalizeCodexConfig(project) {
     normalizedTransport.sshExecutable = String(transport.sshExecutable || "/usr/bin/ssh");
   }
 
+  const waitSeconds = Number(raw.waitSeconds ?? 300);
+  if (!Number.isFinite(waitSeconds) || waitSeconds < 60 || waitSeconds > 3600) {
+    throw new Error(`${project.id}: codex.waitSeconds must be between 60 and 3600`);
+  }
+
   return {
     transport: normalizedTransport,
     networkAccess: raw.networkAccess === true,
     startOnBoot: raw.startOnBoot === true,
     autoContinue: raw.autoContinue !== false,
+    waitSeconds,
     approvalPolicy: "on-request",
     model: String(raw.model || "").trim(),
     effort: String(raw.effort || "").trim(),

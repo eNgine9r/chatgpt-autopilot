@@ -36,6 +36,7 @@ function fixture() {
   const client = new FakeClient();
   const messages = [];
   const observations = [];
+  const logs = [];
   const project = {
     id: "worker",
     name: "Worker Project",
@@ -47,7 +48,8 @@ function fixture() {
     codex: {
       approvalPolicy: "on-request",
       networkAccess: false,
-      autoContinue: false
+      autoContinue: false,
+      waitSeconds: 300
     }
   };
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-codex-backend-"));
@@ -55,13 +57,13 @@ function fixture() {
     project,
     stateDir,
     notifier: { send: async (text) => { messages.push(text); return true; } },
-    logger: { info() {}, error() {} },
+    logger: { info: (message, data) => logs.push({ message, data }), error() {} },
     progressWatchdog: {
       observe: (id, value) => observations.push({ id, value })
     },
     clientFactory: () => client
   });
-  return { backend, client, messages, observations, stateDir };
+  return { backend, client, messages, observations, logs, stateDir };
 }
 
 test("starts a Codex thread and launches a constrained turn", async () => {
@@ -144,4 +146,54 @@ test("unrelated resume failures remain fail-closed", async () => {
 
   await assert.rejects(() => backend.start(), /authentication failed/);
   assert.deepEqual(client.requests.map((item) => item.method), ["thread/resume"]);
+});
+
+
+test("marker-driven completion stops without another Codex turn", async () => {
+  const { backend, logs } = fixture();
+  backend.project.codex.autoContinue = true;
+  await backend.start();
+  backend.lastAgentText = "Current work is done. [[AUTOPILOT_COMPLETE]]";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.equal(backend.nextTurnTimer, null);
+  assert.ok(logs.some((row) => row.message === "codex_autopilot_complete"));
+});
+
+test("marker-driven wait schedules a long external-evidence poll", async () => {
+  const { backend, logs } = fixture();
+  backend.project.codex.autoContinue = true;
+  backend.project.codex.waitSeconds = 600;
+  await backend.start();
+  backend.lastAgentText = "CI is still running. [[AUTOPILOT_WAIT]]";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.ok(backend.nextTurnTimer);
+  const scheduled = logs.find((row) => row.message === "codex_autopilot_scheduled");
+  assert.equal(scheduled.data.directive, "wait");
+  assert.equal(scheduled.data.delaySeconds, 600);
+  await backend.close();
+});
+
+
+test("marker-driven continue schedules only the next bounded turn", async () => {
+  const { backend, logs } = fixture();
+  backend.project.codex.autoContinue = true;
+  await backend.start();
+  backend.lastAgentText = "A concrete safe follow-up remains. [[AUTOPILOT_CONTINUE]]";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.ok(backend.nextTurnTimer);
+  const scheduled = logs.find((row) => row.message === "codex_autopilot_scheduled");
+  assert.equal(scheduled.data.directive, "continue");
+  assert.equal(scheduled.data.delaySeconds, 2);
+  await backend.close();
+});
+
+test("missing completion marker fails closed instead of looping", async () => {
+  const { backend, messages } = fixture();
+  backend.project.codex.autoContinue = true;
+  await backend.start();
+  backend.lastAgentText = "No machine directive supplied";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.equal(backend.paused, true);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /потребує вашої дії/i);
 });

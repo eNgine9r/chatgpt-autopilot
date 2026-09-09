@@ -50,3 +50,14 @@ Do not cut over when the Codex account is usage-limited or when the target repos
 ## Intentional idle / shadow mode
 
 For a Codex project that is intentionally kept idle (`autoContinue: false`), set `watchdogEnabled: false` to suppress generic no-progress/heartbeat alerts. Transport exits still trigger the Codex backend alert path, so SSH/App Server failures remain visible.
+
+## Marker-driven continuation
+
+Codex auto-continuation is fail-closed and marker-driven. A completed agent turn must end with exactly one control marker:
+
+- `[[AUTOPILOT_CONTINUE]]` — a concrete safe next action exists; start the next turn after `completionSettleSeconds`.
+- `[[AUTOPILOT_WAIT]]` — external evidence such as CI is still pending; poll again after `codex.waitSeconds` (default 300 seconds).
+- `[[AUTOPILOT_COMPLETE]]` — the current autonomous work is complete; do not create another model turn.
+- `[[USER_ACTION_REQUIRED]]` — pause the project and notify the operator.
+
+Missing or ambiguous markers pause the backend instead of silently looping. This keeps GitHub/status monitoring deterministic and avoids unnecessary model usage when no reasoning work is available.
