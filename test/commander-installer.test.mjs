@@ -43,8 +43,12 @@ test('Commander installer stages hardened disabled user units only', async () =>
     assert.match(unit, /TasksMax=32/);
     assert.doesNotMatch(unit, /sudo/);
   }
-  assert.match(await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/agent.env'), 'utf8'), /COMMANDER_ENABLED=false/);
-  assert.match(await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/gateway.env'), 'utf8'), /COMMANDER_ENABLED=false/);
+  const agentEnv = await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/agent.env'), 'utf8');
+  const gatewayEnv = await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/gateway.env'), 'utf8');
+  assert.match(agentEnv, /COMMANDER_ENABLED=false/);
+  assert.match(agentEnv, /COMMANDER_EXECUTION_ENABLED=false/);
+  assert.match(gatewayEnv, /COMMANDER_ENABLED=false/);
+  assert.match(gatewayEnv, /COMMANDER_EXECUTION_ENABLED=false/);
   const readPolicyPath = path.join(configHome, 'chatgpt-autopilot-commander/read-policy.json');
   const readPolicy = JSON.parse(await fs.readFile(readPolicyPath, 'utf8'));
   assert.deepEqual(readPolicy, { version: 1, roots: [], repositories: [], services: [] });

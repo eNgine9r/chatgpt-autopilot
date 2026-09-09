@@ -26,6 +26,7 @@ render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-gateway.service.templ
 if [[ ! -e "$CONFIG_DIR/agent.env" ]]; then
   cat > "$CONFIG_DIR/agent.env" <<'ENV'
 COMMANDER_ENABLED=false
+COMMANDER_EXECUTION_ENABLED=false
 COMMANDER_GATEWAY_HOST=127.0.0.1
 COMMANDER_GATEWAY_PORT=8790
 ENV
@@ -34,6 +35,7 @@ fi
 if [[ ! -e "$CONFIG_DIR/gateway.env" ]]; then
   cat > "$CONFIG_DIR/gateway.env" <<'ENV'
 COMMANDER_ENABLED=false
+COMMANDER_EXECUTION_ENABLED=false
 COMMANDER_GATEWAY_HOST=127.0.0.1
 COMMANDER_GATEWAY_PORT=8790
 ENV
