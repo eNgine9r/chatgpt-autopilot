@@ -122,7 +122,8 @@ export class CommanderGatewayServer extends EventEmitter {
         entry.connection.write(encodeJsonLine({
           ...protocolEnvelope(), type: 'operation_request', sessionId: entry.sessionId, request,
         }));
-        log(this.logger, 'info', definition.authority === 'read' ? 'commander_read_request_sent' : 'commander_execution_request_sent', {
+        const kind = definition.authority === 'read' ? 'read' : (request.operation.startsWith('execution.') ? 'execution' : 'write');
+        log(this.logger, 'info', `commander_${kind}_request_sent`, {
           deviceId: request.deviceId, requestId: request.requestId, operation: request.operation,
         });
       } catch (error) {
@@ -257,7 +258,8 @@ export class CommanderGatewayServer extends EventEmitter {
       this.pendingRequests.delete(result.requestId);
       pending.resolve(result);
       const resultDefinition = operationDefinition(result.operation);
-      log(this.logger, 'info', resultDefinition.authority === 'read' ? 'commander_read_request_completed' : 'commander_execution_request_completed', {
+      const kind = resultDefinition.authority === 'read' ? 'read' : (result.operation.startsWith('execution.') ? 'execution' : 'write');
+      log(this.logger, 'info', `commander_${kind}_request_completed`, {
         deviceId: result.deviceId, requestId: result.requestId, operation: result.operation, ok: result.ok,
       });
       return;

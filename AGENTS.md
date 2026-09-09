@@ -9,6 +9,9 @@ This repository is a standalone development supervisor. It must remain isolated 
 - SSH used by Autopilot must be restricted to the Codex App Server forced command; it is not a general remote shell capability.
 - Do not add Docker, Modbus, database, hardware, trading execution, or production-control capabilities unless a future explicitly scoped Issue approves them.
 - Project repository writes may occur only through the configured Codex sandbox and its approval policy; Autopilot itself does not directly edit product repositories.
+- Issue #187 authorizes implementation and disposable/non-production acceptance of Commander controlled-write capabilities only behind explicit allowlists, policy decisions, idempotency, and `COMMANDER_WRITE_ENABLED=false` by default.
+- Issue #187 does **not** authorize enabling Commander writes on production hosts or product repositories. Any such enablement remains a later explicit rollout/cutover decision and must not bypass existing project/user approval gates.
+- Commander ADMIN authority (`sudo`, reboot, package/system configuration), trading, Modbus/hardware writes, and generic remote shell remain prohibited.
 
 ## Secrets
 

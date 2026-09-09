@@ -262,7 +262,7 @@ export class CommanderAgentClient extends EventEmitter {
       result = {
         ...protocolEnvelope(), requestId: request.requestId, deviceId: request.deviceId, operation: request.operation,
         ok: false, completedAt: new Date(this.now()).toISOString(),
-        error: commanderError({ category: 'internal', code: definition.authority === 'read' ? 'READ_HANDLER_FAILED' : 'EXECUTION_HANDLER_FAILED', message: 'Commander operation handler failed.', retryable: false }),
+        error: commanderError({ category: 'internal', code: definition.authority === 'read' ? 'READ_HANDLER_FAILED' : (request.operation.startsWith('execution.') ? 'EXECUTION_HANDLER_FAILED' : 'WRITE_HANDLER_FAILED'), message: 'Commander operation handler failed.', retryable: false }),
       };
     }
     result = validateOperationResult(result);

@@ -162,7 +162,7 @@ Possible scope:
 - approved user-service restart;
 - protected Git writes.
 
-This phase must explicitly reconcile/update repository governance before granting authority broader than current `AGENTS.md` rules. ADMIN stays disabled. Initial acceptance is disposable/non-production only.
+Repository governance is reconciled by ADR-005 and the Issue #187 `AGENTS.md` carve-out. ADMIN stays disabled. Initial acceptance is disposable/non-production only; production writable paths remain a later rollout decision.
 
 ## Phase 6 — MCP Adapter
 
