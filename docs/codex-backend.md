@@ -33,7 +33,7 @@ The current tested Codex CLI protocol on NexoLab uses:
 - network disabled by default;
 - writable roots limited to the configured repository path.
 
-If Codex asks for approval, permission escalation, or another server-side request, the backend pauses and sends a Telegram alert rather than answering automatically.
+Command/file escalation requests are never auto-approved: the backend responds `decline` and lets Codex find a sandbox-safe alternative. Standalone permission escalation receives an empty granted subset. Unknown server-side requests still pause the backend and send a Telegram alert. A `waitingOnApproval` status flag alone is observational; the concrete server request determines whether it can be safely denied or requires the user.
 
 ## Rollout
 
