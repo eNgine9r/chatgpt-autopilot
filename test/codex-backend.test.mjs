@@ -11,6 +11,7 @@ class FakeClient extends EventEmitter {
   constructor() {
     super();
     this.requests = [];
+    this.responses = [];
   }
 
   async start() {}
@@ -27,6 +28,10 @@ class FakeClient extends EventEmitter {
       return { turn: { id: "turn_1", status: "inProgress" } };
     }
     throw new Error(`unexpected:${method}`);
+  }
+
+  respond(id, result) {
+    this.responses.push({ id, result });
   }
 
   async close() {}
@@ -82,24 +87,48 @@ test("starts a Codex thread and launches a constrained turn", async () => {
   assert.equal(turn.params.sandboxPolicy.networkAccess, false);
 });
 
-test("approval wait pauses the project and alerts once", async () => {
-  const { backend, messages } = fixture();
+test("approval wait notification is observational until the server request arrives", async () => {
+  const { backend, messages, logs } = fixture();
   await backend.start();
   backend.onNotification({
     method: "thread/status/changed",
     params: { status: { type: "active", activeFlags: ["waitingOnApproval"] } }
   });
+  assert.equal(backend.paused, false);
+  assert.equal(messages.length, 0);
+  assert.ok(logs.some((row) => row.message === "codex_approval_wait_observed"));
+});
+
+test("command and file escalation requests are declined without pausing", async () => {
+  const { backend, client, messages } = fixture();
+  await backend.start();
+  backend.onServerRequest({ id: 41, method: "item/commandExecution/requestApproval", params: {} });
+  backend.onServerRequest({ id: 42, method: "item/fileChange/requestApproval", params: {} });
+  assert.deepEqual(client.responses, [
+    { id: 41, result: { decision: "decline" } },
+    { id: 42, result: { decision: "decline" } }
+  ]);
+  assert.equal(backend.paused, false);
+  assert.equal(messages.length, 0);
+});
+
+test("permission escalation is denied with an empty granted subset", async () => {
+  const { backend, client, messages } = fixture();
+  await backend.start();
+  backend.onServerRequest({ id: 43, method: "item/permissions/requestApproval", params: {} });
+  assert.deepEqual(client.responses, [{ id: 43, result: { permissions: {} } }]);
+  assert.equal(backend.paused, false);
+  assert.equal(messages.length, 0);
+});
+
+test("unknown server requests remain a user gate", async () => {
+  const { backend, messages } = fixture();
+  await backend.start();
+  backend.onServerRequest({ id: 44, method: "openai/form", params: {} });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(backend.paused, true);
   assert.equal(messages.length, 1);
   assert.match(messages[0], /потребує вашої дії/i);
-
-  backend.onNotification({
-    method: "thread/status/changed",
-    params: { status: { type: "active", activeFlags: ["waitingOnApproval"] } }
-  });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(messages.length, 1);
 });
 
 test("failed turn pauses and includes the Codex error in Telegram", async () => {

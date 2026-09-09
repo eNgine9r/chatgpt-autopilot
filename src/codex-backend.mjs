@@ -178,7 +178,12 @@ export class CodexProjectBackend {
     if (message.method === "thread/status/changed") {
       const status = message.params?.status || {};
       const flags = Array.isArray(status.activeFlags) ? status.activeFlags : [];
-      if (flags.includes("waitingOnApproval")) this.pauseForUser("approval_wait");
+      if (flags.includes("waitingOnApproval")) {
+        this.logger.info("codex_approval_wait_observed", {
+          project: this.project.name,
+          threadId: this.threadId
+        });
+      }
     }
 
     if (message.method === "turn/completed") {
@@ -187,12 +192,23 @@ export class CodexProjectBackend {
   }
 
   onServerRequest(message) {
+    const method = String(message.method || "");
     this.logger.info("codex_server_request", {
       project: this.project.name,
-      method: message.method,
+      method,
       requestId: message.id
     });
-    this.pauseForUser(`server_request:${message.method}`);
+    if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
+      this.client.respond(message.id, { decision: "decline" });
+      this.logger.info("codex_approval_declined", { project: this.project.name, method, requestId: message.id });
+      return;
+    }
+    if (method === "item/permissions/requestApproval") {
+      this.client.respond(message.id, { permissions: {} });
+      this.logger.info("codex_permissions_denied", { project: this.project.name, requestId: message.id });
+      return;
+    }
+    this.pauseForUser(`server_request:${method}`);
   }
 
   pauseForUser(reason) {
