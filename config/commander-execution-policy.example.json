@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "maxConcurrent": 2,
+  "commands": {
+    "replace-with-fixed-action": {
+      "executable": "/absolute/path/to/executable",
+      "args": ["fixed", "arguments"],
+      "cwd": "/absolute/approved/working-directory",
+      "timeoutMs": 30000,
+      "allowStdin": false
+    }
+  }
+}

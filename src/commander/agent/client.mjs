@@ -49,6 +49,11 @@ export class CommanderAgentClient extends EventEmitter {
     this.displayName = options.displayName;
     this.capabilities = options.capabilities ?? [];
     this.operationHandler = options.operationHandler ?? null;
+    this.allowedAuthorities = new Set(options.allowedAuthorities ?? ['read']);
+    for (const authority of this.allowedAuthorities) if (!['read', 'write'].includes(authority)) throw new Error('invalid_agent_authority');
+    this.executionEventSource = options.executionEventSource ?? null;
+    this.executionEventListener = (event) => this.#sendExecutionEvent(event);
+    this.executionEventSource?.on?.('event', this.executionEventListener);
     this.logger = options.logger ?? console;
     this.now = options.now ?? Date.now;
     this.connector = options.connector ?? ((connectOptions) => net.createConnection(connectOptions));
@@ -248,7 +253,7 @@ export class CommanderAgentClient extends EventEmitter {
     const definition = operationDefinition(request.operation);
     const advertised = this.capabilities.some((capability) => capability.operation === request.operation
       && capability.authority === definition.authority && capability.operationVersion === definition.operationVersion);
-    if (definition.authority !== 'read' || !advertised) throw new Error('operation_request_not_advertised');
+    if (!this.allowedAuthorities.has(definition.authority) || !advertised) throw new Error('operation_request_not_advertised');
     if (typeof this.operationHandler !== 'function') throw new Error('operation_handler_unavailable');
     let result;
     try {
@@ -257,7 +262,7 @@ export class CommanderAgentClient extends EventEmitter {
       result = {
         ...protocolEnvelope(), requestId: request.requestId, deviceId: request.deviceId, operation: request.operation,
         ok: false, completedAt: new Date(this.now()).toISOString(),
-        error: commanderError({ category: 'internal', code: 'READ_HANDLER_FAILED', message: 'Commander read handler failed.', retryable: false }),
+        error: commanderError({ category: 'internal', code: definition.authority === 'read' ? 'READ_HANDLER_FAILED' : 'EXECUTION_HANDLER_FAILED', message: 'Commander operation handler failed.', retryable: false }),
       };
     }
     result = validateOperationResult(result);
@@ -265,6 +270,15 @@ export class CommanderAgentClient extends EventEmitter {
       throw new Error('operation_result_identity_mismatch');
     }
     socket.write(encodeJsonLine({ ...protocolEnvelope(), type: 'operation_result', sessionId: this.sessionId, result }));
+  }
+
+
+  #sendExecutionEvent(event) {
+    if (!this.socket || this.socket.destroyed || this.state !== 'online' || !this.sessionId) return false;
+    try {
+      this.socket.write(encodeJsonLine({ ...protocolEnvelope(), type: 'execution_event', sessionId: this.sessionId, event }));
+      return true;
+    } catch { return false; }
   }
 
   #scheduleReconnect() {

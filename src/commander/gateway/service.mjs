@@ -17,6 +17,7 @@ export async function runGatewayService(env = process.env) {
     host: assertPhase2GatewayHost(env.COMMANDER_GATEWAY_HOST || '127.0.0.1'),
     port: commanderPort(env.COMMANDER_GATEWAY_PORT),
     secretResolver,
+    allowedAuthorities: commanderEnabled(env.COMMANDER_EXECUTION_ENABLED) ? ['read', 'write'] : ['read'],
   });
   await server.start();
   console.info(JSON.stringify({ event: 'commander_gateway_started', address: server.address() }));

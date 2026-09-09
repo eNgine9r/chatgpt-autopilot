@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import {
-  operationDefinition, protocolEnvelope, validateDevice, validateOperationRequest, validateOperationResult,
+  operationDefinition, protocolEnvelope, validateDevice, validateExecutionEvent, validateOperationRequest, validateOperationResult,
 } from '../contracts/index.mjs';
 import { createChallenge, verifyRegistrationProof } from '../session/auth.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
@@ -29,8 +30,9 @@ function exactMessage(value, required) {
 function validId(value) { return typeof value === 'string' && ID.test(value); }
 function validTimestamp(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
 
-export class CommanderGatewayServer {
+export class CommanderGatewayServer extends EventEmitter {
   constructor(options = {}) {
+    super();
     if (typeof options.secretResolver !== 'function') throw new Error('secret_resolver_required');
     this.host = assertPhase2GatewayHost(options.host ?? '127.0.0.1');
     this.port = Number(options.port ?? 0);
@@ -42,6 +44,9 @@ export class CommanderGatewayServer {
     this.heartbeatIntervalMs = Number(options.heartbeatIntervalMs ?? 5_000);
     this.heartbeatTimeoutMs = Number(options.heartbeatTimeoutMs ?? 20_000);
     this.authTimeoutMs = Number(options.authTimeoutMs ?? 10_000);
+    this.allowedAuthorities = new Set(options.allowedAuthorities ?? ['read']);
+    for (const authority of this.allowedAuthorities) if (!['read', 'write'].includes(authority)) throw new Error('invalid_gateway_authority');
+    this.executionEvents = new Map();
     this.server = null;
     this.sockets = new Set();
     this.pendingRequests = new Map();
@@ -93,11 +98,11 @@ export class CommanderGatewayServer {
   request(input, options = {}) {
     const request = validateOperationRequest(input);
     const definition = operationDefinition(request.operation);
-    if (definition.authority !== 'read') throw new Error('gateway_read_only');
+    if (!this.allowedAuthorities.has(definition.authority)) throw new Error(definition.authority === 'read' ? 'gateway_authority_disabled' : 'gateway_read_only');
     const entry = this.registry.get(request.deviceId);
     if (!entry || entry.status !== 'online' || !entry.connection || entry.connection.destroyed) throw new Error('device_offline');
     const capability = entry.device.capabilities.find((item) => item.operation === request.operation);
-    if (!capability || capability.authority !== 'read' || capability.operationVersion !== definition.operationVersion) {
+    if (!capability || capability.authority !== definition.authority || capability.operationVersion !== definition.operationVersion) {
       throw new Error('operation_not_advertised');
     }
     if (this.pendingRequests.has(request.requestId)) throw new Error('duplicate_request_id');
@@ -117,7 +122,7 @@ export class CommanderGatewayServer {
         entry.connection.write(encodeJsonLine({
           ...protocolEnvelope(), type: 'operation_request', sessionId: entry.sessionId, request,
         }));
-        log(this.logger, 'info', 'commander_read_request_sent', {
+        log(this.logger, 'info', definition.authority === 'read' ? 'commander_read_request_sent' : 'commander_execution_request_sent', {
           deviceId: request.deviceId, requestId: request.requestId, operation: request.operation,
         });
       } catch (error) {
@@ -225,6 +230,20 @@ export class CommanderGatewayServer {
       return;
     }
 
+    if (message.type === 'execution_event') {
+      exactMessage(message, ['type', 'sessionId', 'event']);
+      if (message.sessionId !== state.sessionId) throw new Error('execution_event_session_mismatch');
+      const event = validateExecutionEvent(message.event);
+      if (event.deviceId !== state.deviceId) throw new Error('execution_event_device_mismatch');
+      const history = this.executionEvents.get(event.executionId) ?? [];
+      history.push(event);
+      if (history.length > 1024) history.shift();
+      this.executionEvents.set(event.executionId, history);
+      while (this.executionEvents.size > 256) this.executionEvents.delete(this.executionEvents.keys().next().value);
+      this.emit('executionEvent', event);
+      return;
+    }
+
     if (message.type === 'operation_result') {
       exactMessage(message, ['type', 'sessionId', 'result']);
       if (message.sessionId !== state.sessionId) throw new Error('operation_result_session_mismatch');
@@ -237,7 +256,8 @@ export class CommanderGatewayServer {
       clearTimeout(pending.timer);
       this.pendingRequests.delete(result.requestId);
       pending.resolve(result);
-      log(this.logger, 'info', 'commander_read_request_completed', {
+      const resultDefinition = operationDefinition(result.operation);
+      log(this.logger, 'info', resultDefinition.authority === 'read' ? 'commander_read_request_completed' : 'commander_execution_request_completed', {
         deviceId: result.deviceId, requestId: result.requestId, operation: result.operation, ok: result.ok,
       });
       return;
