@@ -10,6 +10,7 @@ on:
       - 'config/commander-*'
       - 'systemd/*commander*'
       - 'docs/commander/**'
+      - 'docs/adr/*commander*'
       - '.github/workflows/commander-ci.yml'
       - 'package.json'
   push:
@@ -22,6 +23,7 @@ on:
       - 'config/commander-*'
       - 'systemd/*commander*'
       - 'docs/commander/**'
+      - 'docs/adr/*commander*'
       - '.github/workflows/commander-ci.yml'
       - 'package.json'
 

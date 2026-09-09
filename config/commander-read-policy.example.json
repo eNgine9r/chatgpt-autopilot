@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "roots": [
+    "/absolute/path/to/approved/project-root"
+  ],
+  "repositories": [
+    "/absolute/path/to/approved/project-root"
+  ],
+  "services": [
+    "approved-user-service.service"
+  ]
+}

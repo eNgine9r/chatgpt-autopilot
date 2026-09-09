@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
-import { protocolEnvelope, validateDevice } from '../contracts/index.mjs';
+import {
+  commanderError, operationDefinition, protocolEnvelope, validateDevice, validateOperationRequest, validateOperationResult,
+} from '../contracts/index.mjs';
 import { createRegistrationProof, validateChallenge } from '../session/auth.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
 
@@ -25,6 +27,15 @@ function log(logger, level, event, fields = {}) {
 
 function validId(value) { return typeof value === 'string' && ID.test(value); }
 
+function exactGatewayMessage(value, required) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid_gateway_message');
+  const fields = ['protocol', 'protocolVersion', 'minProtocolVersion', ...required];
+  const allowed = new Set(fields);
+  for (const key of fields) if (!Object.hasOwn(value, key)) throw new Error(`missing_gateway_field:${key}`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`unknown_gateway_field:${key}`);
+  if (value.protocol !== 'commander' || value.protocolVersion !== 1 || value.minProtocolVersion !== 1) throw new Error('invalid_gateway_protocol');
+}
+
 export class CommanderAgentClient extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -37,6 +48,7 @@ export class CommanderAgentClient extends EventEmitter {
     this.agentVersion = options.agentVersion ?? '0.1.0';
     this.displayName = options.displayName;
     this.capabilities = options.capabilities ?? [];
+    this.operationHandler = options.operationHandler ?? null;
     this.logger = options.logger ?? console;
     this.now = options.now ?? Date.now;
     this.connector = options.connector ?? ((connectOptions) => net.createConnection(connectOptions));
@@ -153,6 +165,10 @@ export class CommanderAgentClient extends EventEmitter {
             this.#heartbeatAck(message);
             return;
           }
+          if (message.type === 'operation_request') {
+            await this.#operationRequest(socket, message);
+            return;
+          }
           throw new Error('unsupported_gateway_message');
         }).catch((error) => {
           log(this.logger, 'warn', 'commander_agent_message_rejected', { error: String(error.message || error) });
@@ -220,6 +236,35 @@ export class CommanderAgentClient extends EventEmitter {
     this.lastAckSequence = message.sequence;
     this.lastAckAt = this.now();
     this.emit('heartbeatAck', message.sequence);
+  }
+
+  async #operationRequest(socket, message) {
+    exactGatewayMessage(message, ['type', 'sessionId', 'request']);
+    if (message.type !== 'operation_request' || message.sessionId !== this.sessionId || this.state !== 'online') {
+      throw new Error('operation_request_session_mismatch');
+    }
+    const request = validateOperationRequest(message.request);
+    if (request.deviceId !== this.identity.deviceId) throw new Error('operation_request_device_mismatch');
+    const definition = operationDefinition(request.operation);
+    const advertised = this.capabilities.some((capability) => capability.operation === request.operation
+      && capability.authority === definition.authority && capability.operationVersion === definition.operationVersion);
+    if (definition.authority !== 'read' || !advertised) throw new Error('operation_request_not_advertised');
+    if (typeof this.operationHandler !== 'function') throw new Error('operation_handler_unavailable');
+    let result;
+    try {
+      result = await this.operationHandler(request);
+    } catch {
+      result = {
+        ...protocolEnvelope(), requestId: request.requestId, deviceId: request.deviceId, operation: request.operation,
+        ok: false, completedAt: new Date(this.now()).toISOString(),
+        error: commanderError({ category: 'internal', code: 'READ_HANDLER_FAILED', message: 'Commander read handler failed.', retryable: false }),
+      };
+    }
+    result = validateOperationResult(result);
+    if (result.requestId !== request.requestId || result.deviceId !== request.deviceId || result.operation !== request.operation) {
+      throw new Error('operation_result_identity_mismatch');
+    }
+    socket.write(encodeJsonLine({ ...protocolEnvelope(), type: 'operation_result', sessionId: this.sessionId, result }));
   }
 
   #scheduleReconnect() {

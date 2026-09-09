@@ -29,7 +29,7 @@ const operationEntries = [
   ['device.health', 'read'],
   ['file.read', 'read'], ['file.list', 'read'], ['file.info', 'read'], ['file.search', 'read'],
   ['process.list', 'read'], ['service.status', 'read'],
-  ['git.status', 'read'], ['git.diff', 'read'],
+  ['git.status', 'read'], ['git.diff', 'read'], ['git.log', 'read'],
   ['execution.get', 'read'], ['execution.output', 'read'],
   ['execution.start', 'write'], ['execution.input', 'write'], ['execution.cancel', 'write'],
   ['file.write', 'write'], ['file.move', 'write'], ['process.terminate', 'write'],

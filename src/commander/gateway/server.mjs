@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { protocolEnvelope, validateDevice } from '../contracts/index.mjs';
+import {
+  operationDefinition, protocolEnvelope, validateDevice, validateOperationRequest, validateOperationResult,
+} from '../contracts/index.mjs';
 import { createChallenge, verifyRegistrationProof } from '../session/auth.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
 import { assertPhase2GatewayHost } from '../config.mjs';
@@ -42,6 +44,7 @@ export class CommanderGatewayServer {
     this.authTimeoutMs = Number(options.authTimeoutMs ?? 10_000);
     this.server = null;
     this.sockets = new Set();
+    this.pendingRequests = new Map();
     this.expiryTimer = null;
   }
 
@@ -74,11 +77,65 @@ export class CommanderGatewayServer {
   async stop() {
     if (this.expiryTimer) clearInterval(this.expiryTimer);
     this.expiryTimer = null;
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('gateway_stopped'));
+    }
+    this.pendingRequests.clear();
     for (const socket of this.sockets) socket.destroy();
     this.sockets.clear();
     const server = this.server;
     this.server = null;
     if (server) await new Promise((resolve) => server.close(() => resolve()));
+  }
+
+
+  request(input, options = {}) {
+    const request = validateOperationRequest(input);
+    const definition = operationDefinition(request.operation);
+    if (definition.authority !== 'read') throw new Error('gateway_read_only');
+    const entry = this.registry.get(request.deviceId);
+    if (!entry || entry.status !== 'online' || !entry.connection || entry.connection.destroyed) throw new Error('device_offline');
+    const capability = entry.device.capabilities.find((item) => item.operation === request.operation);
+    if (!capability || capability.authority !== 'read' || capability.operationVersion !== definition.operationVersion) {
+      throw new Error('operation_not_advertised');
+    }
+    if (this.pendingRequests.has(request.requestId)) throw new Error('duplicate_request_id');
+    let timeoutMs = Number(options.timeoutMs ?? 10_000);
+    if (request.deadlineAt) timeoutMs = Math.min(timeoutMs, Math.max(0, Date.parse(request.deadlineAt) - this.now()));
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000) throw new Error('invalid_gateway_request_timeout');
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(request.requestId);
+        reject(new Error('gateway_request_timeout'));
+      }, timeoutMs);
+      timer.unref?.();
+      this.pendingRequests.set(request.requestId, {
+        request, sessionId: entry.sessionId, resolve, reject, timer,
+      });
+      try {
+        entry.connection.write(encodeJsonLine({
+          ...protocolEnvelope(), type: 'operation_request', sessionId: entry.sessionId, request,
+        }));
+        log(this.logger, 'info', 'commander_read_request_sent', {
+          deviceId: request.deviceId, requestId: request.requestId, operation: request.operation,
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingRequests.delete(request.requestId);
+        reject(error);
+      }
+    });
+  }
+
+  #rejectPendingSession(deviceId, sessionId, reason) {
+    for (const [requestId, pending] of this.pendingRequests) {
+      if (pending.request.deviceId === deviceId && pending.sessionId === sessionId) {
+        clearTimeout(pending.timer);
+        this.pendingRequests.delete(requestId);
+        pending.reject(new Error(reason));
+      }
+    }
   }
 
   #accept(socket) {
@@ -93,7 +150,10 @@ export class CommanderGatewayServer {
 
     const close = (reason) => {
       clearTimeout(authTimer);
-      if (state.deviceId && state.sessionId) this.registry.disconnect(state.deviceId, state.sessionId);
+      if (state.deviceId && state.sessionId) {
+        this.registry.disconnect(state.deviceId, state.sessionId);
+        this.#rejectPendingSession(state.deviceId, state.sessionId, 'device_offline');
+      }
       this.sockets.delete(socket);
       log(this.logger, 'info', 'commander_agent_disconnected', {
         deviceId: state.deviceId || undefined,
@@ -162,6 +222,24 @@ export class CommanderGatewayServer {
         ...protocolEnvelope(), type: 'heartbeat_ack', deviceId: state.deviceId,
         sessionId: state.sessionId, sequence: message.sequence, timestamp: new Date(this.now()).toISOString(),
       }));
+      return;
+    }
+
+    if (message.type === 'operation_result') {
+      exactMessage(message, ['type', 'sessionId', 'result']);
+      if (message.sessionId !== state.sessionId) throw new Error('operation_result_session_mismatch');
+      const result = validateOperationResult(message.result);
+      if (result.deviceId !== state.deviceId) throw new Error('operation_result_device_mismatch');
+      const pending = this.pendingRequests.get(result.requestId);
+      if (!pending || pending.sessionId !== state.sessionId || pending.request.operation !== result.operation) {
+        throw new Error('stale_or_unknown_operation_result');
+      }
+      clearTimeout(pending.timer);
+      this.pendingRequests.delete(result.requestId);
+      pending.resolve(result);
+      log(this.logger, 'info', 'commander_read_request_completed', {
+        deviceId: result.deviceId, requestId: result.requestId, operation: result.operation, ok: result.ok,
+      });
       return;
     }
 
