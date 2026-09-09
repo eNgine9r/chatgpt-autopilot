@@ -1,0 +1,43 @@
+name: Commander CI
+
+on:
+  pull_request:
+    paths:
+      - 'src/commander/**'
+      - 'src/integrations/mcp/commander/**'
+      - 'test/commander-*.test.mjs'
+      - 'scripts/commander-*'
+      - 'systemd/*commander*'
+      - 'docs/commander/**'
+      - '.github/workflows/commander-ci.yml'
+      - 'package.json'
+  push:
+    branches: [main]
+    paths:
+      - 'src/commander/**'
+      - 'src/integrations/mcp/commander/**'
+      - 'test/commander-*.test.mjs'
+      - 'scripts/commander-*'
+      - 'systemd/*commander*'
+      - 'docs/commander/**'
+      - '.github/workflows/commander-ci.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  commander-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Commander contract tests
+        run: npm run test:commander
+      - name: Commander syntax checks
+        run: npm run check:commander
