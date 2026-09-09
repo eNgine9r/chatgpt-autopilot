@@ -66,12 +66,27 @@ def inspect_repo(repo):
     head = run(["git", "rev-parse", "--verify", "HEAD"], repo, 15000).stdout.strip()
     branch = run(["git", "branch", "--show-current"], repo, 15000).stdout.strip()
     status = run(["git", "status", "--porcelain=v1", "--untracked-files=no"], repo, 15000).stdout
-    return {
+    output = {
         "head": head,
         "branch": branch,
         "cleanTracked": not status.strip(),
         "trackedStatus": bounded(status, 4000),
     }
+    state = repo / ".project" / "ACTIVE_SPRINT.json"
+    if state.exists():
+        raw = json.loads(state.read_text(encoding="utf-8"))
+        active = ((raw.get("selection") or {}).get("active_work_package"))
+        if active is None:
+            output["activeWorkPackage"] = None
+        elif isinstance(active, dict):
+            active_branch = str(active.get("branch") or "")
+            active_issue = int(active.get("issue") or 0)
+            if not re.fullmatch(r"[A-Za-z0-9._/-]{1,160}", active_branch) or active_issue < 1:
+                raise ValueError("invalid_active_work_package")
+            output["activeWorkPackage"] = {"issue": active_issue, "branch": active_branch}
+        else:
+            raise ValueError("invalid_active_work_package")
+    return output
 
 
 def issue_from_branch(branch):

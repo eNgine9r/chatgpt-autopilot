@@ -231,10 +231,13 @@ test("missing completion marker fails closed instead of looping", async () => {
 test("publish marker hands tracked diff to deterministic publisher", async () => {
   const { backend, client, logs } = fixture();
   const publisherCalls = [];
+  let inspections = 0;
   backend.project.codex.autoContinue = true;
   backend.project.codex.publisher = { enabled: true };
   backend.publisher = {
-    inspect: async () => ({ head: "a".repeat(40), branch: "fix/42", cleanTracked: true }),
+    inspect: async () => (++inspections === 1
+      ? { head: "a".repeat(40), branch: "fix/42", cleanTracked: true, activeWorkPackage: { issue: 42, branch: "fix/42" } }
+      : { head: "b".repeat(40), branch: "fix/42", cleanTracked: true, activeWorkPackage: { issue: 42, branch: "fix/42" } }),
     publish: async (head, branch) => {
       publisherCalls.push({ head, branch });
       return { ok: true, branch: "fix/42", commit: "b".repeat(40), files: ["demo.py"] };
@@ -250,6 +253,66 @@ test("publish marker hands tracked diff to deterministic publisher", async () =>
   assert.ok(backend.nextTurnTimer);
   await backend.close();
   assert.ok(client.requests.some((item) => item.method === "turn/start"));
+});
+
+
+test("publisher stops after publishing completion to no active work package", async () => {
+  const { backend, logs } = fixture();
+  let inspections = 0;
+  backend.project.codex.autoContinue = true;
+  backend.project.codex.publisher = { enabled: true };
+  backend.publisher = {
+    inspect: async () => (++inspections === 1
+      ? { head: "a".repeat(40), branch: "fix/42", cleanTracked: true, activeWorkPackage: { issue: 42, branch: "fix/42" } }
+      : { head: "b".repeat(40), branch: "fix/42", cleanTracked: true, activeWorkPackage: null }),
+    publish: async () => ({ ok: true, branch: "fix/42", commit: "b".repeat(40), files: [".project/ACTIVE_SPRINT.json"] })
+  };
+  await backend.start();
+  await backend.startTurn("Finish safely");
+  backend.activeTurnId = "";
+  backend.lastAgentText = "State is complete. [[AUTOPILOT_PUBLISH]]";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.equal(backend.paused, false);
+  assert.equal(backend.nextTurnTimer, null);
+  assert.ok(logs.some((row) => row.message === "codex_autopilot_complete_after_publish"));
+});
+
+test("publisher pauses before continuing onto a different active work-package branch", async () => {
+  const { backend, messages } = fixture();
+  let inspections = 0;
+  backend.project.codex.autoContinue = true;
+  backend.project.codex.publisher = { enabled: true };
+  backend.publisher = {
+    inspect: async () => (++inspections === 1
+      ? { head: "a".repeat(40), branch: "fix/42", cleanTracked: true, activeWorkPackage: { issue: 42, branch: "fix/42" } }
+      : { head: "b".repeat(40), branch: "fix/42", cleanTracked: true, activeWorkPackage: { issue: 43, branch: "fix/43" } }),
+    publish: async () => ({ ok: true, branch: "fix/42", commit: "b".repeat(40), files: [".project/ACTIVE_SPRINT.json"] })
+  };
+  await backend.start();
+  await backend.startTurn("Transition safely");
+  backend.activeTurnId = "";
+  backend.lastAgentText = "Next work package selected. [[AUTOPILOT_PUBLISH]]";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.equal(backend.paused, true);
+  assert.equal(backend.nextTurnTimer, null);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /active_work_package_branch_transition:fix\/42->fix\/43/);
+});
+
+test("publisher refuses a reasoning turn when canonical active branch differs from checkout", async () => {
+  const { backend, client } = fixture();
+  backend.project.codex.publisher = { enabled: true };
+  backend.publisher = {
+    inspect: async () => ({
+      head: "a".repeat(40),
+      branch: "fix/42",
+      cleanTracked: true,
+      activeWorkPackage: { issue: 43, branch: "fix/43" }
+    })
+  };
+  await backend.start();
+  await assert.rejects(() => backend.startTurn("Wrong branch"), /active_work_package_branch_mismatch_before_turn/);
+  assert.equal(client.requests.filter((item) => item.method === "turn/start").length, 0);
 });
 
 

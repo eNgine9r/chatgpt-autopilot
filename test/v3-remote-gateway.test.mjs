@@ -57,6 +57,7 @@ test('remote gateway inspect and configured test return bounded JSON', async (t)
   const inspect = JSON.parse((await gateway('inspect', config)).stdout);
   assert.match(inspect.head, /^[0-9a-f]{40}$/);
   assert.equal(inspect.cleanTracked, true);
+  assert.deepEqual(inspect.activeWorkPackage, { issue: 42, branch: 'fix/42-test' });
 
   const syntax = JSON.parse((await gateway('test syntax', config)).stdout);
   assert.equal(syntax.alias, 'syntax');
