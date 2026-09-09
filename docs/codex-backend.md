@@ -58,6 +58,11 @@ Codex auto-continuation is fail-closed and marker-driven. A completed agent turn
 - `[[AUTOPILOT_CONTINUE]]` — a concrete safe next action exists; start the next turn after `completionSettleSeconds`.
 - `[[AUTOPILOT_WAIT]]` — external evidence such as CI is still pending; poll again after `codex.waitSeconds` (default 300 seconds).
 - `[[AUTOPILOT_COMPLETE]]` — the current autonomous work is complete; do not create another model turn.
+- `[[AUTOPILOT_PUBLISH]]` — source/tests are ready, but Git metadata is sandbox-protected; hand the tracked diff to the deterministic restricted publisher, then continue.
 - `[[USER_ACTION_REQUIRED]]` — pause the project and notify the operator.
 
 Missing or ambiguous markers pause the backend instead of silently looping. This keeps GitHub/status monitoring deterministic and avoids unnecessary model usage when no reasoning work is available.
+
+## Deterministic Git publisher
+
+When `codex.publisher.enabled` is true, Codex never receives write access to `.git`. Before each reasoning turn the publisher records a clean tracked-worktree baseline. `[[AUTOPILOT_PUBLISH]]` succeeds only if the current HEAD still matches that baseline, the branch matches `.project/ACTIVE_SPRINT.json`'s active Work Package and is not `main`/`master`, `git diff --check` passes, and no non-cache untracked source is present. The restricted gateway stages tracked changes only, creates one non-GPG commit, and pushes that exact feature branch without force or merge.

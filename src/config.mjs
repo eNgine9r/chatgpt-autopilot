@@ -115,12 +115,33 @@ function normalizeCodexConfig(project) {
     throw new Error(`${project.id}: codex.waitSeconds must be between 60 and 3600`);
   }
 
+  const publisherRaw = raw.publisher || {};
+  let publisher = null;
+  if (publisherRaw.enabled === true) {
+    for (const key of ["host", "user", "identityFile"]) {
+      if (!String(publisherRaw[key] || "").trim()) {
+        throw new Error(`${project.id}: codex.publisher requires ${key}`);
+      }
+    }
+    publisher = {
+      enabled: true,
+      host: String(publisherRaw.host),
+      user: String(publisherRaw.user),
+      identityFile: String(publisherRaw.identityFile),
+      port: Number(publisherRaw.port ?? 22),
+      sshExecutable: String(publisherRaw.sshExecutable || "/usr/bin/ssh")
+    };
+    if (!path.isAbsolute(publisher.identityFile)) throw new Error(`${project.id}: codex.publisher identityFile must be absolute`);
+    if (!Number.isInteger(publisher.port) || publisher.port < 1 || publisher.port > 65535) throw new Error(`${project.id}: codex.publisher port is invalid`);
+  }
+
   return {
     transport: normalizedTransport,
     networkAccess: raw.networkAccess === true,
     startOnBoot: raw.startOnBoot === true,
     autoContinue: raw.autoContinue !== false,
     waitSeconds,
+    publisher,
     approvalPolicy: "on-request",
     model: String(raw.model || "").trim(),
     effort: String(raw.effort || "").trim(),

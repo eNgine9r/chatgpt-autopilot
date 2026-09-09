@@ -1,4 +1,5 @@
 import { CodexRpcClient, buildCodexTransport } from "./codex-rpc.mjs";
+import { CodexPublisher } from "./codex-publisher.mjs";
 import { loadCodexState, saveCodexState } from "./codex-state-store.mjs";
 
 function statusType(status) {
@@ -12,6 +13,7 @@ function isMissingRolloutError(error) {
 const CONTINUE_MARKER = "[[AUTOPILOT_CONTINUE]]";
 const WAIT_MARKER = "[[AUTOPILOT_WAIT]]";
 const COMPLETE_MARKER = "[[AUTOPILOT_COMPLETE]]";
+const PUBLISH_MARKER = "[[AUTOPILOT_PUBLISH]]";
 
 function completionDirective(text, userGateMarker) {
   const value = String(text || "");
@@ -19,7 +21,8 @@ function completionDirective(text, userGateMarker) {
   const matches = [
     ["continue", CONTINUE_MARKER],
     ["wait", WAIT_MARKER],
-    ["complete", COMPLETE_MARKER]
+    ["complete", COMPLETE_MARKER],
+    ["publish", PUBLISH_MARKER]
   ].filter(([, marker]) => value.includes(marker));
   return matches.length === 1 ? matches[0][0] : "invalid";
 }
@@ -43,13 +46,17 @@ function progressKey(message) {
 }
 
 export class CodexProjectBackend {
-  constructor({ project, stateDir, notifier, logger, progressWatchdog, clientFactory = null }) {
+  constructor({ project, stateDir, notifier, logger, progressWatchdog, clientFactory = null, publisherFactory = null }) {
     this.project = project;
     this.stateDir = stateDir;
     this.notifier = notifier;
     this.logger = logger;
     this.progressWatchdog = progressWatchdog;
     this.clientFactory = clientFactory;
+    this.publisher = project.codex?.publisher?.enabled
+      ? (publisherFactory ? publisherFactory(project) : new CodexPublisher(project))
+      : null;
+    this.turnBaseline = null;
     this.client = null;
     this.threadId = "";
     this.activeTurnId = "";
@@ -146,6 +153,13 @@ export class CodexProjectBackend {
     if (this.paused || this.activeTurnId) return false;
     const text = String(prompt || "").trim();
     if (!text) throw new Error(`${this.project.id}: empty Codex turn prompt`);
+    if (this.publisher) {
+      const baseline = await this.publisher.inspect();
+      if (!baseline?.cleanTracked) throw new Error(`${this.project.id}: tracked_worktree_dirty_before_turn`);
+      this.turnBaseline = baseline;
+    } else {
+      this.turnBaseline = null;
+    }
     this.lastAgentText = "";
     const result = await this.client.request("turn/start", {
       threadId: this.threadId,
@@ -248,6 +262,26 @@ export class CodexProjectBackend {
     if (directive === "invalid") {
       this.pauseForUser("completion_marker_missing_or_ambiguous");
       return;
+    }
+    if (directive === "publish") {
+      if (!this.publisher || !this.turnBaseline?.head) {
+        this.pauseForUser("deterministic_publisher_unavailable");
+        return;
+      }
+      try {
+        const result = await this.publisher.publish(this.turnBaseline.head);
+        this.logger.info("codex_autopilot_published", {
+          project: this.project.name,
+          threadId: this.threadId,
+          branch: result?.branch || "",
+          commit: result?.commit || "",
+          files: result?.files || []
+        });
+      } catch (error) {
+        this.logger.error("codex_autopilot_publish_failed", { project: this.project.name, error: String(error) });
+        this.pauseForUser(`deterministic_publish_failed:${String(error).slice(0, 180)}`);
+        return;
+      }
     }
     const delaySeconds = directive === "wait"
       ? Number(this.project.codex?.waitSeconds || 300)
