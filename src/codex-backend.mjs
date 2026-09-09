@@ -9,6 +9,21 @@ function isMissingRolloutError(error) {
   return /no rollout found for thread id/i.test(String(error?.message || error || ""));
 }
 
+const CONTINUE_MARKER = "[[AUTOPILOT_CONTINUE]]";
+const WAIT_MARKER = "[[AUTOPILOT_WAIT]]";
+const COMPLETE_MARKER = "[[AUTOPILOT_COMPLETE]]";
+
+function completionDirective(text, userGateMarker) {
+  const value = String(text || "");
+  if (userGateMarker && value.includes(userGateMarker)) return "user";
+  const matches = [
+    ["continue", CONTINUE_MARKER],
+    ["wait", WAIT_MARKER],
+    ["complete", COMPLETE_MARKER]
+  ].filter(([, marker]) => value.includes(marker));
+  return matches.length === 1 ? matches[0][0] : "invalid";
+}
+
 function progressKey(message) {
   const { method, params = {} } = message;
   if (method === "turn/started" || method === "turn/completed") {
@@ -131,6 +146,7 @@ export class CodexProjectBackend {
     if (this.paused || this.activeTurnId) return false;
     const text = String(prompt || "").trim();
     if (!text) throw new Error(`${this.project.id}: empty Codex turn prompt`);
+    this.lastAgentText = "";
     const result = await this.client.request("turn/start", {
       threadId: this.threadId,
       input: [{ type: "text", text }],
@@ -204,7 +220,23 @@ export class CodexProjectBackend {
       return;
     }
     if (this.paused || this.project.codex?.autoContinue === false) return;
-    const delayMs = Math.max(2, Number(this.project.completionSettleSeconds || 10)) * 1000;
+    const directive = completionDirective(this.lastAgentText, this.project.userGateMarker);
+    if (directive === "complete") {
+      this.logger.info("codex_autopilot_complete", { project: this.project.name, threadId: this.threadId });
+      return;
+    }
+    if (directive === "user") {
+      this.pauseForUser("agent_marker");
+      return;
+    }
+    if (directive === "invalid") {
+      this.pauseForUser("completion_marker_missing_or_ambiguous");
+      return;
+    }
+    const delaySeconds = directive === "wait"
+      ? Number(this.project.codex?.waitSeconds || 300)
+      : Math.max(2, Number(this.project.completionSettleSeconds || 10));
+    const delayMs = Math.max(1, delaySeconds) * 1000;
     clearTimeout(this.nextTurnTimer);
     this.nextTurnTimer = setTimeout(() => {
       this.nextTurnTimer = null;
@@ -219,6 +251,11 @@ export class CodexProjectBackend {
       });
     }, delayMs);
     this.nextTurnTimer.unref?.();
+    this.logger.info("codex_autopilot_scheduled", {
+      project: this.project.name,
+      directive,
+      delaySeconds
+    });
   }
 
   onExit(error) {

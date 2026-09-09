@@ -36,6 +36,7 @@ test("loads Codex project without exposing it to the browser extension", () => {
   assert.equal(loaded.chatUrl, "");
   assert.equal(loaded.codex.approvalPolicy, "on-request");
   assert.equal(loaded.codex.networkAccess, false);
+  assert.equal(loaded.codex.waitSeconds, 300);
   assert.equal(publicProjects([loaded]).length, 0);
 });
 
@@ -54,4 +55,13 @@ test("rejects incomplete Codex SSH configuration", () => {
   const invalid = structuredClone(codexProject);
   delete invalid.codex.transport.identityFile;
   assert.throws(() => loadProjects(tempConfig(invalid)), /identityFile/);
+});
+
+
+test("validates marker-driven Codex wait interval", () => {
+  const configured = structuredClone(codexProject);
+  configured.codex.waitSeconds = 900;
+  assert.equal(loadProjects(tempConfig(configured))[0].codex.waitSeconds, 900);
+  configured.codex.waitSeconds = 30;
+  assert.throws(() => loadProjects(tempConfig(configured)), /codex.waitSeconds/);
 });
