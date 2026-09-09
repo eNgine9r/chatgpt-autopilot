@@ -1,0 +1,19 @@
+[Unit]
+Description=ChatGPT Autopilot v3 Telegram Mini App
+After=network-online.target chatgpt-autopilot-v3.service chatgpt-autopilot-v3-telegram.service
+Wants=network-online.target
+Requires=chatgpt-autopilot-v3.service
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO_DIR__
+Environment=AUTOPILOT_V3_MINIAPP_PORT=8782
+ExecStart=__NODE_BIN__ __REPO_DIR__/src/v3/miniapp-service.mjs --env __REPO_DIR__/.env --config __REPO_DIR__/config/v3-projects.json --state-dir __REPO_DIR__/state-v3
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target
