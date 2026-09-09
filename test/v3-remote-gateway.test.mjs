@@ -57,6 +57,7 @@ test('remote gateway inspect and configured test return bounded JSON', async (t)
   const inspect = JSON.parse((await gateway('inspect', config)).stdout);
   assert.match(inspect.head, /^[0-9a-f]{40}$/);
   assert.equal(inspect.cleanTracked, true);
+  assert.deepEqual(inspect.activeWorkPackage, { issue: 42, branch: 'fix/42-test' });
 
   const syntax = JSON.parse((await gateway('test syntax', config)).stdout);
   assert.equal(syntax.alias, 'syntax');
@@ -83,7 +84,7 @@ test('remote gateway publishes only tracked active-branch changes', async (t) =>
   await fs.writeFile(path.join(repo, 'demo.py'), 'x = 2\n');
   await fs.writeFile(path.join(repo, 'scratch.pyc'), 'generated\n');
 
-  const result = JSON.parse((await gateway(`publish ${before}`, config)).stdout);
+  const result = JSON.parse((await gateway(`publish ${before} fix/42-test`, config)).stdout);
   assert.equal(result.ok, true);
   assert.equal(result.branch, 'fix/42-test');
   assert.equal(result.issue, 42);
@@ -99,18 +100,31 @@ test('remote gateway publish fails closed on stale head or wrong active branch',
   const { repo, config } = await fixture(t);
   const before = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
   await fs.writeFile(path.join(repo, 'demo.py'), 'x = 3\n');
-  await assert.rejects(() => gateway(`publish ${'0'.repeat(40)}`, config), /publish_head_mismatch/);
-  await fs.writeFile(path.join(repo, '.project', 'ACTIVE_SPRINT.json'), JSON.stringify({
-    selection: { active_work_package: { issue: 42, branch: 'fix/other' } },
-  }));
-  await assert.rejects(() => gateway(`publish ${before}`, config), /publish_branch_mismatch/);
+  await assert.rejects(() => gateway(`publish ${'0'.repeat(40)} fix/42-test`, config), /publish_head_mismatch/);
+  await assert.rejects(() => gateway(`publish ${before} fix/other`, config), /publish_branch_mismatch/);
 });
 
+
+
+test('remote gateway permits a canonical active-work-package transition on the baseline branch', async (t) => {
+  const { repo, config, remote } = await fixture(t);
+  const before = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  await fs.writeFile(path.join(repo, '.project', 'ACTIVE_SPRINT.json'), JSON.stringify({
+    selection: { active_work_package: null },
+  }));
+
+  const result = JSON.parse((await gateway(`publish ${before} fix/42-test`, config)).stdout);
+  assert.equal(result.ok, true);
+  assert.equal(result.branch, 'fix/42-test');
+  assert.equal(result.issue, 42);
+  assert.deepEqual(result.files, ['.project/ACTIVE_SPRINT.json']);
+  assert.equal(execFileSync('git', ['rev-parse', 'refs/heads/fix/42-test'], { cwd: remote, encoding: 'utf8' }).trim(), result.commit);
+});
 
 test('remote gateway publish rejects non-cache untracked source', async (t) => {
   const { repo, config } = await fixture(t);
   const before = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
   await fs.writeFile(path.join(repo, 'demo.py'), 'x = 4\n');
   await fs.writeFile(path.join(repo, 'new_source.py'), 'y = 1\n');
-  await assert.rejects(() => gateway(`publish ${before}`, config), /publish_untracked_source/);
+  await assert.rejects(() => gateway(`publish ${before} fix/42-test`, config), /publish_untracked_source/);
 });

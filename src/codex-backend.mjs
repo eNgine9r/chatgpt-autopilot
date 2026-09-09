@@ -156,6 +156,20 @@ export class CodexProjectBackend {
     if (this.publisher) {
       const baseline = await this.publisher.inspect();
       if (!baseline?.cleanTracked) throw new Error(`${this.project.id}: tracked_worktree_dirty_before_turn`);
+      if (Object.prototype.hasOwnProperty.call(baseline, "activeWorkPackage")) {
+        if (baseline.activeWorkPackage === null) {
+          this.turnBaseline = null;
+          this.logger.info("codex_no_active_work_package", {
+            project: this.project.name,
+            branch: baseline.branch || ""
+          });
+          return false;
+        }
+        const activeBranch = String(baseline.activeWorkPackage?.branch || "");
+        if (activeBranch && activeBranch !== String(baseline.branch || "")) {
+          throw new Error(`${this.project.id}: active_work_package_branch_mismatch_before_turn`);
+        }
+      }
       this.turnBaseline = baseline;
     } else {
       this.turnBaseline = null;
@@ -269,7 +283,7 @@ export class CodexProjectBackend {
         return;
       }
       try {
-        const result = await this.publisher.publish(this.turnBaseline.head);
+        const result = await this.publisher.publish(this.turnBaseline.head, this.turnBaseline.branch);
         this.logger.info("codex_autopilot_published", {
           project: this.project.name,
           threadId: this.threadId,
@@ -277,6 +291,27 @@ export class CodexProjectBackend {
           commit: result?.commit || "",
           files: result?.files || []
         });
+        const postPublish = await this.publisher.inspect();
+        if (!postPublish?.cleanTracked
+          || String(postPublish.head || "") !== String(result?.commit || "")
+          || String(postPublish.branch || "") !== String(result?.branch || "")) {
+          throw new Error("codex_publisher_post_publish_state_mismatch");
+        }
+        if (Object.prototype.hasOwnProperty.call(postPublish, "activeWorkPackage")) {
+          if (postPublish.activeWorkPackage === null) {
+            this.logger.info("codex_autopilot_complete_after_publish", {
+              project: this.project.name,
+              threadId: this.threadId,
+              branch: postPublish.branch
+            });
+            return;
+          }
+          const activeBranch = String(postPublish.activeWorkPackage?.branch || "");
+          if (activeBranch && activeBranch !== String(postPublish.branch || "")) {
+            this.pauseForUser(`active_work_package_branch_transition:${postPublish.branch}->${activeBranch}`);
+            return;
+          }
+        }
       } catch (error) {
         this.logger.error("codex_autopilot_publish_failed", { project: this.project.name, error: String(error) });
         this.pauseForUser(`deterministic_publish_failed:${String(error).slice(0, 180)}`);

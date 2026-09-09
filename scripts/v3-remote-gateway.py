@@ -66,36 +66,47 @@ def inspect_repo(repo):
     head = run(["git", "rev-parse", "--verify", "HEAD"], repo, 15000).stdout.strip()
     branch = run(["git", "branch", "--show-current"], repo, 15000).stdout.strip()
     status = run(["git", "status", "--porcelain=v1", "--untracked-files=no"], repo, 15000).stdout
-    return {
+    output = {
         "head": head,
         "branch": branch,
         "cleanTracked": not status.strip(),
         "trackedStatus": bounded(status, 4000),
     }
-
-
-def active_work_package(repo):
     state = repo / ".project" / "ACTIVE_SPRINT.json"
-    raw = json.loads(state.read_text(encoding="utf-8"))
-    active = ((raw.get("selection") or {}).get("active_work_package") or {})
-    branch = str(active.get("branch") or "")
-    issue = int(active.get("issue") or 0)
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,160}", branch) or issue < 1:
-        raise ValueError("invalid_active_work_package")
-    return branch, issue
+    if state.exists():
+        raw = json.loads(state.read_text(encoding="utf-8"))
+        active = ((raw.get("selection") or {}).get("active_work_package"))
+        if active is None:
+            output["activeWorkPackage"] = None
+        elif isinstance(active, dict):
+            active_branch = str(active.get("branch") or "")
+            active_issue = int(active.get("issue") or 0)
+            if not re.fullmatch(r"[A-Za-z0-9._/-]{1,160}", active_branch) or active_issue < 1:
+                raise ValueError("invalid_active_work_package")
+            output["activeWorkPackage"] = {"issue": active_issue, "branch": active_branch}
+        else:
+            raise ValueError("invalid_active_work_package")
+    return output
 
 
-def publish_tracked(config, repo, expected_head):
+def issue_from_branch(branch):
+    match = re.search(r"(?:^|/)(\d+)(?:[-_/]|$)", branch)
+    return int(match.group(1)) if match else None
+
+
+def publish_tracked(config, repo, expected_head, expected_branch):
     if config.get("publishEnabled") is not True:
         raise ValueError("publish_disabled")
     if not re.fullmatch(r"[0-9a-f]{40}", expected_head or "", re.IGNORECASE):
         raise ValueError("invalid_expected_head")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,159}", expected_branch or ""):
+        raise ValueError("invalid_expected_branch")
+    run(["git", "check-ref-format", "--branch", expected_branch], repo, 15000)
     current = run(["git", "rev-parse", "HEAD"], repo, 15000).stdout.strip()
     if current.lower() != expected_head.lower():
         raise ValueError("publish_head_mismatch")
     branch = run(["git", "branch", "--show-current"], repo, 15000).stdout.strip()
-    active_branch, issue = active_work_package(repo)
-    if branch != active_branch or branch in {"main", "master"}:
+    if branch != expected_branch or branch in {"main", "master"}:
         raise ValueError("publish_branch_mismatch")
     staged = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo, env=clean_env(), check=False).returncode
     if staged != 0:
@@ -115,10 +126,12 @@ def publish_tracked(config, repo, expected_head):
         raise ValueError("publish_denied_path")
     run(["git", "diff", "--check"], repo, 15000)
     run(["git", "add", "-u", "--", *changed], repo, 15000)
+    issue = issue_from_branch(branch)
+    message = f"autopilot: progress issue #{issue}" if issue else "autopilot: publish verified tracked changes"
     try:
-        run(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "commit", "-m", f"autopilot: progress issue #{issue}"], repo, 30000)
+        run(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "commit", "-m", message], repo, 30000)
         commit = run(["git", "rev-parse", "HEAD"], repo, 15000).stdout.strip()
-        run(["git", "push", "origin", branch], repo, 60000)
+        run(["git", "push", "origin", f"HEAD:refs/heads/{branch}"], repo, 60000)
     except Exception:
         subprocess.run(["git", "reset", "--mixed", "HEAD"], cwd=repo, env=clean_env(), check=False, capture_output=True, text=True)
         raise
@@ -157,7 +170,10 @@ def main():
     elif command.startswith("test "):
         output = run_test(config, repo, command[5:])
     elif command.startswith("publish "):
-        output = publish_tracked(config, repo, command[8:].strip())
+        parts = command.split(" ")
+        if len(parts) != 3:
+            raise ValueError("invalid_publish_operation")
+        output = publish_tracked(config, repo, parts[1], parts[2])
     else:
         raise ValueError("unsupported_operation")
     print(json.dumps(output, separators=(",", ":"), ensure_ascii=False))
