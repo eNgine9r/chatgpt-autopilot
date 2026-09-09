@@ -9,7 +9,7 @@ WorkingDirectory=__APP_DIR__
 Environment=HOME=__HOME__
 Environment=NODE_ENV=production
 ExecStart=__NODE__ __APP_DIR__/src/codex-supervisor.mjs
-Restart=on-failure
+Restart=always
 RestartSec=10
 TimeoutStopSec=20
 UMask=0077
