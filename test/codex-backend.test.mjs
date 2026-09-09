@@ -226,3 +226,40 @@ test("missing completion marker fails closed instead of looping", async () => {
   assert.equal(messages.length, 1);
   assert.match(messages[0], /потребує вашої дії/i);
 });
+
+
+test("publish marker hands tracked diff to deterministic publisher", async () => {
+  const { backend, client, logs } = fixture();
+  const publisherCalls = [];
+  backend.project.codex.autoContinue = true;
+  backend.project.codex.publisher = { enabled: true };
+  backend.publisher = {
+    inspect: async () => ({ head: "a".repeat(40), branch: "fix/42", cleanTracked: true }),
+    publish: async (head) => {
+      publisherCalls.push(head);
+      return { ok: true, branch: "fix/42", commit: "b".repeat(40), files: ["demo.py"] };
+    }
+  };
+  await backend.start();
+  await backend.startTurn("Implement safely");
+  backend.activeTurnId = "";
+  backend.lastAgentText = "Tests are green. [[AUTOPILOT_PUBLISH]]";
+  await backend.handleTurnCompleted({ status: "completed" });
+  assert.deepEqual(publisherCalls, ["a".repeat(40)]);
+  assert.ok(logs.some((row) => row.message === "codex_autopilot_published"));
+  assert.ok(backend.nextTurnTimer);
+  await backend.close();
+  assert.ok(client.requests.some((item) => item.method === "turn/start"));
+});
+
+
+test("publisher refuses to start a reasoning turn on pre-existing tracked edits", async () => {
+  const { backend, client } = fixture();
+  backend.project.codex.publisher = { enabled: true };
+  backend.publisher = {
+    inspect: async () => ({ head: "a".repeat(40), branch: "fix/42", cleanTracked: false })
+  };
+  await backend.start();
+  await assert.rejects(() => backend.startTurn("Do not absorb unrelated edits"), /tracked_worktree_dirty_before_turn/);
+  assert.equal(client.requests.filter((item) => item.method === "turn/start").length, 0);
+});

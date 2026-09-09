@@ -74,6 +74,57 @@ def inspect_repo(repo):
     }
 
 
+def active_work_package(repo):
+    state = repo / ".project" / "ACTIVE_SPRINT.json"
+    raw = json.loads(state.read_text(encoding="utf-8"))
+    active = ((raw.get("selection") or {}).get("active_work_package") or {})
+    branch = str(active.get("branch") or "")
+    issue = int(active.get("issue") or 0)
+    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,160}", branch) or issue < 1:
+        raise ValueError("invalid_active_work_package")
+    return branch, issue
+
+
+def publish_tracked(config, repo, expected_head):
+    if config.get("publishEnabled") is not True:
+        raise ValueError("publish_disabled")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head or "", re.IGNORECASE):
+        raise ValueError("invalid_expected_head")
+    current = run(["git", "rev-parse", "HEAD"], repo, 15000).stdout.strip()
+    if current.lower() != expected_head.lower():
+        raise ValueError("publish_head_mismatch")
+    branch = run(["git", "branch", "--show-current"], repo, 15000).stdout.strip()
+    active_branch, issue = active_work_package(repo)
+    if branch != active_branch or branch in {"main", "master"}:
+        raise ValueError("publish_branch_mismatch")
+    staged = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo, env=clean_env(), check=False).returncode
+    if staged != 0:
+        raise ValueError("publish_index_not_clean")
+    status_all = run(["git", "status", "--porcelain=v1", "--untracked-files=all"], repo, 15000).stdout.splitlines()
+    untracked = [line[3:] for line in status_all if line.startswith("?? ")]
+    allowed_untracked = ("__pycache__/", ".pyc", ".pyo", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/")
+    for item in untracked:
+        if not (any(part == "__pycache__" for part in pathlib.PurePosixPath(item).parts) or item.endswith((".pyc", ".pyo")) or item.startswith(allowed_untracked)):
+            raise ValueError("publish_untracked_source")
+    changed = run(["git", "diff", "--name-only", "HEAD"], repo, 15000).stdout.splitlines()
+    changed = [item for item in changed if item]
+    if not changed or len(changed) > 100:
+        raise ValueError("publish_changed_files_invalid")
+    denied = tuple(str(x) for x in (config.get("publishDeniedPrefixes") or [".env", "runtime/", ".git/"]))
+    if any(path.startswith(denied) for path in changed):
+        raise ValueError("publish_denied_path")
+    run(["git", "diff", "--check"], repo, 15000)
+    run(["git", "add", "-u", "--", *changed], repo, 15000)
+    try:
+        run(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "commit", "-m", f"autopilot: progress issue #{issue}"], repo, 30000)
+        commit = run(["git", "rev-parse", "HEAD"], repo, 15000).stdout.strip()
+        run(["git", "push", "origin", branch], repo, 60000)
+    except Exception:
+        subprocess.run(["git", "reset", "--mixed", "HEAD"], cwd=repo, env=clean_env(), check=False, capture_output=True, text=True)
+        raise
+    return {"ok": True, "branch": branch, "issue": issue, "commit": commit, "files": changed}
+
+
 def run_test(config, repo, alias):
     if not re.fullmatch(r"[A-Za-z0-9._-]+", alias or ""):
         raise ValueError("invalid_test_alias")
@@ -105,6 +156,8 @@ def main():
         output = inspect_repo(repo)
     elif command.startswith("test "):
         output = run_test(config, repo, command[5:])
+    elif command.startswith("publish "):
+        output = publish_tracked(config, repo, command[8:].strip())
     else:
         raise ValueError("unsupported_operation")
     print(json.dumps(output, separators=(",", ":"), ensure_ascii=False))

@@ -65,3 +65,19 @@ test("validates marker-driven Codex wait interval", () => {
   configured.codex.waitSeconds = 30;
   assert.throws(() => loadProjects(tempConfig(configured)), /codex.waitSeconds/);
 });
+
+
+test("validates deterministic Codex publisher transport", () => {
+  const configured = structuredClone(codexProject);
+  configured.codex.publisher = {
+    enabled: true,
+    host: "worker-host",
+    user: "worker",
+    identityFile: "/home/autopilot/.ssh/v3-gateway"
+  };
+  const loaded = loadProjects(tempConfig(configured))[0];
+  assert.equal(loaded.codex.publisher.enabled, true);
+  assert.equal(loaded.codex.publisher.port, 22);
+  configured.codex.publisher.identityFile = "relative-key";
+  assert.throws(() => loadProjects(tempConfig(configured)), /publisher identityFile/);
+});

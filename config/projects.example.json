@@ -55,7 +55,7 @@
       "enabled": false,
       "backend": "codex",
       "repoPath": "/absolute/path/on/worker/project",
-      "continuationPrompt": "Продовжуй роботу з фактичної поточної точки. Не повторюй виконане. Заверши відповідь рівно одним маркером: [[AUTOPILOT_CONTINUE]] якщо є наступна безпечна дія, [[AUTOPILOT_WAIT]] якщо очікується зовнішнє evidence, [[AUTOPILOT_COMPLETE]] якщо роботу завершено, або [[USER_ACTION_REQUIRED]] якщо потрібен користувач.",
+      "continuationPrompt": "Продовжуй роботу з фактичної поточної точки. Не повторюй виконане. Заверши відповідь рівно одним маркером: [[AUTOPILOT_CONTINUE]] якщо є наступна безпечна дія, [[AUTOPILOT_WAIT]] якщо очікується зовнішнє evidence, [[AUTOPILOT_COMPLETE]] якщо роботу завершено, [[AUTOPILOT_PUBLISH]] якщо перевірений tracked diff треба deterministic commit/push, або [[USER_ACTION_REQUIRED]] якщо потрібен користувач.",
       "completionSettleSeconds": 10,
       "watchdogEnabled": true,
       "noProgressAlertSeconds": 1800,
@@ -65,6 +65,12 @@
         "startOnBoot": false,
         "waitSeconds": 300,
         "networkAccess": false,
+        "publisher": {
+          "enabled": false,
+          "host": "worker-host",
+          "user": "worker-user",
+          "identityFile": "/absolute/path/to/restricted-v3-gateway-key"
+        },
         "transport": {
           "type": "ssh",
           "host": "worker-host",
