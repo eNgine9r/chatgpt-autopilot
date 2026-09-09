@@ -1,0 +1,23 @@
+[Unit]
+Description=ChatGPT Autopilot Commander Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_DIR@
+EnvironmentFile=-%h/.config/chatgpt-autopilot-commander/agent.env
+ExecStart=@NODE_BIN@ @REPO_DIR@/src/commander/agent/service.mjs
+Restart=on-failure
+RestartSec=5
+UMask=0077
+MemoryMax=192M
+TasksMax=32
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/chatgpt-autopilot-commander
+
+[Install]
+WantedBy=default.target
