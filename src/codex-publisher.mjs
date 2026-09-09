@@ -43,11 +43,17 @@ export class CodexPublisher {
     return runPublisher(this.project, "inspect", this.runner);
   }
 
-  async publish(expectedHead) {
+  async publish(expectedHead, expectedBranch) {
     if (!/^[0-9a-f]{40}$/i.test(String(expectedHead || ""))) {
       throw new Error("codex_publisher_invalid_expected_head");
     }
-    return runPublisher(this.project, `publish ${expectedHead}`, this.runner);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,159}$/.test(String(expectedBranch || ""))) {
+      throw new Error("codex_publisher_invalid_expected_branch");
+    }
+    if (["main", "master"].includes(String(expectedBranch))) {
+      throw new Error("codex_publisher_protected_branch");
+    }
+    return runPublisher(this.project, `publish ${expectedHead} ${expectedBranch}`, this.runner);
   }
 }
 

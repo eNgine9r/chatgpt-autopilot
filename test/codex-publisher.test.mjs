@@ -40,14 +40,15 @@ test("Codex publisher sends only validated expected head to gateway", async () =
     }
   });
   const head = "a".repeat(40);
-  const result = await publisher.publish(head);
-  assert.equal(calls[0], `publish ${head}`);
+  const result = await publisher.publish(head, "fix/42");
+  assert.equal(calls[0], `publish ${head} fix/42`);
   assert.equal(result.ok, true);
-  await assert.rejects(() => publisher.publish("main"), /invalid_expected_head/);
+  await assert.rejects(() => publisher.publish("main", "fix/42"), /invalid_expected_head/);
+  await assert.rejects(() => publisher.publish(head, "main"), /protected_branch/);
 });
 
 test("sshArgs rejects no shell interpolation by keeping operation one argv", () => {
-  const args = sshArgs(project.codex.publisher, "publish " + "b".repeat(40));
+  const args = sshArgs(project.codex.publisher, "publish " + "b".repeat(40) + " fix/42");
   assert.equal(args.at(-2), "nexolab@nexolab-edge-01");
-  assert.equal(args.at(-1), "publish " + "b".repeat(40));
+  assert.equal(args.at(-1), "publish " + "b".repeat(40) + " fix/42");
 });

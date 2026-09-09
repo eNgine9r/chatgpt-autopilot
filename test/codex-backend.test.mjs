@@ -235,8 +235,8 @@ test("publish marker hands tracked diff to deterministic publisher", async () =>
   backend.project.codex.publisher = { enabled: true };
   backend.publisher = {
     inspect: async () => ({ head: "a".repeat(40), branch: "fix/42", cleanTracked: true }),
-    publish: async (head) => {
-      publisherCalls.push(head);
+    publish: async (head, branch) => {
+      publisherCalls.push({ head, branch });
       return { ok: true, branch: "fix/42", commit: "b".repeat(40), files: ["demo.py"] };
     }
   };
@@ -245,7 +245,7 @@ test("publish marker hands tracked diff to deterministic publisher", async () =>
   backend.activeTurnId = "";
   backend.lastAgentText = "Tests are green. [[AUTOPILOT_PUBLISH]]";
   await backend.handleTurnCompleted({ status: "completed" });
-  assert.deepEqual(publisherCalls, ["a".repeat(40)]);
+  assert.deepEqual(publisherCalls, [{ head: "a".repeat(40), branch: "fix/42" }]);
   assert.ok(logs.some((row) => row.message === "codex_autopilot_published"));
   assert.ok(backend.nextTurnTimer);
   await backend.close();

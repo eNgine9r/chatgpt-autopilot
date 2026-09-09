@@ -269,7 +269,7 @@ export class CodexProjectBackend {
         return;
       }
       try {
-        const result = await this.publisher.publish(this.turnBaseline.head);
+        const result = await this.publisher.publish(this.turnBaseline.head, this.turnBaseline.branch);
         this.logger.info("codex_autopilot_published", {
           project: this.project.name,
           threadId: this.threadId,
