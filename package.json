@@ -33,9 +33,11 @@
     "task:browserless": "python3 -m src.browserless.operator",
     "start:v3": "node src/v3/index.mjs",
     "test:v3": "node --test test/v3-*.test.mjs",
-    "check:v3": "node --check src/v3/config.mjs && node --check src/v3/store.mjs && node --check src/v3/state-machine.mjs && node --check src/v3/orchestrator.mjs && node --check src/v3/executor.mjs && node --check src/v3/execution-engine.mjs && node --check src/v3/github-webhook.mjs && node --check src/v3/http-servers.mjs && node --check src/v3/telegram-bridge.mjs && node --check src/v3/telegram-clients.mjs && node --check src/v3/telegram-service.mjs && node --check src/v3/index.mjs && python3 -m py_compile scripts/v3-remote-gateway.py scripts/v3-webhook-cutover.py",
+    "check:v3": "node --check src/v3/config.mjs && node --check src/v3/store.mjs && node --check src/v3/state-machine.mjs && node --check src/v3/orchestrator.mjs && node --check src/v3/executor.mjs && node --check src/v3/execution-engine.mjs && node --check src/v3/github-webhook.mjs && node --check src/v3/http-servers.mjs && node --check src/v3/telegram-bridge.mjs && node --check src/v3/telegram-clients.mjs && node --check src/v3/telegram-service.mjs && node --check src/v3/miniapp-server.mjs && node --check src/v3/miniapp-service.mjs && node --check src/v3/index.mjs && python3 -m py_compile scripts/v3-remote-gateway.py scripts/v3-webhook-cutover.py",
     "install:v3-service": "bash scripts/install-v3-systemd.sh",
     "start:v3-telegram": "node src/v3/telegram-service.mjs",
-    "install:v3-telegram-service": "bash scripts/install-v3-telegram-systemd.sh"
+    "install:v3-telegram-service": "bash scripts/install-v3-telegram-systemd.sh",
+    "start:v3-miniapp": "node src/v3/miniapp-service.mjs",
+    "install:v3-miniapp-service": "bash scripts/install-v3-miniapp-systemd.sh"
   }
 }
