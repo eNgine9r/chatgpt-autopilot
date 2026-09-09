@@ -7,6 +7,8 @@ import { CommanderReadOnlyDispatcher } from './readonly-dispatcher.mjs';
 import { CommanderExecutionEngine } from './execution-engine.mjs';
 import { loadCommanderExecutionPolicy, phase4ExecutionCapabilities } from './execution-policy.mjs';
 import { CommanderAgentOperationDispatcher } from './operation-dispatcher.mjs';
+import { CommanderControlledWriteDispatcher } from './controlled-write-dispatcher.mjs';
+import { loadCommanderWritePolicy, phase5WriteCapabilities } from './write-policy.mjs';
 import { loadCommanderReadPolicy, phase3ReadCapabilities } from './read-policy.mjs';
 import { commanderEnabled, commanderPort, loadCommanderSecret } from '../config.mjs';
 
@@ -15,6 +17,7 @@ export async function runAgentService(env = process.env) {
     console.info(JSON.stringify({ event: 'commander_agent_disabled' }));
     return null;
   }
+  if (commanderEnabled(env.COMMANDER_ADMIN_ENABLED)) throw new Error('commander_admin_not_supported_phase5');
   const home = env.HOME || os.homedir();
   const identityFile = env.COMMANDER_DEVICE_IDENTITY_FILE
     || path.join(home, '.local/state/chatgpt-autopilot-commander/device.json');
@@ -32,8 +35,14 @@ export async function runAgentService(env = process.env) {
     const executionPolicyFile = env.COMMANDER_EXECUTION_POLICY_FILE || path.join(home, '.config/chatgpt-autopilot-commander/execution-policy.json');
     executionEngine = new CommanderExecutionEngine({ deviceId: identity.deviceId, policy: await loadCommanderExecutionPolicy(executionPolicyFile) });
   }
-  const dispatcher = new CommanderAgentOperationDispatcher({ readDispatcher, executionEngine });
-  const capabilities = [...phase3ReadCapabilities(), ...(executionEnabled ? phase4ExecutionCapabilities() : [])];
+  const writeEnabled = commanderEnabled(env.COMMANDER_WRITE_ENABLED);
+  let writeDispatcher = null;
+  if (writeEnabled) {
+    const writePolicyFile = env.COMMANDER_WRITE_POLICY_FILE || path.join(home, '.config/chatgpt-autopilot-commander/write-policy.json');
+    writeDispatcher = new CommanderControlledWriteDispatcher({ deviceId: identity.deviceId, policy: await loadCommanderWritePolicy(writePolicyFile) });
+  }
+  const dispatcher = new CommanderAgentOperationDispatcher({ readDispatcher, executionEngine, writeDispatcher });
+  const capabilities = [...phase3ReadCapabilities(), ...(executionEnabled ? phase4ExecutionCapabilities() : []), ...(writeEnabled ? phase5WriteCapabilities() : [])];
   const client = new CommanderAgentClient({
     gatewayHost: env.COMMANDER_GATEWAY_HOST || '127.0.0.1',
     gatewayPort: commanderPort(env.COMMANDER_GATEWAY_PORT),
@@ -42,11 +51,12 @@ export async function runAgentService(env = process.env) {
     displayName: env.COMMANDER_DEVICE_NAME || os.hostname(),
     capabilities,
     operationHandler: (request) => dispatcher.handle(request),
-    allowedAuthorities: executionEnabled ? ['read', 'write'] : ['read'],
+    allowedAuthorities: (executionEnabled || writeEnabled) ? ['read', 'write'] : ['read'],
     executionEventSource: executionEngine,
   });
   client.start();
   client.executionEngine = executionEngine;
+  client.writeDispatcher = writeDispatcher;
   return client;
 }
 

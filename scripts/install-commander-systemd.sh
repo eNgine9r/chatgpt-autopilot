@@ -27,6 +27,8 @@ if [[ ! -e "$CONFIG_DIR/agent.env" ]]; then
   cat > "$CONFIG_DIR/agent.env" <<'ENV'
 COMMANDER_ENABLED=false
 COMMANDER_EXECUTION_ENABLED=false
+COMMANDER_WRITE_ENABLED=false
+COMMANDER_ADMIN_ENABLED=false
 COMMANDER_GATEWAY_HOST=127.0.0.1
 COMMANDER_GATEWAY_PORT=8790
 ENV
@@ -36,6 +38,8 @@ if [[ ! -e "$CONFIG_DIR/gateway.env" ]]; then
   cat > "$CONFIG_DIR/gateway.env" <<'ENV'
 COMMANDER_ENABLED=false
 COMMANDER_EXECUTION_ENABLED=false
+COMMANDER_WRITE_ENABLED=false
+COMMANDER_ADMIN_ENABLED=false
 COMMANDER_GATEWAY_HOST=127.0.0.1
 COMMANDER_GATEWAY_PORT=8790
 ENV
@@ -52,6 +56,18 @@ if [[ ! -e "$CONFIG_DIR/read-policy.json" ]]; then
 }
 JSON
   chmod 600 "$CONFIG_DIR/read-policy.json"
+fi
+
+if [[ ! -e "$CONFIG_DIR/write-policy.json" ]]; then
+  cat > "$CONFIG_DIR/write-policy.json" <<'JSON'
+{
+  "version": 1,
+  "roots": [],
+  "services": [],
+  "repositories": []
+}
+JSON
+  chmod 600 "$CONFIG_DIR/write-policy.json"
 fi
 
 if [[ "${COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD:-0}" != "1" ]]; then

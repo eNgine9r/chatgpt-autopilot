@@ -38,6 +38,7 @@ test('Commander installer stages hardened disabled user units only', async () =>
   for (const unit of [agentUnit, gatewayUnit]) {
     assert.match(unit, /NoNewPrivileges=true/);
     assert.match(unit, /ProtectSystem=strict/);
+    assert.match(unit, /ProtectHome=read-only/);
     assert.match(unit, /UMask=0077/);
     assert.match(unit, /MemoryMax=192M/);
     assert.match(unit, /TasksMax=32/);
@@ -47,12 +48,20 @@ test('Commander installer stages hardened disabled user units only', async () =>
   const gatewayEnv = await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/gateway.env'), 'utf8');
   assert.match(agentEnv, /COMMANDER_ENABLED=false/);
   assert.match(agentEnv, /COMMANDER_EXECUTION_ENABLED=false/);
+  assert.match(agentEnv, /COMMANDER_WRITE_ENABLED=false/);
+  assert.match(agentEnv, /COMMANDER_ADMIN_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_EXECUTION_ENABLED=false/);
+  assert.match(gatewayEnv, /COMMANDER_WRITE_ENABLED=false/);
+  assert.match(gatewayEnv, /COMMANDER_ADMIN_ENABLED=false/);
   const readPolicyPath = path.join(configHome, 'chatgpt-autopilot-commander/read-policy.json');
   const readPolicy = JSON.parse(await fs.readFile(readPolicyPath, 'utf8'));
   assert.deepEqual(readPolicy, { version: 1, roots: [], repositories: [], services: [] });
   assert.equal((await fs.stat(readPolicyPath)).mode & 0o077, 0);
+  const writePolicyPath = path.join(configHome, 'chatgpt-autopilot-commander/write-policy.json');
+  const writePolicy = JSON.parse(await fs.readFile(writePolicyPath, 'utf8'));
+  assert.deepEqual(writePolicy, { version: 1, roots: [], services: [], repositories: [] });
+  assert.equal((await fs.stat(writePolicyPath)).mode & 0o077, 0);
   const script = await fs.readFile(path.join(repo, 'scripts/install-commander-systemd.sh'), 'utf8');
   assert.doesNotMatch(script, /systemctl\s+--user\s+(?:enable|start|restart)/);
 });

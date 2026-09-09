@@ -32,7 +32,7 @@ const operationEntries = [
   ['git.status', 'read'], ['git.diff', 'read'], ['git.log', 'read'],
   ['execution.get', 'read'], ['execution.output', 'read'],
   ['execution.start', 'write'], ['execution.input', 'write'], ['execution.cancel', 'write'],
-  ['file.write', 'write'], ['file.move', 'write'], ['process.terminate', 'write'],
+  ['file.write', 'write'], ['file.edit', 'write'], ['file.move', 'write'], ['process.terminate', 'write'],
   ['service.start', 'write'], ['service.stop', 'write'], ['service.restart', 'write'],
   ['git.commit', 'write'], ['git.push', 'write'],
   ['system.reboot', 'admin'], ['system.package.install', 'admin'],
