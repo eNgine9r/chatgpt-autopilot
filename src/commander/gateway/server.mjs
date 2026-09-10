@@ -6,7 +6,7 @@ import {
 } from '../contracts/index.mjs';
 import { createChallenge, verifyRegistrationProof } from '../session/auth.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
-import { assertPhase2GatewayHost } from '../config.mjs';
+import { resolveCommanderGatewayBindHost } from '../config.mjs';
 import { CommanderDeviceRegistry } from './device-registry.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -34,7 +34,10 @@ export class CommanderGatewayServer extends EventEmitter {
   constructor(options = {}) {
     super();
     if (typeof options.secretResolver !== 'function') throw new Error('secret_resolver_required');
-    this.host = assertPhase2GatewayHost(options.host ?? '127.0.0.1');
+    this.host = resolveCommanderGatewayBindHost(options.host ?? '127.0.0.1', {
+      privateBindEnabled: options.privateBindEnabled === true,
+      networkInterfaces: options.networkInterfaces,
+    });
     this.port = Number(options.port ?? 0);
     this.secretResolver = options.secretResolver;
     this.registry = options.registry ?? new CommanderDeviceRegistry({ heartbeatTimeoutMs: options.heartbeatTimeoutMs });

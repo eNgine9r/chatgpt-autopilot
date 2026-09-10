@@ -11,7 +11,7 @@ import { createChallenge, createRegistrationProof, validateChallenge, verifyRegi
 import { encodeJsonLine, JsonLineDecoder } from '../src/commander/session/framing.mjs';
 import { loadOrCreateDeviceIdentity } from '../src/commander/agent/identity.mjs';
 import { CommanderDeviceRegistry } from '../src/commander/gateway/device-registry.mjs';
-import { assertPhase2GatewayHost, commanderEnabled, commanderPort, loadCommanderSecret, loadGatewaySecretMap } from '../src/commander/config.mjs';
+import { assertPhase2GatewayHost, commanderEnabled, commanderPort, loadCommanderSecret, loadGatewaySecretMap, resolveCommanderGatewayBindHost } from '../src/commander/config.mjs';
 
 const secret = 's'.repeat(48);
 const device = {
@@ -80,6 +80,25 @@ test('Phase 2 configuration is disabled and loopback-only by default', () => {
   assert.equal(assertPhase2GatewayHost('127.0.0.1'), '127.0.0.1');
   assert.throws(() => assertPhase2GatewayHost('0.0.0.0'), /phase2_gateway_must_be_loopback/);
   assert.equal(COMMANDER_OPERATIONS['shell.exec'], undefined);
+});
+
+
+test('Phase 8 private bind accepts only an address assigned to tailscale0 behind the explicit gate', () => {
+  const interfaces = {
+    tailscale0: [
+      { address: '100.72.160.97', family: 'IPv4', internal: false },
+      { address: 'fd7a:115c:a1e0::1e2a:a062', family: 'IPv6', internal: false },
+    ],
+    eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }],
+  };
+  assert.equal(resolveCommanderGatewayBindHost('127.0.0.1', { privateBindEnabled: false, networkInterfaces: interfaces }), '127.0.0.1');
+  assert.throws(() => resolveCommanderGatewayBindHost('100.72.160.97', { privateBindEnabled: false, networkInterfaces: interfaces }), /phase2_gateway_must_be_loopback/);
+  assert.equal(resolveCommanderGatewayBindHost('100.72.160.97', { privateBindEnabled: true, networkInterfaces: interfaces }), '100.72.160.97');
+  assert.equal(resolveCommanderGatewayBindHost('fd7a:115c:a1e0::1e2a:a062', { privateBindEnabled: true, networkInterfaces: interfaces }), 'fd7a:115c:a1e0::1e2a:a062');
+  assert.throws(() => resolveCommanderGatewayBindHost('0.0.0.0', { privateBindEnabled: true, networkInterfaces: interfaces }), /wildcard_bind_forbidden/);
+  assert.throws(() => resolveCommanderGatewayBindHost('192.168.1.20', { privateBindEnabled: true, networkInterfaces: interfaces }), /not_tailscale0/);
+  assert.throws(() => resolveCommanderGatewayBindHost('100.64.0.99', { privateBindEnabled: true, networkInterfaces: interfaces }), /not_tailscale0/);
+  assert.throws(() => resolveCommanderGatewayBindHost('btc-radar', { privateBindEnabled: true, networkInterfaces: interfaces }), /private_bind_must_be_ip/);
 });
 
 test('secret files require private permissions and gateway map stores paths, not secrets', async () => {

@@ -210,6 +210,8 @@ Issue: #190
 Area: `area/commander`
 Depends on: #189 and required capability phases
 
+Transport precondition: ADR-008. Loopback remains the default; the real-host pilot may bind the central Gateway only to the exact local `tailscale0` IP behind `COMMANDER_PRIVATE_BIND_ENABLED=true`. LAN, wildcard, Funnel and public Agent-session listeners remain forbidden.
+
 Pilot order:
 
 1. staged Agent installation;

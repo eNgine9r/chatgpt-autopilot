@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  assertPhase2GatewayHost,
+  resolveCommanderGatewayBindHost,
   commanderControlSocketPath,
   commanderEnabled,
   commanderPort,
@@ -21,8 +21,16 @@ export async function runGatewayService(env = process.env) {
   const secretMap = env.COMMANDER_GATEWAY_SECRET_MAP
     || path.join(home, '.config/chatgpt-autopilot-commander/gateway-secrets.json');
   const secretResolver = await loadGatewaySecretMap(secretMap);
+  const privateBindEnabled = commanderEnabled(env.COMMANDER_PRIVATE_BIND_ENABLED);
+  const networkInterfaces = os.networkInterfaces();
+  const gatewayHost = resolveCommanderGatewayBindHost(env.COMMANDER_GATEWAY_HOST || '127.0.0.1', {
+    privateBindEnabled,
+    networkInterfaces,
+  });
   const server = new CommanderGatewayServer({
-    host: assertPhase2GatewayHost(env.COMMANDER_GATEWAY_HOST || '127.0.0.1'),
+    host: gatewayHost,
+    privateBindEnabled,
+    networkInterfaces,
     port: commanderPort(env.COMMANDER_GATEWAY_PORT),
     secretResolver,
     allowedAuthorities: (commanderEnabled(env.COMMANDER_EXECUTION_ENABLED) || commanderEnabled(env.COMMANDER_WRITE_ENABLED)) ? ['read', 'write'] : ['read'],

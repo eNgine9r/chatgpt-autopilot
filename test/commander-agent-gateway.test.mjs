@@ -44,6 +44,24 @@ test('Gateway class itself rejects non-loopback Phase 2 binding', () => {
   assert.throws(() => new CommanderGatewayServer({ host: '0.0.0.0', secretResolver: async () => secret }), /phase2_gateway_must_be_loopback/);
 });
 
+
+test('Gateway private binding is opt-in and tied to the injected tailscale0 address', () => {
+  const networkInterfaces = {
+    tailscale0: [{ address: '100.72.160.97', family: 'IPv4', internal: false }],
+    eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }],
+  };
+  const gateway = new CommanderGatewayServer({
+    host: '100.72.160.97',
+    privateBindEnabled: true,
+    networkInterfaces,
+    secretResolver: async () => secret,
+  });
+  assert.equal(gateway.host, '100.72.160.97');
+  assert.throws(() => new CommanderGatewayServer({
+    host: '192.168.1.20', privateBindEnabled: true, networkInterfaces, secretResolver: async () => secret,
+  }), /not_tailscale0/);
+});
+
 test('Agent authenticates, heartbeats and reconnects with a new session after Gateway restart', async (t) => {
   let gateway = new CommanderGatewayServer({
     host: '127.0.0.1', port: 0,
