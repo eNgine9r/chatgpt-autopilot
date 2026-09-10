@@ -5,6 +5,19 @@ export function commanderEnabled(value = process.env.COMMANDER_ENABLED) {
   return String(value ?? '').toLowerCase() === 'true';
 }
 
+export function commanderControlSocketPath(env = process.env) {
+  const override = env.COMMANDER_CONTROL_SOCKET;
+  if (override !== undefined) {
+    if (!path.isAbsolute(String(override || ''))) throw new Error('control_socket_must_be_absolute');
+    return String(override);
+  }
+  const uid = process.getuid?.();
+  if (!Number.isInteger(uid)) throw new Error('commander_uid_required');
+  const runtimeDir = env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
+  if (!path.isAbsolute(runtimeDir)) throw new Error('invalid_xdg_runtime_dir');
+  return path.join(runtimeDir, 'chatgpt-autopilot-commander', 'gateway.sock');
+}
+
 export function commanderPort(value, fallback = 8790) {
   const port = Number(value ?? fallback);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('invalid_commander_port');

@@ -1,7 +1,14 @@
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertPhase2GatewayHost, commanderEnabled, commanderPort, loadGatewaySecretMap } from '../config.mjs';
+import {
+  assertPhase2GatewayHost,
+  commanderControlSocketPath,
+  commanderEnabled,
+  commanderPort,
+  loadGatewaySecretMap,
+} from '../config.mjs';
+import { CommanderControlServer } from './control-server.mjs';
 import { CommanderGatewayServer } from './server.mjs';
 
 export async function runGatewayService(env = process.env) {
@@ -21,7 +28,28 @@ export async function runGatewayService(env = process.env) {
     allowedAuthorities: (commanderEnabled(env.COMMANDER_EXECUTION_ENABLED) || commanderEnabled(env.COMMANDER_WRITE_ENABLED)) ? ['read', 'write'] : ['read'],
   });
   await server.start();
-  console.info(JSON.stringify({ event: 'commander_gateway_started', address: server.address() }));
+
+  const controlServer = new CommanderControlServer({
+    gateway: server,
+    socketPath: commanderControlSocketPath(env),
+  });
+  try {
+    await controlServer.start();
+  } catch (error) {
+    await server.stop();
+    throw error;
+  }
+
+  const stopGateway = server.stop.bind(server);
+  let stopped = false;
+  server.stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    await controlServer.stop();
+    await stopGateway();
+  };
+  server.controlServer = controlServer;
+  console.info(JSON.stringify({ event: 'commander_gateway_started', address: server.address(), controlSocket: controlServer.socketPath }));
   return server;
 }
 

@@ -235,6 +235,14 @@ Outputs likely to include complete environment/configuration dumps require filte
 
 Truncation must be explicit (`truncated: true`) so an AI/client does not mistake partial evidence for complete evidence.
 
+## Phase 6 MCP boundary
+
+The MCP adapter is an untrusted peer client of Commander, not a new trust root. Phase 6 uses local stdio only and reaches the Gateway through a private per-user Unix-domain control socket. No HTTP, LAN, Funnel or public MCP listener is introduced.
+
+The adapter exports only capabilities currently allowed for the selected online device session, never exports ADMIN, and re-checks the device capability immediately before forwarding every invocation. A capability removed after tool discovery therefore fails closed even if an MCP client still has the old tool name cached.
+
+Mutating MCP tools retain Commander idempotency requirements and all Gateway/Agent policy and approval decisions. Unexpected adapter/control errors are sanitized into bounded `CommanderError` values; raw exception text, stack traces and credentials are not returned through MCP.
+
 ## Audit events
 
 Every security-relevant operation records a structured event containing only non-secret metadata such as:
