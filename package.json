@@ -44,5 +44,9 @@
     "start:commander-agent": "node src/commander/agent/service.mjs",
     "start:commander-gateway": "node src/commander/gateway/service.mjs",
     "install:commander-services": "bash scripts/install-commander-systemd.sh"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.6.1"
   }
 }
