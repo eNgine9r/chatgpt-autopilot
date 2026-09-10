@@ -64,5 +64,7 @@ test('Commander installer stages hardened disabled user units only', async () =>
   assert.deepEqual(writePolicy, { version: 1, roots: [], services: [], repositories: [] });
   assert.equal((await fs.stat(writePolicyPath)).mode & 0o077, 0);
   const script = await fs.readFile(path.join(repo, 'scripts/install-commander-systemd.sh'), 'utf8');
+  assert.match(script, /XDG_RUNTIME_DIR=.*run\/user/);
+  assert.match(script, /DBUS_SESSION_BUS_ADDRESS=.*unix:path/);
   assert.doesNotMatch(script, /systemctl\s+--user\s+(?:enable|start|restart)/);
 });

@@ -72,6 +72,12 @@ JSON
 fi
 
 if [[ "${COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD:-0}" != "1" ]]; then
+  if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  fi
+  if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+  fi
   systemctl --user daemon-reload
 fi
 

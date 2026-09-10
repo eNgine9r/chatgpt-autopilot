@@ -26,6 +26,21 @@ These addresses are evidence for the current pilot only; stable Commander device
 9. Reboot acceptance is a separate operator gate.
 10. Controlled WRITE may be tested only in disposable/non-production scope after its independent acceptance gate.
 
+## Stage 1 machine preflight
+
+After staging, run the read-only preflight from an accepted Commander source tree:
+
+```bash
+npm run preflight:commander-phase8 -- \
+  --repo <staged-source> \
+  --expected-head <40-char-accepted-main-sha> \
+  --tailscale-ip <current-local-tailscale0-ip> \
+  --port 8790 \
+  --fallback-process 'desktop-commander remote'
+```
+
+The JSON result must have `ok:true`. Any unknown git/systemd/listener/process state fails closed. The preflight performs reads only; it does not enable, start, restart, stop, or reconfigure services.
+
 ## Fail-closed conditions
 
 Stop the pilot and use Remote Desktop Commander if the Gateway cannot prove a `tailscale0` bind, device authentication fails, device identity changes unexpectedly, capability advertisement exceeds the approved set, secrets appear in logs, or the fallback path becomes unavailable. Do not silently fall back to another Commander transport.
