@@ -70,3 +70,33 @@ test('Commander installer stages hardened disabled user units only', async () =>
   assert.match(script, /DBUS_SESSION_BUS_ADDRESS=.*unix:path/);
   assert.doesNotMatch(script, /systemctl\s+--user\s+(?:enable|start|restart)/);
 });
+
+
+test('Commander installer accepts explicit absolute Node binary for non-login shells', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'commander-node-override-'));
+  const fakeNode = path.join(root, 'node-v22');
+  await fs.writeFile(fakeNode, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const configHome = path.join(root, 'config');
+  const stateHome = path.join(root, 'state');
+  await execFileAsync('bash', [path.join(repo, 'scripts/install-commander-systemd.sh')], {
+    cwd: repo,
+    env: {
+      HOME: root,
+      PATH: '/usr/bin:/bin',
+      XDG_CONFIG_HOME: configHome,
+      XDG_STATE_HOME: stateHome,
+      COMMANDER_NODE_BIN: fakeNode,
+      COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD: '1',
+    },
+  });
+  const gatewayUnit = await fs.readFile(path.join(configHome, 'systemd/user/chatgpt-autopilot-commander-gateway.service'), 'utf8');
+  assert.match(gatewayUnit, new RegExp(`ExecStart=${fakeNode.replaceAll('/', '\\/')}`));
+});
+
+test('Commander installer rejects a relative COMMANDER_NODE_BIN', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'commander-node-relative-'));
+  await assert.rejects(execFileAsync('bash', [path.join(repo, 'scripts/install-commander-systemd.sh')], {
+    cwd: repo,
+    env: { ...process.env, HOME: root, COMMANDER_NODE_BIN: './node', COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD: '1' },
+  }), /absolute executable path/);
+});
