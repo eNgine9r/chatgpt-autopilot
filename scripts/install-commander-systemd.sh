@@ -2,11 +2,16 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NODE_BIN="$(command -v node || true)"
+NODE_BIN="${COMMANDER_NODE_BIN:-$(command -v node || true)}"
 if [[ -z "$NODE_BIN" ]]; then
-  echo "Node.js is required" >&2
+  echo "Node.js is required (or set COMMANDER_NODE_BIN to an absolute executable path)" >&2
   exit 1
 fi
+if [[ "$NODE_BIN" != /* || ! -x "$NODE_BIN" ]]; then
+  echo "COMMANDER_NODE_BIN must resolve to an absolute executable path" >&2
+  exit 1
+fi
+NODE_BIN="$(readlink -f "$NODE_BIN")"
 
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/chatgpt-autopilot-commander"
