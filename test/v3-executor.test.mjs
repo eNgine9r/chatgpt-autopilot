@@ -90,3 +90,38 @@ test('ssh-gateway executor uses fixed ssh argv and remote operation only', async
     action: 'repo.test', params: { alias: 'required;rm -rf /' },
   }), /unknown_test_alias/);
 });
+
+test('Commander routing requires both global and per-project gates and never silently falls back on failure', async () => {
+  const project = {
+    repoPath: '/fallback/repo',
+    commander: { enabled: true },
+    tests: { required: { command: 'node', args: ['--version'] } },
+  };
+  const commanderCalls = [];
+  const commanderClient = {
+    async execute(_project, dispatch) {
+      commanderCalls.push(dispatch.action);
+      if (dispatch.action === 'repo.test') throw new Error('commander_down');
+      return JSON.stringify({ backend: 'commander' });
+    },
+  };
+  const legacyCalls = [];
+  const runner = async (command, args) => {
+    legacyCalls.push({ command, args });
+    if (command === 'git' && args.includes('rev-parse')) return { stdout: `${'a'.repeat(40)}\n`, stderr: '', exitCode: 0 };
+    if (command === 'git' && args.includes('branch')) return { stdout: 'main\n', stderr: '', exitCode: 0 };
+    if (command === 'git' && args.includes('status')) return { stdout: '', stderr: '', exitCode: 0 };
+    return { stdout: 'legacy', stderr: '', exitCode: 0 };
+  };
+
+  const enabled = new DeterministicExecutor({ runner, commanderEnabled: true, commanderClient });
+  assert.equal(JSON.parse(await enabled.execute(project, { action: 'repo.inspect', params: {} })).backend, 'commander');
+  await assert.rejects(enabled.execute(project, { action: 'repo.test', params: { alias: 'required' } }), /commander_down/);
+  assert.deepEqual(commanderCalls, ['repo.inspect', 'repo.test']);
+  assert.equal(legacyCalls.length, 0);
+
+  const disabled = new DeterministicExecutor({ runner, commanderEnabled: false, commanderClient });
+  const legacy = JSON.parse(await disabled.execute(project, { action: 'repo.inspect', params: {} }));
+  assert.equal(legacy.branch, 'main');
+  assert.ok(legacyCalls.length >= 3);
+});

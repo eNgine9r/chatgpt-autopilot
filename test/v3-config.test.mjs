@@ -89,3 +89,25 @@ test('ssh-gateway transport is bounded and uses remote test aliases', () => {
     ...remote, tests: { required: { command: 'python3', args: [] } },
   }] }), /invalid_remote_test/);
 });
+
+test('Commander integration is additive, explicit per project and preserves fallback config', () => {
+  const commanderProject = {
+    ...validProject,
+    commander: {
+      enabled: true,
+      deviceId: 'demo-device',
+      repoPath: '/srv/demo',
+      testAliases: { required: 'v3-required' },
+    },
+  };
+  assert.equal(validateConfig({ version: 3, projects: [commanderProject] }).projects[0], commanderProject);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...commanderProject,
+    commander: { ...commanderProject.commander, repoPath: '../unsafe' },
+  }] }), /invalid_commander_repo_path/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...commanderProject,
+    commander: { ...commanderProject.commander, testAliases: {} },
+  }] }), /missing_commander_test_alias/);
+  assert.equal(validateConfig(valid), valid);
+});

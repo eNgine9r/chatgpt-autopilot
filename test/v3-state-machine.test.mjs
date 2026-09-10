@@ -71,3 +71,24 @@ test('same task delivery while active is idempotent but a different task is reje
     task: { id: 'github:demo#43' },
   }, 30), /project_busy:ready/);
 });
+
+test('retry preserves Commander attempt after ambiguous failure and advances after known terminal failure', () => {
+  let r = transition(project, null, { id: 'r1', kind: 'task.received', taskId: 'task-r' }, 1);
+  assert.equal(r.state.attempt, 1);
+  r = transition(project, r.state, { id: 'r2', kind: 'action.started', stepId: 'inspect' }, 2);
+  r = transition(project, r.state, {
+    id: 'r3', kind: 'action.failed', stepId: 'inspect', error: 'commander:transport:COMMANDER_UNAVAILABLE',
+    failure: { backend: 'commander', category: 'transport', code: 'COMMANDER_UNAVAILABLE', retryable: true, newAttempt: false },
+  }, 3);
+  assert.equal(r.state.lastFailure.code, 'COMMANDER_UNAVAILABLE');
+  r = transition(project, r.state, { id: 'r4', kind: 'retry' }, 4);
+  assert.equal(r.state.attempt, 1);
+
+  r = transition(project, r.state, { id: 'r5', kind: 'action.started', stepId: 'inspect' }, 5);
+  r = transition(project, r.state, {
+    id: 'r6', kind: 'action.failed', stepId: 'inspect', error: 'commander:execution:EXECUTION_FAILED',
+    failure: { backend: 'commander', category: 'execution', code: 'EXECUTION_FAILED', retryable: false, newAttempt: true },
+  }, 6);
+  r = transition(project, r.state, { id: 'r7', kind: 'retry' }, 7);
+  assert.equal(r.state.attempt, 2);
+});
