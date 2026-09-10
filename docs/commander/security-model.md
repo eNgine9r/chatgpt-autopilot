@@ -206,6 +206,8 @@ Prefer private connectivity such as Tailscale. Agents should establish/maintain 
 
 Any public edge needed for an MCP/client adapter must terminate at a hardened Gateway boundary. Managed-device execution ports remain private.
 
+For the Phase 8 Tailscale pilot, a non-loopback Gateway Agent-session bind is allowed only when it is explicitly enabled and the exact configured address is assigned to the local `tailscale0` interface. Wildcard, LAN and Funnel exposure remain forbidden; see ADR-008.
+
 ## Request correlation and idempotency
 
 Every operation carries a unique request ID. Long-running work also has an execution ID.

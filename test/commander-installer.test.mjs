@@ -51,6 +51,7 @@ test('Commander installer stages hardened disabled user units only', async () =>
   assert.match(agentEnv, /COMMANDER_WRITE_ENABLED=false/);
   assert.match(agentEnv, /COMMANDER_ADMIN_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_ENABLED=false/);
+  assert.match(gatewayEnv, /COMMANDER_PRIVATE_BIND_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_EXECUTION_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_WRITE_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_ADMIN_ENABLED=false/);

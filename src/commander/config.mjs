@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import net from 'node:net';
 
 export function commanderEnabled(value = process.env.COMMANDER_ENABLED) {
   return String(value ?? '').toLowerCase() === 'true';
@@ -24,9 +25,24 @@ export function commanderPort(value, fallback = 8790) {
   return port;
 }
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
 export function assertPhase2GatewayHost(host) {
   const value = String(host || '127.0.0.1');
-  if (!['127.0.0.1', '::1', 'localhost'].includes(value)) throw new Error('phase2_gateway_must_be_loopback');
+  if (!LOOPBACK_HOSTS.has(value)) throw new Error('phase2_gateway_must_be_loopback');
+  return value;
+}
+
+export function resolveCommanderGatewayBindHost(host, options = {}) {
+  const value = String(host || '127.0.0.1');
+  if (LOOPBACK_HOSTS.has(value)) return value;
+  if (options.privateBindEnabled !== true) return assertPhase2GatewayHost(value);
+  if (!net.isIP(value)) throw new Error('commander_private_bind_must_be_ip');
+  if (value === '0.0.0.0' || value === '::') throw new Error('commander_wildcard_bind_forbidden');
+  const interfaces = options.networkInterfaces || {};
+  const tailscale = Array.isArray(interfaces.tailscale0) ? interfaces.tailscale0 : [];
+  const matched = tailscale.some((entry) => entry && entry.address === value && entry.internal !== true);
+  if (!matched) throw new Error('commander_private_bind_not_tailscale0');
   return value;
 }
 
