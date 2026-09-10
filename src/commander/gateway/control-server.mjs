@@ -23,6 +23,24 @@ function safeDeviceEntry(gateway, entry) {
   };
 }
 
+function socketAcceptsConnections(socketPath) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ path: socketPath });
+    let settled = false;
+    const finish = (error, active) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      if (error) reject(error); else resolve(active);
+    };
+    socket.once('connect', () => finish(null, true));
+    socket.once('error', (error) => {
+      if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOENT') finish(null, false);
+      else finish(error);
+    });
+  });
+}
+
 async function prepareSocket(socketPath) {
   const parent = path.dirname(socketPath);
   await fs.mkdir(parent, { recursive: true, mode: 0o700 });
@@ -30,6 +48,7 @@ async function prepareSocket(socketPath) {
   try {
     const stat = await fs.lstat(socketPath);
     if (!stat.isSocket()) throw new Error('control_socket_path_not_socket');
+    if (await socketAcceptsConnections(socketPath)) throw new Error('control_socket_in_use');
     await fs.unlink(socketPath);
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;

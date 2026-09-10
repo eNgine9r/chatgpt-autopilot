@@ -40,13 +40,17 @@
     "start:v3-miniapp": "node src/v3/miniapp-service.mjs",
     "install:v3-miniapp-service": "bash scripts/install-v3-miniapp-systemd.sh",
     "test:commander": "node --test test/commander-*.test.mjs",
-    "check:commander": "find src/commander -type f -name '*.mjs' -print0 | xargs -0 -n1 node --check && for f in test/commander-*.test.mjs; do node --check \"$f\"; done && bash -n scripts/install-commander-systemd.sh && node -e \"JSON.parse(require('fs').readFileSync('config/commander-gateway-secrets.example.json','utf8'))\" && node -e \"JSON.parse(require('fs').readFileSync('config/commander-read-policy.example.json','utf8'))\" && node -e \"JSON.parse(require('fs').readFileSync('config/commander-execution-policy.example.json','utf8'))\" && node -e \"JSON.parse(require('fs').readFileSync('config/commander-write-policy.example.json','utf8'))\"",
+    "check:commander": "find src/commander src/integrations/mcp/commander -type f -name '*.mjs' -print0 | xargs -0 -n1 node --check && for f in test/commander-*.test.mjs; do node --check \"$f\"; done && bash -n scripts/install-commander-systemd.sh && node -e \"JSON.parse(require('fs').readFileSync('config/commander-gateway-secrets.example.json','utf8'))\" && node -e \"JSON.parse(require('fs').readFileSync('config/commander-read-policy.example.json','utf8'))\" && node -e \"JSON.parse(require('fs').readFileSync('config/commander-execution-policy.example.json','utf8'))\" && node -e \"JSON.parse(require('fs').readFileSync('config/commander-write-policy.example.json','utf8'))\"",
     "start:commander-agent": "node src/commander/agent/service.mjs",
     "start:commander-gateway": "node src/commander/gateway/service.mjs",
-    "install:commander-services": "bash scripts/install-commander-systemd.sh"
+    "install:commander-services": "bash scripts/install-commander-systemd.sh",
+    "start:commander-mcp": "node src/integrations/mcp/commander/stdio.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
     "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0"
   }
 }

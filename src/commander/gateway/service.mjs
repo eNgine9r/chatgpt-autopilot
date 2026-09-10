@@ -16,7 +16,7 @@ export async function runGatewayService(env = process.env) {
     console.info(JSON.stringify({ event: 'commander_gateway_disabled' }));
     return null;
   }
-  if (commanderEnabled(env.COMMANDER_ADMIN_ENABLED)) throw new Error('commander_admin_not_supported_phase6');
+  if (commanderEnabled(env.COMMANDER_ADMIN_ENABLED)) throw new Error('commander_admin_not_supported_phase5');
   const home = env.HOME || os.homedir();
   const secretMap = env.COMMANDER_GATEWAY_SECRET_MAP
     || path.join(home, '.config/chatgpt-autopilot-commander/gateway-secrets.json');

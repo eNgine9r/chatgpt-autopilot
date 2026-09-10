@@ -178,6 +178,8 @@ MCP -> adapter -> Commander API -> Gateway -> Agent
 
 MCP cannot bypass Commander auth/policy and Commander Core remains usable without MCP.
 
+Phase 6 implementation uses local stdio MCP plus a private Unix-domain `CommanderPublicClient` boundary. It introduces no HTTP/Funnel/public listener, exports no ADMIN operations, and re-checks the selected device capability before every tool invocation. See ADR-006 and `docs/commander/mcp-adapter-v1.md`.
+
 No production endpoint cutover in this phase.
 
 ## Phase 7 — Autopilot v3 Commander Client
