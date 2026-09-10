@@ -45,6 +45,8 @@ test('Commander installer stages hardened disabled user units only', async () =>
     assert.doesNotMatch(unit, /sudo/);
   }
   const agentEnv = await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/agent.env'), 'utf8');
+  assert.match(gatewayUnit, /RuntimeDirectory=chatgpt-autopilot-commander/);
+  assert.match(gatewayUnit, /RuntimeDirectoryMode=0700/);
   const gatewayEnv = await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/gateway.env'), 'utf8');
   assert.match(agentEnv, /COMMANDER_ENABLED=false/);
   assert.match(agentEnv, /COMMANDER_EXECUTION_ENABLED=false/);
