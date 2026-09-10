@@ -88,9 +88,15 @@ async function runTest(project, dispatch, runner) {
 export class DeterministicExecutor {
   constructor(options = {}) {
     this.runner = options.runner ?? runFile;
+    this.commanderEnabled = options.commanderEnabled === true;
+    this.commanderClient = options.commanderClient ?? null;
   }
 
   async execute(project, dispatch) {
+    if (this.commanderEnabled && project.commander?.enabled === true && dispatch.action.startsWith('repo.')) {
+      if (!this.commanderClient || typeof this.commanderClient.execute !== 'function') throw new Error('commander_client_unavailable');
+      return this.commanderClient.execute(project, dispatch);
+    }
     switch (dispatch.action) {      case 'repo.inspect': return inspectRepo(project, this.runner);
       case 'repo.test': return runTest(project, dispatch, this.runner);
       case 'operator.review': return JSON.stringify({ approved: true });

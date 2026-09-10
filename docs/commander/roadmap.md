@@ -202,6 +202,8 @@ Requirements:
 - existing v3 executor/restricted SSH path remains feature-gated fallback;
 - `COMMANDER_ENABLED=false` preserves existing behavior.
 
+Phase 7 implementation uses an additive per-project `commander` block plus the global `COMMANDER_ENABLED` gate. `repo.inspect` maps to structured Git READ operations; `repo.test` maps to the bounded execution lifecycle. Commander failures persist as classified v3 state, and ambiguous transport retries reuse the same mutation idempotency attempt. See ADR-007 and `docs/commander/autopilot-v3-client-v1.md`.
+
 ## Phase 8 — NexoLab Shadow Pilot
 
 Issue: #190

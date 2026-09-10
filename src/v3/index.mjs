@@ -4,6 +4,8 @@ import { JsonStateStore } from './store.mjs';
 import { Orchestrator } from './orchestrator.mjs';
 import { DeterministicExecutor } from './executor.mjs';
 import { ExecutionEngine } from './execution-engine.mjs';
+import { CommanderV3Client } from './commander-client.mjs';
+import { commanderPublicClientFromEnv } from '../commander/client/index.mjs';
 import { createControlServer, createGitHubServer } from './http-servers.mjs';
 
 function arg(name, fallback) {
@@ -31,7 +33,12 @@ const webhookSecret = await loadWebhookSecret(secretFile);
 const store = new JsonStateStore(stateDir);
 await store.init();
 const orchestrator = new Orchestrator(config, store);
-const engine = new ExecutionEngine(orchestrator, new DeterministicExecutor());
+const commanderEnabled = String(process.env.COMMANDER_ENABLED ?? '').toLowerCase() === 'true';
+const commanderSelected = commanderEnabled && config.projects.some((project) => project.commander?.enabled === true);
+const commanderClient = commanderSelected
+  ? new CommanderV3Client({ client: commanderPublicClientFromEnv(process.env) })
+  : null;
+const engine = new ExecutionEngine(orchestrator, new DeterministicExecutor({ commanderEnabled, commanderClient }));
 const controlServer = createControlServer({
   store,
   engine,

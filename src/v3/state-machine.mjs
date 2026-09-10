@@ -8,6 +8,8 @@ export function initialState(projectId) {
     task: null,
     stepIndex: -1,
     lastError: '',
+    lastFailure: null,
+    attempt: 1,
     evidence: [],
     recentEventIds: [],
     resumeStatus: '',
@@ -35,7 +37,7 @@ function advance(project, state, event) {
     : state.evidence;
   const nextIndex = state.stepIndex + 1;
   if (nextIndex >= project.steps.length) {
-    return { ...state, status: 'complete', stepIndex: nextIndex, evidence, lastError: '' };
+    return { ...state, status: 'complete', stepIndex: nextIndex, evidence, lastError: '', lastFailure: null, attempt: 1 };
   }
   return {
     ...state,
@@ -43,6 +45,8 @@ function advance(project, state, event) {
     stepIndex: nextIndex,
     evidence,
     lastError: '',
+    lastFailure: null,
+    attempt: 1,
   };
 }
 
@@ -86,16 +90,27 @@ export function transition(project, previous, event, now = Date.now()) {
     case 'action.failed':
       if (state.status !== 'running') throw new Error(`cannot_fail:${state.status}`);
       assertStep();
-      state = { ...state, status: 'blocked', lastError: String(event.error ?? 'action_failed') };
+      state = {
+        ...state,
+        status: 'blocked',
+        lastError: String(event.error ?? 'action_failed'),
+        lastFailure: event.failure && typeof event.failure === 'object' ? event.failure : null,
+      };
       break;
     case 'approval.granted':
       if (state.status !== 'waiting_approval') throw new Error(`cannot_approve:${state.status}`);
       assertStep();
-      state = { ...state, status: 'ready' };
+      state = { ...state, status: 'ready', lastError: '', lastFailure: null };
       break;
     case 'retry':
       if (state.status !== 'blocked') throw new Error(`cannot_retry:${state.status}`);
-      state = { ...state, status: readyStatus(step), lastError: '' };
+      state = {
+        ...state,
+        status: readyStatus(step),
+        lastError: '',
+        attempt: Number(state.attempt ?? 1) + (state.lastFailure?.newAttempt === false ? 0 : 1),
+        lastFailure: null,
+      };
       break;
     case 'pause':
       if (!ACTIVE.has(state.status) || state.status === 'paused') throw new Error(`cannot_pause:${state.status}`);

@@ -99,3 +99,10 @@ Supported commands are `/v3` or `/status`, `/approve <project-id>`, and `/retry 
 Notifications are deduplicated and emitted for `waiting_approval`, `blocked`, and subsequent completion transitions. Initial already-complete states are baselined without startup spam.
 
 `bash scripts/install-v3-telegram-systemd.sh` stages `chatgpt-autopilot-v3-telegram.service` but deliberately does not enable or start it. Live Telegram activation remains a separate production acceptance decision.
+
+
+## Optional Commander execution backend
+
+Phase 7 adds an optional Commander backend without replacing the deterministic v3 orchestrator or its existing local/restricted-SSH executor. Commander routing requires both `COMMANDER_ENABLED=true` and an explicit `project.commander.enabled=true` block. Existing project transport remains valid fallback configuration.
+
+For Commander-selected projects, `repo.inspect` consumes structured `git.status` and `git.log` results, while `repo.test` uses the fixed-alias Commander execution lifecycle. Failures are persisted as bounded classified `lastFailure` metadata. An ambiguous Commander transport failure blocks the step and reuses the same mutation attempt on retry; a known terminal failure advances the attempt. No automatic local/SSH fallback occurs after an in-flight Commander failure because that could duplicate work whose response was lost.

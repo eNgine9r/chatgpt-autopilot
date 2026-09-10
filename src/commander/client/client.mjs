@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
+import { commanderControlSocketPath } from '../config.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
 import {
   COMMANDER_CONTROL_MAX_FRAME_BYTES,
@@ -77,4 +78,9 @@ export class CommanderPublicClient {
       socket.on('close', () => { if (!settled) finish(new Error('control_connection_closed')); });
     });
   }
+}
+
+
+export function commanderPublicClientFromEnv(env = process.env, options = {}) {
+  return new CommanderPublicClient({ ...options, socketPath: commanderControlSocketPath(env) });
 }

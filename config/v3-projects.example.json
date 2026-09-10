@@ -32,7 +32,13 @@
         { "id": "inspect", "action": "repo.inspect" },
         { "id": "test", "action": "repo.test", "params": { "alias": "required" } },
         { "id": "review", "action": "operator.review", "approval": "user" }
-      ]
+      ],
+      "commander": {
+        "enabled": false,
+        "deviceId": "nexolab-edge-01",
+        "repoPath": "/home/nexolab/nexolab-platform",
+        "testAliases": { "required": "v3-required" }
+      }
     }
   ]
 }

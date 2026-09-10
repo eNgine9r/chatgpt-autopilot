@@ -53,3 +53,22 @@ test('executor failure becomes durable blocked state', async (t) => {
   assert.match(result.state.lastError, /tests_failed/);
   assert.equal(result.autoSteps, 2);
 });
+
+test('Commander structured failure becomes durable blocked state without raw transport detail', async (t) => {
+  const runner = await engine(t, {
+    async execute() {
+      const error = new Error('raw socket detail must not persist');
+      error.failure = {
+        backend: 'commander', category: 'device_offline', code: 'DEVICE_OFFLINE', retryable: true,
+        deviceId: 'device-a', operation: 'git.status', newAttempt: false,
+      };
+      throw error;
+    },
+  });
+  const result = await runner.handle({ id: 'task-commander-down', projectId: 'demo', kind: 'task.received' });
+  assert.equal(result.state.status, 'blocked');
+  assert.equal(result.state.lastError, 'commander:device_offline:DEVICE_OFFLINE');
+  assert.equal(result.state.lastFailure.deviceId, 'device-a');
+  assert.equal(result.state.lastFailure.newAttempt, false);
+  assert.equal(JSON.stringify(result.state).includes('raw socket detail'), false);
+});

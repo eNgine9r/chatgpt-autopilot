@@ -40,6 +40,30 @@ function validateTests(project) {
   }
 }
 
+
+const COMMANDER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+function validateCommander(project) {
+  if (project.commander == null) return;
+  const c = project.commander;
+  if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error(`invalid_commander:${project.id}`);
+  const allowed = new Set(['enabled', 'deviceId', 'repoPath', 'testAliases']);
+  for (const key of ['enabled', 'deviceId', 'repoPath', 'testAliases']) {
+    if (!Object.hasOwn(c, key)) throw new Error(`missing_commander_field:${project.id}:${key}`);
+  }
+  for (const key of Object.keys(c)) if (!allowed.has(key)) throw new Error(`unknown_commander_field:${project.id}:${key}`);
+  if (typeof c.enabled !== 'boolean') throw new Error(`invalid_commander_enabled:${project.id}`);
+  if (!COMMANDER_ID.test(String(c.deviceId ?? ''))) throw new Error(`invalid_commander_device:${project.id}`);
+  if (!path.isAbsolute(String(c.repoPath ?? ''))) throw new Error(`invalid_commander_repo_path:${project.id}`);
+  if (!c.testAliases || typeof c.testAliases !== 'object' || Array.isArray(c.testAliases)) throw new Error(`invalid_commander_test_aliases:${project.id}`);
+  const entries = Object.entries(c.testAliases);
+  if (entries.length > 64) throw new Error(`too_many_commander_test_aliases:${project.id}`);
+  for (const [alias, commanderAlias] of entries) {
+    if (!Object.hasOwn(project.tests ?? {}, alias)) throw new Error(`unknown_commander_test_alias:${project.id}:${alias}`);
+    if (!COMMANDER_ID.test(String(commanderAlias ?? ''))) throw new Error(`invalid_commander_test_alias:${project.id}:${alias}`);
+  }
+}
+
 function validateGitHub(project, repositories) {
   if (project.github == null) return;
   if (!project.github || typeof project.github !== 'object') throw new Error(`invalid_github:${project.id}`);
@@ -70,6 +94,7 @@ export function validateConfig(value) {
     if (!Array.isArray(project.steps) || project.steps.length === 0) throw new Error(`missing_steps:${project.id}`);
     validateTransport(project);
     validateTests(project);
+    validateCommander(project);
     validateGitHub(project, repositories);
 
     const stepIds = new Set();
@@ -86,6 +111,9 @@ export function validateConfig(value) {
         const alias = step.params?.alias;
         if (typeof alias !== 'string' || !project.tests?.[alias]) {
           throw new Error(`unknown_test_alias:${project.id}:${step.id}`);
+        }
+        if (project.commander?.enabled === true && !project.commander.testAliases?.[alias]) {
+          throw new Error(`missing_commander_test_alias:${project.id}:${step.id}`);
         }
       }
     }
