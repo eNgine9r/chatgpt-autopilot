@@ -56,6 +56,14 @@ test('reconnect replay preserves idempotency and does not repeat mutation',async
   const replay=await replacement.request(request('second','file.write',params,'same-key'));assert.equal(replay.ok,true);assert.equal(replay.requestId,'second');assert.equal(await fs.readFile(file,'utf8'),'once');
 });
 
+test('conflicting idempotency reuse stays structured across authenticated transport',async(t)=>{
+  const ctx=await setup(t);const file=path.join(ctx.root,'conflict.txt');const key='transport-conflict';
+  const first=await ctx.gateway.request(request('c1','file.write',{path:file,content:'one',mode:'create'},key));assert.equal(first.ok,true);
+  const conflict=await ctx.gateway.request(request('c2','file.write',{path:file,content:'different',mode:'upsert'},key));
+  assert.equal(conflict.ok,false);assert.equal(conflict.error.code,'IDEMPOTENCY_KEY_CONFLICT');assert.equal(conflict.error.category,'conflict');
+  assert.equal(await fs.readFile(file,'utf8'),'one');
+});
+
 test('Phase 5 service entrypoints reject ADMIN enablement before loading credentials',async()=>{
   await assert.rejects(()=>runAgentService({COMMANDER_ENABLED:'true',COMMANDER_ADMIN_ENABLED:'true'}),/commander_admin_not_supported_phase5/);
   await assert.rejects(()=>runGatewayService({COMMANDER_ENABLED:'true',COMMANDER_ADMIN_ENABLED:'true'}),/commander_admin_not_supported_phase5/);
