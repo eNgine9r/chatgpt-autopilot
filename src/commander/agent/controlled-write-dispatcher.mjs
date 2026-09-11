@@ -61,7 +61,7 @@ export class CommanderControlledWriteDispatcher {
     if (prior) return this.#replayResult(request, fingerprint, prior);
     const active = this.inFlight.get(request.idempotencyKey);
     if (active) {
-      if (active.operation !== request.operation || active.deviceId !== request.deviceId || active.fingerprint !== fingerprint) throw new Error('idempotency_key_conflict');
+      if (active.operation !== request.operation || active.deviceId !== request.deviceId || active.fingerprint !== fingerprint) return this.#conflict(request, `operation:${request.operation}`);
       const result = await active.promise;
       this.#audit(request, active.resource || `operation:${request.operation}`, active.decision || 'allow', 'inflight_replay', result.data?.evidence);
       return validateOperationResult({ ...result, requestId: request.requestId, completedAt: nowIso(this.now) });
@@ -74,9 +74,14 @@ export class CommanderControlledWriteDispatcher {
   }
 
   #replayResult(request, fingerprint, prior) {
-    if (prior.operation !== request.operation || prior.deviceId !== request.deviceId || prior.fingerprint !== fingerprint) throw new Error('idempotency_key_conflict');
+    if (prior.operation !== request.operation || prior.deviceId !== request.deviceId || prior.fingerprint !== fingerprint) return this.#conflict(request, prior.resource);
     this.#audit(request, prior.resource, prior.decision, 'replay', prior.result.data?.evidence);
     return validateOperationResult({ ...prior.result, requestId: request.requestId, completedAt: nowIso(this.now) });
+  }
+
+  #conflict(request, resource) {
+    this.#audit(request, resource, 'deny', 'idempotency_conflict');
+    return this.#result(request, { ok: false, error: commanderError({ category: 'conflict', code: 'IDEMPOTENCY_KEY_CONFLICT', message: 'Idempotency key was already used with different request semantics.', retryable: false }) });
   }
 
   async #execute(request, fingerprint, holder) {

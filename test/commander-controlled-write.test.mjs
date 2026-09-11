@@ -58,7 +58,8 @@ test('concurrent duplicate idempotency keys execute once and conflicting reuse f
   const file = path.join(f.approval, 'race.txt'); const params = { path: file, content: 'once', mode: 'create', approval: 'ok' };
   const [a,b] = await Promise.all([dispatcher.handle(request('r1','file.write',params,'race-key')), dispatcher.handle(request('r2','file.write',params,'race-key'))]);
   assert.equal(a.ok, true); assert.equal(b.ok, true); assert.equal(approvals, 1); assert.equal(await fs.readFile(file,'utf8'),'once');
-  await assert.rejects(() => dispatcher.handle(request('r3','file.write',{ ...params, content: 'different' },'race-key')), /idempotency_key_conflict/);
+  const conflict = await dispatcher.handle(request('r3','file.write',{ ...params, content: 'different' },'race-key'));
+  assert.equal(conflict.ok, false); assert.equal(conflict.error.code, 'IDEMPOTENCY_KEY_CONFLICT'); assert.equal(conflict.error.category, 'conflict');
 });
 
 test('file edit rejects non-UTF8 and default secret paths', async (t) => {
