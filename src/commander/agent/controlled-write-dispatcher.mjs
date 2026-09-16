@@ -128,6 +128,9 @@ export class CommanderControlledWriteDispatcher {
       case 'file.write': return this.#fileWritePlan(request.params);
       case 'file.edit': return this.#fileEditPlan(request.params);
       case 'file.move': return this.#fileMovePlan(request.params);
+      case 'file.delete': return this.#fileDeletePlan(request.params);
+      case 'directory.create': return this.#directoryCreatePlan(request.params);
+      case 'directory.remove': return this.#directoryRemovePlan(request.params);
       case 'service.start': return this.#servicePlan(request.params, 'start');
       case 'service.stop': return this.#servicePlan(request.params, 'stop');
       case 'service.restart': return this.#servicePlan(request.params, 'restart');
@@ -174,6 +177,37 @@ export class CommanderControlledWriteDispatcher {
     return { resource: `move:${source.path}->${destination.path}`, decision, apply: async () => {
       const before = await fs.readFile(source.path); await fs.rename(source.path, destination.path);
       return { evidence: { source: source.path, destination: destination.path, sha256: sha256(before), bytes: before.length, mutated: true }, rollback: { action: 'move', from: destination.path, to: source.path } };
+    }};
+  }
+
+  async #fileDeletePlan(params) {
+    exact(params, 'file_delete_params', ['path'], ['approval']);
+    const target = await this.policy.resolveFile(params.path, { mustExist: true });
+    return { resource: `file:${target.path}`, decision: target.root.decision, apply: async () => {
+      if (target.stat.size > target.root.maxFileBytes) throw new Error('WRITE_POLICY_FILE_TOO_LARGE');
+      const before = await fs.readFile(target.path);
+      await fs.unlink(target.path);
+      return { evidence: { path: target.path, beforeSha256: sha256(before), bytes: before.length, mutated: true }, rollback: { action: 'operator_restore_deleted_file', path: target.path, expectedPriorSha256: sha256(before) } };
+    }};
+  }
+
+  async #directoryCreatePlan(params) {
+    exact(params, 'directory_create_params', ['path'], ['approval']);
+    const target = await this.policy.resolveDirectory(params.path);
+    if (target.exists) throw new Error('WRITE_POLICY_CREATE_EXISTS');
+    return { resource: `directory:${target.path}`, decision: target.root.decision, apply: async () => {
+      await fs.mkdir(target.path, { mode: 0o700 });
+      return { evidence: { path: target.path, mutated: true }, rollback: { action: 'remove_empty_directory', path: target.path } };
+    }};
+  }
+
+  async #directoryRemovePlan(params) {
+    exact(params, 'directory_remove_params', ['path'], ['approval']);
+    const target = await this.policy.resolveDirectory(params.path, { mustExist: true });
+    if (target.path === target.root.path) throw new Error('WRITE_POLICY_ROOT_REMOVE_DENIED');
+    return { resource: `directory:${target.path}`, decision: target.root.decision, apply: async () => {
+      await fs.rmdir(target.path);
+      return { evidence: { path: target.path, empty: true, mutated: true }, rollback: { action: 'recreate_empty_directory', path: target.path } };
     }};
   }
 

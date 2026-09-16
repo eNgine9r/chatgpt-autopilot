@@ -8,7 +8,8 @@ const ALIAS = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const DECISIONS = new Set(['allow', 'approval', 'deny']);
 const SCP_REMOTE = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s\0]{1,1900}$/;
 const WRITE_OPERATIONS = Object.freeze([
-  'file.write', 'file.edit', 'file.move',
+  'file.write', 'file.edit', 'file.move', 'file.delete',
+  'directory.create', 'directory.remove',
   'service.start', 'service.stop', 'service.restart',
   'git.commit', 'git.push',
 ]);
@@ -117,6 +118,22 @@ export class CommanderWritePolicy {
     if (mustExist && !stat) throw new Error('WRITE_POLICY_PATH_NOT_FOUND');
     if (stat?.isSymbolicLink()) throw new Error('WRITE_POLICY_SYMLINK_DENIED');
     if (stat && !stat.isFile()) throw new Error('WRITE_POLICY_NOT_FILE');
+    const resolved=stat ? await fs.realpath(absolute) : path.join(await fs.realpath(path.dirname(absolute)),path.basename(absolute));
+    if (isDefaultSecretPath(resolved)) throw new Error('WRITE_POLICY_SECRET_PATH_DENIED');
+    const root=this.roots.find((entry)=>inside(entry.path,resolved));
+    if (!root) throw new Error('WRITE_POLICY_PATH_OUTSIDE_ROOTS');
+    return {path:resolved,exists:Boolean(stat),stat,root};
+  }
+
+  async resolveDirectory(candidate,{mustExist=false}={}) {
+    if (!path.isAbsolute(String(candidate||''))) throw new Error('WRITE_POLICY_PATH_NOT_ABSOLUTE');
+    const absolute=path.resolve(candidate);
+    if (isDefaultSecretPath(absolute)) throw new Error('WRITE_POLICY_SECRET_PATH_DENIED');
+    let stat=null;
+    try { stat=await fs.lstat(absolute); } catch (error) { if (error?.code!=='ENOENT') throw error; }
+    if (mustExist && !stat) throw new Error('WRITE_POLICY_PATH_NOT_FOUND');
+    if (stat?.isSymbolicLink()) throw new Error('WRITE_POLICY_SYMLINK_DENIED');
+    if (stat && !stat.isDirectory()) throw new Error('WRITE_POLICY_NOT_DIRECTORY');
     const resolved=stat ? await fs.realpath(absolute) : path.join(await fs.realpath(path.dirname(absolute)),path.basename(absolute));
     if (isDefaultSecretPath(resolved)) throw new Error('WRITE_POLICY_SECRET_PATH_DENIED');
     const root=this.roots.find((entry)=>inside(entry.path,resolved));
