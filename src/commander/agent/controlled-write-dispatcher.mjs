@@ -282,7 +282,7 @@ export class CommanderControlledWriteDispatcher {
         const tree = await this.commandRunner('git', [...gitBase(),'write-tree'], { cwd: rule.repo.path, timeoutMs: 15_000 });
         const treeId = tree.stdout.trim();
         if (tree.exitCode !== 0 || tree.timedOut || !/^[0-9a-f]{40,64}$/.test(treeId)) throw new Error('WRITE_GIT_WRITE_TREE_FAILED');
-        const commit = await this.commandRunner('git', [...gitBase(),'commit-tree',treeId,'-p',beforeHead,'-m',params.message], { cwd: rule.repo.path, timeoutMs: 30_000 });
+        const commit = await this.commandRunner('git', [...gitBase(),'-c',`user.name=${rule.repo.authorName}`,'-c',`user.email=${rule.repo.authorEmail}`,'commit-tree',treeId,'-p',beforeHead,'-m',params.message], { cwd: rule.repo.path, timeoutMs: 30_000 });
         const afterHead = commit.stdout.trim();
         if (commit.exitCode !== 0 || commit.timedOut || !/^[0-9a-f]{40,64}$/.test(afterHead)) throw new Error('WRITE_GIT_COMMIT_TREE_FAILED');
         const ref = `refs/heads/${branch}`;

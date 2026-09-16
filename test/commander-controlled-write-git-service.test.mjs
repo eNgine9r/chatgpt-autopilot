@@ -24,9 +24,11 @@ async function setupRepo(t, branch='feature/test') {
 
 test('Git commit and push mutate only approved branch/repo and return evidence', async (t)=>{
   const f=await setupRepo(t); const before=(await git(f.repo,'rev-parse','HEAD')).stdout.trim();
+  await git(f.repo,'config','--unset','user.name'); await git(f.repo,'config','--unset','user.email');
   await fs.writeFile(path.join(f.repo,'a.txt'),'changed\n');
   const commit=await f.dispatcher.handle(request('c1','git.commit',{repo:'demo',message:'controlled change',paths:['a.txt']},'commit-key'));
   assert.equal(commit.ok,true); assert.equal(commit.data.evidence.beforeHead,before); assert.notEqual(commit.data.evidence.afterHead,before); assert.equal(commit.data.evidence.branch,'feature/test');
+  assert.equal((await git(f.repo,'show','-s','--format=%an|%ae',commit.data.evidence.afterHead)).stdout.trim(),'Commander|commander@localhost.invalid');
   const push=await f.dispatcher.handle(request('p1','git.push',{repo:'demo'},'push-key'));
   assert.equal(push.ok,true); assert.equal(push.data.evidence.remoteUrl,f.remote);
   const remoteHead=(await exec('git',['--git-dir',f.remote,'rev-parse','refs/heads/feature/test'])).stdout.trim();

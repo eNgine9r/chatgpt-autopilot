@@ -5,6 +5,8 @@ import { runWriteCommand } from '../src/commander/agent/write-command.mjs';
 test('write command runner rejects shell, Git aliases/exec overrides and non-user systemctl', () => {
   assert.throws(() => runWriteCommand('bash', ['-c', 'true']), /WRITE_COMMAND_NOT_ALLOWED/);
   assert.throws(() => runWriteCommand('git', ['-c', 'alias.evil=!sh -c true', 'evil']), /WRITE_COMMAND_UNSAFE_GIT_CONFIG/);
+  assert.throws(() => runWriteCommand('git', ['-c', 'user.name=Bad\nName', 'rev-parse', 'HEAD']), /WRITE_COMMAND_UNSAFE_GIT_CONFIG/);
+  assert.doesNotThrow(() => runWriteCommand('git', ['-c', 'user.name=Commander', '-c', 'user.email=commander@localhost.invalid', 'rev-parse', 'HEAD']));
   assert.throws(() => runWriteCommand('git', ['status']), /WRITE_COMMAND_GIT_SUBCOMMAND_NOT_ALLOWED/);
   assert.throws(() => runWriteCommand('git', ['push', '--receive-pack=/bin/sh', 'origin', 'HEAD']), /WRITE_COMMAND_GIT_EXEC_OVERRIDE_DENIED/);
   assert.throws(() => runWriteCommand('systemctl', ['restart', 'demo.service']), /WRITE_COMMAND_SYSTEMCTL_SHAPE_DENIED/);

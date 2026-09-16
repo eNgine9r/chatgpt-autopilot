@@ -24,6 +24,10 @@ function decision(value, label) {
   if (!DECISIONS.has(value)) throw new Error(`invalid_${label}_decision`);
   return value;
 }
+function gitIdentity(value, label, maxBytes = 320) {
+  if (typeof value !== 'string' || value.length < 1 || Buffer.byteLength(value) > maxBytes || /[\0\r\n]/.test(value)) throw new Error(`invalid_${label}`);
+  return value;
+}
 function inside(root, candidate) {
   const rel = path.relative(root, candidate);
   return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
@@ -91,17 +95,19 @@ export class CommanderWritePolicy {
     }
     const repositories=new Map();
     for (const item of config.repositories) {
-      exact(item,'write_repository',['alias','path','commit','push','remote','remoteUrl','allowedBranches','protectedBranches']);
+      exact(item,'write_repository',['alias','path','commit','push','remote','remoteUrl','allowedBranches','protectedBranches'],['authorName','authorEmail']);
       if (typeof item.alias !== 'string' || !ALIAS.test(item.alias) || repositories.has(item.alias)) throw new Error('invalid_write_repository_alias');
       const repoPath=await canonicalDir(item.path,'write_repository');
       if (!roots.some((root)=>inside(root.path,repoPath))) throw new Error('write_repository_outside_roots');
       if (typeof item.remote !== 'string' || !ALIAS.test(item.remote)) throw new Error('invalid_write_repository_remote');
       const remoteUrl=validateRemoteUrl(item.remoteUrl);
       const root=roots.find((entry)=>inside(entry.path,repoPath));
+      const authorName=gitIdentity(item.authorName ?? 'Commander','write_repository_author_name',256);
+      const authorEmail=gitIdentity(item.authorEmail ?? 'commander@localhost.invalid','write_repository_author_email',320);
       if (!Array.isArray(item.allowedBranches) || item.allowedBranches.length<1 || item.allowedBranches.length>32) throw new Error('invalid_allowed_branches');
       if (!Array.isArray(item.protectedBranches) || item.protectedBranches.length>32) throw new Error('invalid_protected_branches');
       repositories.set(item.alias,Object.freeze({
-        alias:item.alias,path:repoPath,root,commit:decision(item.commit,'git_commit'),push:decision(item.push,'git_push'),remote:item.remote,remoteUrl,
+        alias:item.alias,path:repoPath,root,commit:decision(item.commit,'git_commit'),push:decision(item.push,'git_push'),remote:item.remote,remoteUrl,authorName,authorEmail,
         allowedBranches:item.allowedBranches.map(globRegex),protectedBranches:item.protectedBranches.map(globRegex),
       }));
     }
