@@ -35,6 +35,9 @@ test('Commander installer stages hardened disabled user units only', async () =>
   const unitDir = path.join(configHome, 'systemd/user');
   const agentUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-agent.service'), 'utf8');
   const gatewayUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-gateway.service'), 'utf8');
+  assert.match(agentUnit, /ReadWritePaths=%h\/commander-workspaces/);
+  const workspaceDir = path.join(root, 'commander-workspaces');
+  assert.equal((await fs.stat(workspaceDir)).mode & 0o077, 0);
   for (const unit of [agentUnit, gatewayUnit]) {
     assert.match(unit, /NoNewPrivileges=true/);
     assert.match(unit, /ProtectSystem=strict/);

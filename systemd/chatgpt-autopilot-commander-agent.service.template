@@ -18,6 +18,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=%h/.local/state/chatgpt-autopilot-commander
+ReadWritePaths=%h/commander-workspaces
 
 [Install]
 WantedBy=default.target

@@ -16,8 +16,9 @@ NODE_BIN="$(readlink -f "$NODE_BIN")"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/chatgpt-autopilot-commander"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/chatgpt-autopilot-commander"
-mkdir -p "$UNIT_DIR" "$CONFIG_DIR" "$STATE_DIR"
-chmod 700 "$CONFIG_DIR" "$STATE_DIR"
+WORKSPACE_DIR="$HOME/commander-workspaces"
+mkdir -p "$UNIT_DIR" "$CONFIG_DIR" "$STATE_DIR" "$WORKSPACE_DIR"
+chmod 700 "$CONFIG_DIR" "$STATE_DIR" "$WORKSPACE_DIR"
 
 render_unit() {
   local template="$1" target="$2"
