@@ -17,11 +17,17 @@ function validateCommonArgs(args) {
     throw new Error('WRITE_COMMAND_INVALID_ARGS');
   }
 }
+function safeIdentityConfig(setting) {
+  if (typeof setting !== 'string' || /[\0\r\n]/.test(setting) || Buffer.byteLength(setting) > 384) return false;
+  if (setting.startsWith('user.name=')) return setting.length > 'user.name='.length;
+  if (setting.startsWith('user.email=')) return setting.length > 'user.email='.length;
+  return false;
+}
 function validateGitArgs(args) {
   let index = 0;
   while (args[index] === '-c') {
     const setting = args[index + 1];
-    if (!SAFE_GIT_CONFIG.has(setting)) throw new Error('WRITE_COMMAND_UNSAFE_GIT_CONFIG');
+    if (!SAFE_GIT_CONFIG.has(setting) && !safeIdentityConfig(setting)) throw new Error('WRITE_COMMAND_UNSAFE_GIT_CONFIG');
     index += 2;
   }
   const subcommand = args[index];
