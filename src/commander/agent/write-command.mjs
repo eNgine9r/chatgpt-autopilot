@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const ALLOWED = new Set(['git', 'systemctl']);
 const SERVICE = /^[A-Za-z0-9][A-Za-z0-9@_.:-]{0,126}\.service$/;
+const GITHUB_ASKPASS = fileURLToPath(new URL('./github-askpass.py', import.meta.url));
 const SAFE_GIT_CONFIG = new Set([
   'core.hooksPath=/dev/null', 'core.fsmonitor=false', 'diff.external=', 'credential.helper=',
   'commit.gpgSign=false', 'protocol.ext.allow=never',
@@ -60,6 +62,7 @@ export function runWriteCommand(command, args, options = {}) {
     PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_SSH_COMMAND: '/usr/bin/ssh -F /dev/null -o BatchMode=yes -o ClearAllForwardings=yes',
+    GIT_ASKPASS: GITHUB_ASKPASS, GIT_ASKPASS_REQUIRE: 'force',
   };
   for (const key of ['HOME', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'SSH_AUTH_SOCK']) if (process.env[key]) env[key] = process.env[key];
   const uid = process.getuid?.();
