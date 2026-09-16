@@ -35,6 +35,18 @@ test('Git commit and push mutate only approved branch/repo and return evidence',
   assert.equal(remoteHead,commit.data.evidence.afterHead);
 });
 
+
+test('Git commit records an allowlisted tracked-file deletion and rejects missing untracked paths', async (t) => {
+  const f=await setupRepo(t); const before=(await git(f.repo,'rev-parse','HEAD')).stdout.trim();
+  await fs.unlink(path.join(f.repo,'a.txt'));
+  const commit=await f.dispatcher.handle(request('delete-c','git.commit',{repo:'demo',message:'controlled deletion',paths:['a.txt']},'delete-commit'));
+  assert.equal(commit.ok,true); assert.notEqual(commit.data.evidence.afterHead,before);
+  await assert.rejects(() => git(f.repo,'show',`${commit.data.evidence.afterHead}:a.txt`));
+  assert.equal((await git(f.repo,'status','--short')).stdout.trim(),'');
+  const missing=await f.dispatcher.handle(request('delete-missing','git.commit',{repo:'demo',message:'must fail',paths:['never-existed.txt']},'delete-missing-key'));
+  assert.equal(missing.ok,false); assert.equal(missing.error.code,'WRITE_GIT_DELETE_NOT_TRACKED');
+});
+
 test('Git commit refuses pre-existing staged changes before mutating index/head', async (t)=>{
   const f=await setupRepo(t); const before=(await git(f.repo,'rev-parse','HEAD')).stdout.trim();
   await fs.writeFile(path.join(f.repo,'b.txt'),'staged\n'); await git(f.repo,'add','b.txt'); await fs.writeFile(path.join(f.repo,'a.txt'),'changed\n');
