@@ -71,3 +71,21 @@ test('file edit rejects non-UTF8 and default secret paths', async (t) => {
   const secret = await dispatcher.handle(request('s1','file.write',{ path:path.join(f.root,'.env'),content:'secret',mode:'create' },'secret-key'));
   assert.equal(secret.ok,false); assert.equal(secret.error.code,'WRITE_POLICY_SECRET_PATH_DENIED');
 });
+
+test('directory create/remove and file delete are bounded and idempotent', async (t) => {
+  const f = await fixture(); t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+  const dispatcher = new CommanderControlledWriteDispatcher({ deviceId, policy: f.policy, logger: { info() {} } });
+  const dir = path.join(f.root, 'nested');
+  const created = await dispatcher.handle(request('dc1','directory.create',{ path: dir },'idem-dir-create'));
+  assert.equal(created.ok, true); assert.equal((await fs.stat(dir)).isDirectory(), true);
+  const file = path.join(dir, 'delete-me.txt'); await fs.writeFile(file, 'payload');
+  const deleted = await dispatcher.handle(request('fd1','file.delete',{ path: file },'idem-file-delete'));
+  assert.equal(deleted.ok, true); assert.equal(deleted.data.evidence.bytes, 7);
+  await assert.rejects(() => fs.stat(file), /ENOENT/);
+  const replay = await dispatcher.handle(request('fd2','file.delete',{ path: file },'idem-file-delete'));
+  assert.equal(replay.ok, true); assert.equal(replay.requestId, 'fd2');
+  const removed = await dispatcher.handle(request('dr1','directory.remove',{ path: dir },'idem-dir-remove'));
+  assert.equal(removed.ok, true); await assert.rejects(() => fs.stat(dir), /ENOENT/);
+  const rootRemoval = await dispatcher.handle(request('dr2','directory.remove',{ path: f.root },'idem-root-remove'));
+  assert.equal(rootRemoval.ok, false); assert.equal(rootRemoval.error.code, 'WRITE_POLICY_ROOT_REMOVE_DENIED');
+});

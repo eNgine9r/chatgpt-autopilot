@@ -30,6 +30,10 @@ test('write policy resolves only allowlisted regular paths and blocks secrets/sy
   const normal = path.join(f.root, 'normal.txt');
   await fs.writeFile(normal, 'ok');
   assert.equal((await f.policy.resolveFile(normal, { mustExist: true })).root.decision, 'allow');
+  assert.equal((await f.policy.resolveDirectory(f.root, { mustExist: true })).root.decision, 'allow');
+  const newDir = path.join(f.root, 'new-dir');
+  assert.equal((await f.policy.resolveDirectory(newDir)).exists, false);
+  await assert.rejects(() => f.policy.resolveDirectory(path.join(f.root, '.ssh')), /WRITE_POLICY_SECRET_PATH_DENIED/);
   await assert.rejects(() => f.policy.resolveFile(path.join(f.root, '.env')), /WRITE_POLICY_SECRET_PATH_DENIED/);
   const target = path.join(f.root, 'target.txt'); await fs.writeFile(target, 'safe');
   const link = path.join(f.root, 'link.txt'); await fs.symlink(target, link);
@@ -66,7 +70,7 @@ test('remote URL and service policy validation fail closed', async (t) => {
 test('Phase 5 advertises only controlled WRITE operations and no process/admin authority', () => {
   const capabilities = phase5WriteCapabilities();
   const names = capabilities.map((c) => c.operation);
-  assert.deepEqual(names, ['file.write','file.edit','file.move','service.start','service.stop','service.restart','git.commit','git.push']);
+  assert.deepEqual(names, ['file.write','file.edit','file.move','file.delete','directory.create','directory.remove','service.start','service.stop','service.restart','git.commit','git.push']);
   assert.ok(capabilities.every((c) => c.authority === 'write'));
   assert.equal(names.includes('process.terminate'), false);
   assert.equal(names.some((name) => name.startsWith('system.')), false);
