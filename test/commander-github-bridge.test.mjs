@@ -8,7 +8,7 @@ import {
   parseAllowedOperations,
   parseCommanderGithubTask,
 } from '../src/integrations/github/commander/bridge.mjs';
-import { runGithubBridgeCycle } from '../src/integrations/github/commander/service.mjs';
+import { runGithubBridgeCycle, waitForNextPoll } from '../src/integrations/github/commander/service.mjs';
 
 const NOW = '2026-09-16T18:00:00Z';
 
@@ -134,4 +134,15 @@ test('GitHub bridge result comments are bounded plain JSON', () => {
   const body = githubBridgeComment({ ok: true, data: { value: 1 } });
   assert.match(body, /^<!-- commander-result:v1 -->\n/);
   assert.match(body, /\"value\":1/);
+});
+
+
+test('GitHub bridge poll timer stays referenced so an idle service remains alive', async () => {
+  let unrefCalled = false;
+  const schedule = (callback) => {
+    queueMicrotask(callback);
+    return { unref() { unrefCalled = true; throw new Error('poll timer must stay referenced'); } };
+  };
+  await waitForNextPoll(10_000, undefined, schedule);
+  assert.equal(unrefCalled, false);
 });
