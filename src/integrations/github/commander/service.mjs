@@ -63,10 +63,9 @@ export async function runGithubBridgeCycle({ config, github, client, logger = co
   return { seen: issues.length, completed };
 }
 
-function sleep(ms, signal) {
+export function waitForNextPoll(ms, signal, schedule = setTimeout) {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
+    const timer = schedule(resolve, ms);
     signal?.addEventListener?.('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
   });
 }
@@ -86,7 +85,7 @@ export async function runGithubBridgeService(env = process.env, options = {}) {
   do {
     await runGithubBridgeCycle({ config, github, client, logger });
     if (options.once || controller.signal.aborted) break;
-    await sleep(config.pollMs, controller.signal);
+    await waitForNextPoll(config.pollMs, controller.signal);
   } while (!controller.signal.aborted);
   return { controller, config };
 }
