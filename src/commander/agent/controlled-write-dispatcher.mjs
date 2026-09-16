@@ -257,9 +257,15 @@ export class CommanderControlledWriteDispatcher {
     const files = [];
     for (const rel of paths) {
       const expected = path.resolve(rule.repo.path, rel);
-      const resolved = await this.policy.resolveFile(expected, { mustExist: true });
+      const resolved = await this.policy.resolveFile(expected);
       if (resolved.path !== expected) throw new Error('WRITE_POLICY_GIT_PATH_SYMLINK');
-      files.push({ rel, path: resolved.path, mode: (resolved.stat.mode & 0o111) ? '100755' : '100644' });
+      if (!resolved.exists) {
+        const tracked = await this.commandRunner('git', [...gitBase(),'rev-parse','--verify',`HEAD:${rel}`], { cwd: rule.repo.path, timeoutMs: 10_000 });
+        if (tracked.exitCode !== 0 || tracked.timedOut || !/^[0-9a-f]{40,64}$/.test(tracked.stdout.trim())) throw new Error('WRITE_GIT_DELETE_NOT_TRACKED');
+        files.push({ rel, path: resolved.path, deleted: true, mode: null });
+        continue;
+      }
+      files.push({ rel, path: resolved.path, deleted: false, mode: (resolved.stat.mode & 0o111) ? '100755' : '100644' });
     }
     const branch = await this.#gitBranch(rule.repo);
     return { resource: `${rule.resource}:${branch}`, decision: rule.decision, apply: async () => {
@@ -269,6 +275,14 @@ export class CommanderControlledWriteDispatcher {
       let indexMutated = false;
       try {
         for (const file of files) {
+          if (file.deleted) {
+            try { await fs.lstat(file.path); throw new Error('WRITE_GIT_PATH_STATE_CHANGED'); }
+            catch (error) { if (error?.message === 'WRITE_GIT_PATH_STATE_CHANGED' || error?.code !== 'ENOENT') throw error; }
+            const removed = await this.commandRunner('git', [...gitBase(),'update-index','--remove','--',file.rel], { cwd: rule.repo.path, timeoutMs: 15_000 });
+            if (removed.exitCode !== 0 || removed.timedOut) throw new Error('WRITE_GIT_INDEX_FAILED');
+            indexMutated = true;
+            continue;
+          }
           const hashed = await this.commandRunner('git', [...gitBase(),'hash-object','-w','--no-filters','--',file.rel], { cwd: rule.repo.path, timeoutMs: 15_000 });
           const blob = hashed.stdout.trim();
           if (hashed.exitCode !== 0 || hashed.timedOut || !/^[0-9a-f]{40,64}$/.test(blob)) throw new Error('WRITE_GIT_HASH_FAILED');
