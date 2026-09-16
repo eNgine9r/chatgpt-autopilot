@@ -27,6 +27,7 @@ render_unit() {
 
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-agent.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-agent.service"
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-gateway.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-gateway.service"
+render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-github-bridge.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-github-bridge.service"
 
 if [[ ! -e "$CONFIG_DIR/agent.env" ]]; then
   cat > "$CONFIG_DIR/agent.env" <<'ENV'
@@ -50,6 +51,17 @@ COMMANDER_GATEWAY_HOST=127.0.0.1
 COMMANDER_GATEWAY_PORT=8790
 ENV
   chmod 600 "$CONFIG_DIR/gateway.env"
+fi
+
+if [[ ! -e "$CONFIG_DIR/github-bridge.env" ]]; then
+  cat > "$CONFIG_DIR/github-bridge.env" <<'ENV'
+COMMANDER_GITHUB_BRIDGE_ENABLED=false
+COMMANDER_GITHUB_REPOSITORY=eNgine9r/chatgpt-autopilot
+COMMANDER_GITHUB_ALLOWED_AUTHOR=eNgine9r
+COMMANDER_GITHUB_TASK_LABEL=commander/task
+COMMANDER_GITHUB_POLL_MS=10000
+ENV
+  chmod 600 "$CONFIG_DIR/github-bridge.env"
 fi
 
 if [[ ! -e "$CONFIG_DIR/read-policy.json" ]]; then
@@ -89,3 +101,4 @@ fi
 echo "Commander units staged only. They were NOT enabled or started."
 echo "Agent unit:   $UNIT_DIR/chatgpt-autopilot-commander-agent.service"
 echo "Gateway unit: $UNIT_DIR/chatgpt-autopilot-commander-gateway.service"
+echo "GitHub bridge unit: $UNIT_DIR/chatgpt-autopilot-commander-github-bridge.service"

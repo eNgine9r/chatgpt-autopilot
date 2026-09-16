@@ -100,3 +100,31 @@ test('Commander installer rejects a relative COMMANDER_NODE_BIN', async () => {
     env: { ...process.env, HOME: root, COMMANDER_NODE_BIN: './node', COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD: '1' },
   }), /absolute executable path/);
 });
+
+test('Commander GitHub bridge installer is isolated and stages disabled service only', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'commander-github-install-'));
+  const configHome = path.join(root, 'config');
+  const fakeNode = path.join(root, 'node-v22');
+  await fs.writeFile(fakeNode, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const result = await execFileAsync('bash', [path.join(repo, 'scripts/install-commander-github-bridge-systemd.sh')], {
+    cwd: repo,
+    env: {
+      ...process.env, HOME: root, XDG_CONFIG_HOME: configHome,
+      COMMANDER_NODE_BIN: fakeNode, COMMANDER_INSTALL_SKIP_SYSTEMD_RELOAD: '1',
+    },
+  });
+  assert.match(result.stdout, /NOT enabled or started/);
+  const unitDir = path.join(configHome, 'systemd/user');
+  const unit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-github-bridge.service'), 'utf8');
+  assert.match(unit, /NoNewPrivileges=true/);
+  assert.match(unit, /ProtectSystem=strict/);
+  assert.match(unit, /ProtectHome=read-only/);
+  assert.match(unit, /Requires=chatgpt-autopilot-commander-gateway.service/);
+  assert.match(unit, new RegExp(`ExecStart=${fakeNode.replaceAll('/', '\\/')}`));
+  const envFile = path.join(configHome, 'chatgpt-autopilot-commander/github-bridge.env');
+  const bridgeEnv = await fs.readFile(envFile, 'utf8');
+  assert.match(bridgeEnv, /COMMANDER_GITHUB_BRIDGE_ENABLED=false/);
+  assert.equal((await fs.stat(envFile)).mode & 0o077, 0);
+  await assert.rejects(fs.access(path.join(unitDir, 'chatgpt-autopilot-commander-agent.service')));
+  await assert.rejects(fs.access(path.join(unitDir, 'chatgpt-autopilot-commander-gateway.service')));
+});
