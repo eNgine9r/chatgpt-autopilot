@@ -168,7 +168,11 @@ class OneShotTurn extends EventEmitter {
           if (this.turnId && String(turn.id || '') && String(turn.id) !== this.turnId) return;
           const status = String(turn.status || 'unknown');
           if (status !== 'completed') {
-            finish(failure('CODING_TURN_FAILED', { detail: turn.error?.message || status }));
+            const detail = String(turn.error?.message || status);
+            const capacity = /usage limit|purchase more credits|try again at|rate limit|quota|insufficient_quota/i.test(detail);
+            finish(failure(capacity ? 'CODING_CAPACITY_EXHAUSTED' : 'CODING_TURN_FAILED', {
+              retryable: capacity, detail,
+            }));
           } else {
             finish(null, { status, turnId: String(turn.id || this.turnId), agentExcerpt: this.agentText });
           }
