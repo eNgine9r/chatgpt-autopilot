@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { CommanderAgentClient, reconnectDelayMs } from '../src/commander/agent/client.mjs';
 import { CommanderGatewayServer } from '../src/commander/gateway/server.mjs';
+import { protocolEnvelope } from '../src/commander/contracts/index.mjs';
 
 const secret = 'correct-secret-material-'.repeat(2);
 const identity = { version: 1, deviceId: 'test-device', createdAt: new Date().toISOString() };
@@ -104,6 +105,67 @@ test('Agent authenticates, heartbeats and reconnects with a new session after Ga
   assert.notEqual(secondSession, firstSession);
   assert.equal(agent.state, 'online');
   assert.equal(replacement.registry.get(identity.deviceId).sessionId, secondSession);
+});
+
+
+test('oversized operation results are bounded without disconnecting the Agent', async (t) => {
+  const capabilities = [
+    { operation: 'file.read', authority: 'read', operationVersion: 1 },
+    { operation: 'device.health', authority: 'read', operationVersion: 1 },
+  ];
+  const gateway = new CommanderGatewayServer({
+    host: '127.0.0.1', port: 0,
+    heartbeatIntervalMs: 250, heartbeatTimeoutMs: 1_000,
+    secretResolver: async (deviceId) => deviceId === identity.deviceId ? secret : null,
+    logger: silentLogger,
+  });
+  const address = await gateway.start();
+  const agent = new CommanderAgentClient({
+    gatewayHost: '127.0.0.1', gatewayPort: address.port,
+    identity, secret, capabilities, logger: silentLogger,
+    reconnectBaseMs: 100, reconnectMaxMs: 200, reconnectJitterRatio: 0,
+    operationHandler: async (request) => ({
+      ...protocolEnvelope(),
+      requestId: request.requestId,
+      deviceId: request.deviceId,
+      operation: request.operation,
+      ok: true,
+      completedAt: new Date().toISOString(),
+      data: request.operation === 'file.read'
+        ? { content: 'x'.repeat(65_536) }
+        : { healthy: true },
+    }),
+  });
+  t.after(async () => { await agent.stop(); await gateway.stop(); });
+
+  const registered = waitForEvent(agent, 'registered');
+  agent.start();
+  await registered;
+  await waitForState(agent, 'online');
+
+  const oversized = await gateway.request({
+    ...protocolEnvelope(),
+    requestId: 'req-oversized-result',
+    deviceId: identity.deviceId,
+    operation: 'file.read',
+    params: { path: '.project/CURRENT_STATE.md' },
+  });
+  assert.equal(oversized.ok, false);
+  assert.equal(oversized.error.code, 'OPERATION_RESULT_TOO_LARGE');
+  assert.equal(oversized.error.retryable, false);
+  assert.equal(agent.state, 'online');
+  assert.equal(gateway.registry.get(identity.deviceId).status, 'online');
+
+  const normal = await gateway.request({
+    ...protocolEnvelope(),
+    requestId: 'req-normal-result',
+    deviceId: identity.deviceId,
+    operation: 'device.health',
+    params: {},
+  });
+  assert.deepEqual(normal.data, { healthy: true });
+  assert.equal(agent.state, 'online');
+  assert.equal(gateway.registry.get(identity.deviceId).status, 'online');
 });
 
 test('wrong Agent secret never registers and stop prevents reconnect', async (t) => {

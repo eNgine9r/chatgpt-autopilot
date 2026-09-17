@@ -272,7 +272,49 @@ export class CommanderAgentClient extends EventEmitter {
     if (result.requestId !== request.requestId || result.deviceId !== request.deviceId || result.operation !== request.operation) {
       throw new Error('operation_result_identity_mismatch');
     }
-    socket.write(encodeJsonLine({ ...protocolEnvelope(), type: 'operation_result', sessionId: this.sessionId, result }));
+    this.#sendOperationResult(socket, request, result);
+  }
+
+  #sendOperationResult(socket, request, result) {
+    const message = { ...protocolEnvelope(), type: 'operation_result', sessionId: this.sessionId, result };
+    try {
+      socket.write(encodeJsonLine(message));
+      return;
+    } catch (error) {
+      if (error?.message !== 'frame_too_large') throw error;
+    }
+
+    const boundedResult = validateOperationResult({
+      ...protocolEnvelope(),
+      requestId: request.requestId,
+      deviceId: request.deviceId,
+      operation: request.operation,
+      ...(result.executionId ? { executionId: result.executionId } : {}),
+      ok: false,
+      completedAt: new Date(this.now()).toISOString(),
+      error: commanderError({
+        category: 'transport',
+        code: 'OPERATION_RESULT_TOO_LARGE',
+        message: 'Commander operation result exceeded the transport frame limit.',
+        retryable: false,
+      }),
+    });
+    log(this.logger, 'warn', 'commander_agent_operation_result_bounded', {
+      deviceId: request.deviceId,
+      requestId: request.requestId,
+      operation: request.operation,
+    });
+    try {
+      socket.write(encodeJsonLine({ ...message, result: boundedResult }));
+    } catch (error) {
+      // The bounded result is intentionally small; keep the session alive even if the socket write fails.
+      log(this.logger, 'warn', 'commander_agent_operation_result_fallback_failed', {
+        deviceId: request.deviceId,
+        requestId: request.requestId,
+        operation: request.operation,
+        error: String(error.message || error),
+      });
+    }
   }
 
 
