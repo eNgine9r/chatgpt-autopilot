@@ -39,6 +39,12 @@ const dispatch = {
     if (method === 'thread/start') return { thread: { id: 'thr-shadow' } };
     if (method === 'turn/start') {
       const id = 'turn-shadow';
+      if (this.options.turnFailure) {
+        queueMicrotask(() => this.emit('notification', { method: 'turn/completed', params: { turn: {
+          id, status: 'failed', error: { message: this.options.turnFailure },
+        } } }));
+        return { turn: { id } };
+      }
       if (this.options.exit) queueMicrotask(() => this.emit('exit', new Error('boom')));
       else if (!this.options.stall) queueMicrotask(() => {
         this.emit('notification', { method: 'item/completed', params: { item: {
@@ -151,7 +157,20 @@ test('timeout fails once and same attempt cannot silently rerun', async (t) => {
   await assert.rejects(() => worker.execute(slowProject, dispatch), /CODING_TIMEOUT/);
   await assert.rejects(() => worker.execute(slowProject, dispatch), /CODING_PREVIOUS_FAILURE/);
   assert.equal(clients.length, 1);
-});test('unexpected Codex exit is retryable but does not rerun the same attempt', async (t) => {
+});test('Codex account capacity exhaustion is retryable but same attempt remains one-shot', async (t) => {
+  const { worker, clients } = await fixture(t, { client: {
+    turnFailure: 'Usage limit reached. Purchase more credits or try again at Sep 19th, 2026 5:15 PM.',
+  } });
+  await assert.rejects(() => worker.execute(project, dispatch), (error) => {
+    assert.equal(error.failure?.code, 'CODING_CAPACITY_EXHAUSTED');
+    assert.equal(error.failure?.retryable, true);
+    return true;
+  });
+  await assert.rejects(() => worker.execute(project, dispatch), /CODING_PREVIOUS_FAILURE/);
+  assert.equal(clients.length, 1);
+});
+
+test('unexpected Codex exit is retryable but does not rerun the same attempt', async (t) => {
   const { worker, clients } = await fixture(t, { client: { exit: true } });
   await assert.rejects(() => worker.execute(project, dispatch), (error) => {
     assert.equal(error.failure?.code, 'CODING_UNEXPECTED_EXIT');
