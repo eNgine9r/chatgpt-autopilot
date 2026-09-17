@@ -30,6 +30,7 @@ render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-agent.service.templat
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-gateway.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-gateway.service"
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-github-bridge.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-github-bridge.service"
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-pairing-operator.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-pairing-operator.service"
+render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-remote-mcp.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-remote-mcp.service"
 
 if [[ ! -e "$CONFIG_DIR/agent.env" ]]; then
   cat > "$CONFIG_DIR/agent.env" <<'ENV'
@@ -68,6 +69,22 @@ COMMANDER_OIDC_CLIENT_ID=
 COMMANDER_OIDC_CLIENT_SECRET=
 ENV
   chmod 600 "$CONFIG_DIR/pairing-operator.env"
+fi
+
+if [[ ! -e "$CONFIG_DIR/remote-mcp.token" ]]; then
+  head -c 48 /dev/urandom | base64 | tr -d '\n' > "$CONFIG_DIR/remote-mcp.token"
+  chmod 600 "$CONFIG_DIR/remote-mcp.token"
+fi
+if [[ ! -e "$CONFIG_DIR/remote-mcp.env" ]]; then
+  cat > "$CONFIG_DIR/remote-mcp.env" <<ENV
+COMMANDER_REMOTE_MCP_ENABLED=false
+COMMANDER_REMOTE_MCP_PRIVATE_BIND_ENABLED=false
+COMMANDER_REMOTE_MCP_HOST=127.0.0.1
+COMMANDER_REMOTE_MCP_PORT=8792
+COMMANDER_REMOTE_MCP_DEVICE_ID=
+COMMANDER_REMOTE_MCP_TOKEN_FILE=$CONFIG_DIR/remote-mcp.token
+ENV
+  chmod 600 "$CONFIG_DIR/remote-mcp.env"
 fi
 
 if [[ ! -e "$CONFIG_DIR/github-bridge.env" ]]; then
@@ -120,3 +137,4 @@ echo "Agent unit:   $UNIT_DIR/chatgpt-autopilot-commander-agent.service"
 echo "Gateway unit: $UNIT_DIR/chatgpt-autopilot-commander-gateway.service"
 echo "GitHub bridge unit: $UNIT_DIR/chatgpt-autopilot-commander-github-bridge.service"
 echo "Pairing operator unit: $UNIT_DIR/chatgpt-autopilot-commander-pairing-operator.service"
+echo "Remote MCP unit: $UNIT_DIR/chatgpt-autopilot-commander-remote-mcp.service"

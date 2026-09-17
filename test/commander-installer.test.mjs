@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { runAgentService } from '../src/commander/agent/service.mjs';
 import { runGatewayService } from '../src/commander/gateway/service.mjs';
 import { runPairingOperatorService } from '../src/commander/pairing/operator-service.mjs';
+import { runCommanderRemoteMcpService } from '../src/integrations/mcp/commander/remote-service.mjs';
 
 const execFileAsync = promisify(execFile);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,6 +18,7 @@ test('disabled service entrypoints exit without creating network or identity sta
   assert.equal(await runAgentService({ COMMANDER_ENABLED: 'false' }), null);
   assert.equal(await runGatewayService({ COMMANDER_ENABLED: 'false' }), null);
   assert.equal(await runPairingOperatorService({ COMMANDER_PAIRING_OPERATOR_ENABLED: 'false' }), null);
+  assert.equal(await runCommanderRemoteMcpService({ COMMANDER_REMOTE_MCP_ENABLED: 'false' }), null);
 });
 
 test('Commander installer stages hardened disabled user units only', async () => {
@@ -38,10 +40,11 @@ test('Commander installer stages hardened disabled user units only', async () =>
   const agentUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-agent.service'), 'utf8');
   const gatewayUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-gateway.service'), 'utf8');
   const pairingUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-pairing-operator.service'), 'utf8');
+  const remoteMcpUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-remote-mcp.service'), 'utf8');
   assert.match(agentUnit, /ReadWritePaths=%h\/commander-workspaces/);
   const workspaceDir = path.join(root, 'commander-workspaces');
   assert.equal((await fs.stat(workspaceDir)).mode & 0o077, 0);
-  for (const unit of [agentUnit, gatewayUnit, pairingUnit]) {
+  for (const unit of [agentUnit, gatewayUnit, pairingUnit, remoteMcpUnit]) {
     assert.match(unit, /NoNewPrivileges=true/);
     assert.match(unit, /ProtectSystem=strict/);
     assert.match(unit, /ProtectHome=read-only/);
@@ -70,6 +73,19 @@ test('Commander installer stages hardened disabled user units only', async () =>
   assert.match(pairingEnv, /COMMANDER_OIDC_ISSUER=https:\/\/accounts.google.com/);
   assert.equal((await fs.stat(pairingEnvPath)).mode & 0o077, 0);
   assert.match(pairingUnit, /ReadWritePaths=%h\/.local\/state\/chatgpt-autopilot-commander/);
+  const remoteMcpEnvPath = path.join(configHome, 'chatgpt-autopilot-commander/remote-mcp.env');
+  const remoteMcpEnv = await fs.readFile(remoteMcpEnvPath, 'utf8');
+  assert.match(remoteMcpEnv, /COMMANDER_REMOTE_MCP_ENABLED=false/);
+  assert.match(remoteMcpEnv, /COMMANDER_REMOTE_MCP_PRIVATE_BIND_ENABLED=false/);
+  assert.match(remoteMcpEnv, /COMMANDER_REMOTE_MCP_HOST=127\.0\.0\.1/);
+  assert.match(remoteMcpEnv, /COMMANDER_REMOTE_MCP_PORT=8792/);
+  assert.match(remoteMcpEnv, /COMMANDER_REMOTE_MCP_DEVICE_ID=/);
+  assert.equal((await fs.stat(remoteMcpEnvPath)).mode & 0o077, 0);
+  const remoteMcpTokenPath = path.join(configHome, 'chatgpt-autopilot-commander/remote-mcp.token');
+  assert.ok((await fs.readFile(remoteMcpTokenPath, 'utf8')).trim().length >= 32);
+  assert.equal((await fs.stat(remoteMcpTokenPath)).mode & 0o077, 0);
+  assert.match(remoteMcpUnit, /EnvironmentFile=.*remote-mcp\.env/);
+  assert.match(remoteMcpUnit, /NoNewPrivileges=true/);
   const readPolicyPath = path.join(configHome, 'chatgpt-autopilot-commander/read-policy.json');
   const readPolicy = JSON.parse(await fs.readFile(readPolicyPath, 'utf8'));
   assert.deepEqual(readPolicy, { version: 1, roots: [], repositories: [], services: [] });

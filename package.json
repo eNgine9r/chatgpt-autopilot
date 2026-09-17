@@ -49,7 +49,8 @@
     "start:commander-github-bridge": "node src/integrations/github/commander/service.mjs",
     "install:commander-github-bridge": "bash scripts/install-commander-github-bridge-systemd.sh",
     "start:commander-pairing-operator": "node src/commander/pairing/operator-service.mjs",
-    "commander:register": "node src/commander/pairing/register.mjs"
+    "commander:register": "node src/commander/pairing/register.mjs",
+    "start:commander-remote-mcp": "node src/integrations/mcp/commander/remote-service.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",

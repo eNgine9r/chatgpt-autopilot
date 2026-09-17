@@ -1,0 +1,24 @@
+[Unit]
+Description=ChatGPT Autopilot Commander Remote MCP Adapter
+After=network-online.target chatgpt-autopilot-commander-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_DIR@
+EnvironmentFile=-%h/.config/chatgpt-autopilot-commander/remote-mcp.env
+ExecStart=@NODE_BIN@ @REPO_DIR@/src/integrations/mcp/commander/remote-service.mjs
+Restart=on-failure
+RestartSec=5
+UMask=0077
+MemoryMax=192M
+TasksMax=32
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=%h/.config/chatgpt-autopilot-commander
+ReadWritePaths=%t/chatgpt-autopilot-commander
+
+[Install]
+WantedBy=default.target
