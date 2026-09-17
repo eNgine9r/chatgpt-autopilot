@@ -31,7 +31,7 @@ export async function runGatewayService(env = process.env) {
   let deviceKeyResolver = null;
   if (pairingAuthEnabled) {
     const trustStoreFile = env.COMMANDER_GATEWAY_TRUST_STORE
-      || path.join(home, '.config/chatgpt-autopilot-commander/gateway-trust.json');
+      || path.join(home, '.local/state/chatgpt-autopilot-commander/gateway-trust.json');
     trustStore = new CommanderTrustStore({ filePath: trustStoreFile });
     await trustStore.load();
     deviceKeyResolver = (deviceId) => trustStore.resolvePublicKey(deviceId);

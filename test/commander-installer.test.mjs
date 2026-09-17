@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAgentService } from '../src/commander/agent/service.mjs';
 import { runGatewayService } from '../src/commander/gateway/service.mjs';
+import { runPairingOperatorService } from '../src/commander/pairing/operator-service.mjs';
 
 const execFileAsync = promisify(execFile);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,6 +16,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 test('disabled service entrypoints exit without creating network or identity state', async () => {
   assert.equal(await runAgentService({ COMMANDER_ENABLED: 'false' }), null);
   assert.equal(await runGatewayService({ COMMANDER_ENABLED: 'false' }), null);
+  assert.equal(await runPairingOperatorService({ COMMANDER_PAIRING_OPERATOR_ENABLED: 'false' }), null);
 });
 
 test('Commander installer stages hardened disabled user units only', async () => {
@@ -35,10 +37,11 @@ test('Commander installer stages hardened disabled user units only', async () =>
   const unitDir = path.join(configHome, 'systemd/user');
   const agentUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-agent.service'), 'utf8');
   const gatewayUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-gateway.service'), 'utf8');
+  const pairingUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-pairing-operator.service'), 'utf8');
   assert.match(agentUnit, /ReadWritePaths=%h\/commander-workspaces/);
   const workspaceDir = path.join(root, 'commander-workspaces');
   assert.equal((await fs.stat(workspaceDir)).mode & 0o077, 0);
-  for (const unit of [agentUnit, gatewayUnit]) {
+  for (const unit of [agentUnit, gatewayUnit, pairingUnit]) {
     assert.match(unit, /NoNewPrivileges=true/);
     assert.match(unit, /ProtectSystem=strict/);
     assert.match(unit, /ProtectHome=read-only/);
@@ -60,6 +63,13 @@ test('Commander installer stages hardened disabled user units only', async () =>
   assert.match(gatewayEnv, /COMMANDER_EXECUTION_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_WRITE_ENABLED=false/);
   assert.match(gatewayEnv, /COMMANDER_ADMIN_ENABLED=false/);
+  const pairingEnvPath = path.join(configHome, 'chatgpt-autopilot-commander/pairing-operator.env');
+  const pairingEnv = await fs.readFile(pairingEnvPath, 'utf8');
+  assert.match(pairingEnv, /COMMANDER_PAIRING_OPERATOR_ENABLED=false/);
+  assert.match(pairingEnv, /COMMANDER_PAIRING_PRIVATE_BIND_ENABLED=false/);
+  assert.match(pairingEnv, /COMMANDER_OIDC_ISSUER=https:\/\/accounts.google.com/);
+  assert.equal((await fs.stat(pairingEnvPath)).mode & 0o077, 0);
+  assert.match(pairingUnit, /ReadWritePaths=%h\/.local\/state\/chatgpt-autopilot-commander/);
   const readPolicyPath = path.join(configHome, 'chatgpt-autopilot-commander/read-policy.json');
   const readPolicy = JSON.parse(await fs.readFile(readPolicyPath, 'utf8'));
   assert.deepEqual(readPolicy, { version: 1, roots: [], repositories: [], services: [] });

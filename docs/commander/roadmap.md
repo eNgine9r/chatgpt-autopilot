@@ -268,6 +268,14 @@ Area: `area/commander`
 
 Add Agent-owned, private `WorkSession` state so interactive Commander work survives MCP reconnects, Gateway restarts and host reboot without becoming an autonomous scheduler. The session records bounded device/project/workspace/repository context, supports list/get/resume/open/checkpoint/close, detects out-of-band repository divergence before scoped writes, and marks non-terminal executions interrupted after Agent restart. See ADR-010 and `docs/commander/work-session-v1.md`.
 
+## Phase 13 — Pairing Approval API, Operator UI & OIDC Adapter
+
+Issue: #409
+Area: `area/commander`
+Depends on: #353
+
+Add the user-facing RDC-style enrollment adapter over the Phase 11 trust foundation: private/Tailscale-only operator HTTP service, one-time-code device review, Google-compatible OIDC Authorization Code + PKCE, CSRF-protected approve/reject/revoke UI, Agent status polling and a `commander:register` terminal flow. Reviewed scopes are metadata only and cannot widen Commander capability/policy authority. Runtime remains disabled until separately configured and accepted. See ADR-012 and `docs/commander/pairing-operator-v1.md`.
+
 ## CI roadmap
 
 Phase 0 keeps current repository-wide CI unchanged.

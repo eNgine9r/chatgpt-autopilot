@@ -18,6 +18,16 @@ function userCode(randomBytes) {
   for (let i = 0; i < 8; i += 1) out += ALPHABET[bytes[i] % ALPHABET.length];
   return out;
 }
+function normalizeScopes(value = []) {
+  if (!Array.isArray(value) || value.length > 64) throw new Error('invalid_pairing_scopes');
+  const out = []; const seen = new Set();
+  for (const raw of value) {
+    if (typeof raw !== 'string' || raw.length < 1 || raw.length > 160 || /[\0\r\n]/.test(raw)) throw new Error('invalid_pairing_scopes');
+    if (!seen.has(raw)) { seen.add(raw); out.push(raw); }
+  }
+  return out;
+}
+
 function normalizeOperator(operator) {
   if (!operator || typeof operator !== 'object' || Array.isArray(operator)) throw new Error('invalid_pairing_operator');
   if (typeof operator.provider !== 'string' || operator.provider.length < 1 || operator.provider.length > 64) throw new Error('invalid_pairing_operator');
@@ -63,19 +73,20 @@ export class CommanderPairingService {
     this.loaded = true; await this.expire(); return this;
   }
 
-  async createRequest({ deviceId, publicKeyPem, displayName = '' } = {}) {
+  async createRequest({ deviceId, publicKeyPem, displayName = '', scopes = [] } = {}) {
     await this.load();
     if (typeof deviceId !== 'string' || !ID.test(deviceId)) throw new Error('invalid_pairing_device_id');
     this.#rateLimit(`create:${deviceId}`, this.maxCreatesPerWindow);
     if (typeof displayName !== 'string' || displayName.length > 120 || /[\0\r\n]/.test(displayName)) throw new Error('invalid_pairing_display_name');
     const fingerprint = devicePublicKeyFingerprint(publicKeyPem);
+    const requestedScopes = normalizeScopes(scopes);
     const requestId = `pair-${this.randomBytes(16).toString('hex')}`;
     const deviceCode = this.randomBytes(32).toString('base64url');
     let code;
     do { code = userCode(this.randomBytes); } while (this.#findByCode(code));
     const issuedAt = this.now();
     this.state.requests[requestId] = {
-      version: 1, requestId, deviceId, displayName, publicKeyPem, fingerprint,
+      version: 1, requestId, deviceId, displayName, publicKeyPem, fingerprint, requestedScopes,
       userCodeHash: hash(code), deviceCodeHash: hash(deviceCode), status: 'pending',
       issuedAt: new Date(issuedAt).toISOString(), expiresAt: new Date(issuedAt + this.ttlMs).toISOString(),
     };
@@ -91,10 +102,10 @@ export class CommanderPairingService {
     const request = this.#findByCode(code);
     if (!request || request.status !== 'pending') throw new Error('pairing_request_not_pending');
     const normalizedOperator = normalizeOperator(operator);
-    const trust = await this.trustStore.trustDevice({ deviceId: request.deviceId, publicKeyPem: request.publicKeyPem, operator: normalizedOperator });
+    const trust = await this.trustStore.trustDevice({ deviceId: request.deviceId, publicKeyPem: request.publicKeyPem, operator: normalizedOperator, scopes: request.requestedScopes || [] });
     request.status = 'approved'; request.approvedAt = new Date(this.now()).toISOString(); request.operator = normalizedOperator;
     await this.#persist();
-    return { requestId: request.requestId, deviceId: request.deviceId, fingerprint: request.fingerprint, status: request.status, trust };
+    return { requestId: request.requestId, deviceId: request.deviceId, fingerprint: request.fingerprint, status: request.status, approvedScopes: request.requestedScopes || [], trust };
   }
 
   async reject({ userCode: code, operator } = {}) {
@@ -116,6 +127,19 @@ export class CommanderPairingService {
     const request = this.state.requests[requestId];
     if (!request || !safeEqualHash(request.deviceCodeHash, hash(deviceCode))) throw new Error('pairing_status_not_authorized');
     return { requestId, deviceId: request.deviceId, fingerprint: request.fingerprint, status: request.status, expiresAt: request.expiresAt };
+  }
+
+  async inspect({ userCode: code } = {}) {
+    await this.load(); await this.expire();
+    if (typeof code !== 'string' || !CODE.test(code)) throw new Error('invalid_pairing_user_code');
+    this.#rateLimit('operator:global', this.maxOperatorAttemptsPerWindow);
+    this.#rateLimit(`operator:${hash(code)}`, this.maxOperatorAttemptsPerWindow);
+    const request = this.#findByCode(code);
+    if (!request || request.status !== 'pending') throw new Error('pairing_request_not_pending');
+    return {
+      requestId: request.requestId, deviceId: request.deviceId, displayName: request.displayName,
+      fingerprint: request.fingerprint, scopes: request.requestedScopes || [], status: request.status, issuedAt: request.issuedAt, expiresAt: request.expiresAt,
+    };
   }
 
   async expire() {
