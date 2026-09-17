@@ -23,9 +23,10 @@ test("mirror snapshot exposes bounded ordered turn history and safety state", ()
   assert.match(content, /\.\.\.recoveryBlockers\(\)/);
 });
 
-test("mirror lifecycle is driven by the pulse alarm and cleaned with tab removal", () => {
-  assert.match(worker, /processPendingMirrorProbes\(\)\.catch/);
-  assert.match(worker, /maybeStartMirrorProbe\(\)\.catch/);
+test("mirror lifecycle is driven by the serialized maintenance gate and cleaned with tab removal", () => {
+  assert.match(worker, /runMaintenance\(\{ source: "alarm", sendPulse: true, force: true \}\)/);
+  assert.match(worker, /processPendingMirrorProbes,/);
+  assert.match(worker, /maybeStartMirrorProbe/);
   assert.match(worker, /cleanupMirrorEntriesForTab\(tabId\)\.catch/);
   assert.match(worker, /MIRROR_TIMEOUT_MS = 300000/);
   assert.match(worker, /MIRROR_SETTLE_MS = 30000/);

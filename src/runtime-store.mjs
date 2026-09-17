@@ -22,7 +22,7 @@ export class ProjectRuntimeStore {
       version: 1,
       projectId,
       control: { paused: false, restartGeneration: 0, rolloverGeneration: 0, adoptGeneration: 0, discoveryScanGeneration: 0 },
-      runtime: { lastSeenAt: 0, lastProgressAt: 0, progressKey: "", status: "unknown", extensionVersion: "", backgroundWorker: "" },
+      runtime: { lastSeenAt: 0, lastProgressAt: 0, progressKey: "", status: "unknown", extensionVersion: "", backgroundWorker: "", schedulerLastStartedAt: 0, schedulerLastCompletedAt: 0, schedulerLastSource: "", schedulerRunning: false, schedulerConsecutiveFailures: 0 },
       discovery: {
         lastScanAt: 0, candidateUrl: "", candidateTitle: "", candidatePreview: "", candidateSeenAt: 0,
         candidateEligible: false, candidateReason: "",
@@ -106,7 +106,12 @@ export class ProjectRuntimeStore {
       latestAssistantExcerpt: String(detail.latestAssistantExcerpt || current.runtime.latestAssistantExcerpt || "").slice(-3000),
       latestUserExcerpt: String(detail.latestUserExcerpt || current.runtime.latestUserExcerpt || "").slice(-2000),
       extensionVersion: String(detail.extensionVersion || current.runtime.extensionVersion || "").slice(0, 64),
-      backgroundWorker: String(detail.backgroundWorker || current.runtime.backgroundWorker || "").slice(0, 64)
+      backgroundWorker: String(detail.backgroundWorker || current.runtime.backgroundWorker || "").slice(0, 64),
+      schedulerLastStartedAt: Number(detail.schedulerLastStartedAt || current.runtime.schedulerLastStartedAt || 0),
+      schedulerLastCompletedAt: Number(detail.schedulerLastCompletedAt || current.runtime.schedulerLastCompletedAt || 0),
+      schedulerLastSource: String(detail.schedulerLastSource || current.runtime.schedulerLastSource || "").slice(0, 32),
+      schedulerRunning: Boolean(detail.schedulerRunning),
+      schedulerConsecutiveFailures: Number(detail.schedulerConsecutiveFailures || 0)
     };
     if (!changed && at - Number(current.updatedAt || 0) < 15000) return { state: current, changed };
     return { state: this.write(projectId, { ...current, runtime, updatedAt: at }), changed };
