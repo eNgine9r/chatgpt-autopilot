@@ -5,6 +5,7 @@ import {
   commanderRequestFromGithubTask,
   executeCommanderGithubTask,
   githubBridgeComment,
+  githubBridgeFailure,
   parseAllowedOperations,
   parseCommanderGithubTask,
 } from '../src/integrations/github/commander/bridge.mjs';
@@ -128,6 +129,50 @@ test('GitHub bridge cycle leaves retryable Commander transport failures open', a
   const client = { getDevice: async () => { throw new Error('control_request_timeout'); } };
   const outcome = await runGithubBridgeCycle({ config: config(), github, client, logger: { info() {}, warn() {} } });
   assert.deepEqual(outcome, { seen: 1, completed: 0 });
+});
+
+
+test('GitHub bridge normalizes contract-validation errors into valid protocol error codes', () => {
+  const failure = githubBridgeFailure(321, Object.assign(new Error('invalid_string:error.code'), { code: 'invalid_string' }));
+  assert.equal(failure.ok, false);
+  assert.equal(failure.error.code, 'INVALID_STRING');
+  assert.equal(failure.error.retryable, false);
+});
+
+test('GitHub bridge cycle isolates a malformed task result and continues with later tasks', async () => {
+  const first = issue({ version: 1, deviceId: 'btc-radar', operation: 'device.health', params: {} });
+  const second = issue(
+    { version: 1, deviceId: 'btc-radar', operation: 'device.health', params: {} },
+    { number: 322 },
+  );
+  const comments = [];
+  const closed = [];
+  const github = {
+    listOpenTasks: async () => [first, second],
+    addComment: async (number, body) => comments.push([number, body]),
+    closeIssue: async (number) => closed.push(number),
+  };
+  let requests = 0;
+  const client = {
+    getDevice: async () => snapshot('device.health'),
+    request: async (request) => {
+      requests += 1;
+      if (requests === 1) {
+        return {
+          ...protocolEnvelope(), requestId: request.requestId, deviceId: request.deviceId,
+          operation: request.operation, ok: false, completedAt: NOW,
+          error: { ...protocolEnvelope(), category: 'validation', code: '', message: 'bad', retryable: false },
+        };
+      }
+      return okResult(request);
+    },
+  };
+  const outcome = await runGithubBridgeCycle({ config: config(), github, client, logger: { info() {}, warn() {} } });
+  assert.deepEqual(outcome, { seen: 2, completed: 2 });
+  assert.deepEqual(closed, [321, 322]);
+  assert.equal(comments.length, 2);
+  assert.match(comments[0][1], /"code":"INVALID_STRING"/);
+  assert.match(comments[1][1], /"ok":true/);
 });
 
 test('GitHub bridge result comments are bounded plain JSON', () => {

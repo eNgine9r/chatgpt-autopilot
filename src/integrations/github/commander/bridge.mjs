@@ -124,7 +124,14 @@ function safeBridgeError(error) {
   if (['control_request_timeout', 'control_connection_closed'].includes(code)) {
     return commanderError({ category: 'transport', code: 'GITHUB_BRIDGE_COMMANDER_UNAVAILABLE', message: 'Commander is temporarily unavailable', retryable: true });
   }
-  const safeCode = /^[A-Za-z0-9_:-]{1,128}$/.test(code) ? code : 'GITHUB_BRIDGE_REJECTED';
+  const normalizedCode = code
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64);
+  const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/.test(normalizedCode)
+    ? normalizedCode
+    : 'GITHUB_BRIDGE_REJECTED';
   return commanderError({ category: 'validation', code: safeCode, message: 'GitHub Commander task was rejected', retryable: false });
 }
 
