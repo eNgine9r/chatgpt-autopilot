@@ -58,7 +58,9 @@ test("heartbeat attests extension worker and recovers turn metadata from progres
   const base = `http://127.0.0.1:${server.address().port}`;
   const heartbeat = await post(base, "/heartbeat", {
     projectId: "demo", progressKey: "assistant|turn-42|finished|idle|abc|def", status: "assistant",
-    extensionVersion: "0.3.12", backgroundWorker: "v10"
+    extensionVersion: "0.3.12", backgroundWorker: "v10",
+    schedulerLastStartedAt: 1010, schedulerLastCompletedAt: 1020,
+    schedulerLastSource: "heartbeat", schedulerRunning: false, schedulerConsecutiveFailures: 2
   });
   assert.equal(heartbeat.response.status, 200);
   let runtime = store.snapshot("demo").runtime;
@@ -66,9 +68,23 @@ test("heartbeat attests extension worker and recovers turn metadata from progres
   assert.equal(runtime.lastTurnId, "turn-42");
   assert.equal(runtime.extensionVersion, "0.3.12");
   assert.equal(runtime.backgroundWorker, "v10");
+  assert.equal(runtime.schedulerLastStartedAt, 1010);
+  assert.equal(runtime.schedulerLastCompletedAt, 1020);
+  assert.equal(runtime.schedulerLastSource, "heartbeat");
+  assert.equal(runtime.schedulerRunning, false);
+  assert.equal(runtime.schedulerConsecutiveFailures, 2);
+
+  const status = await fetch(`${base}/operator/status`);
+  const statusBody = await status.json();
+  assert.equal(statusBody.projects[0].state.runtime.schedulerLastStartedAt, 1010);
+  assert.equal(statusBody.projects[0].state.runtime.schedulerLastCompletedAt, 1020);
+  assert.equal(statusBody.projects[0].state.runtime.schedulerLastSource, "heartbeat");
 
   await post(base, "/heartbeat", { projectId: "demo", progressKey: "assistant|turn-42|finished|idle|abc|ghi", status: "assistant" });
   runtime = store.snapshot("demo").runtime;
   assert.equal(runtime.extensionVersion, "0.3.12");
   assert.equal(runtime.backgroundWorker, "v10");
+  assert.equal(runtime.schedulerLastStartedAt, 1010);
+  assert.equal(runtime.schedulerLastCompletedAt, 1020);
+  assert.equal(runtime.schedulerLastSource, "heartbeat");
 });

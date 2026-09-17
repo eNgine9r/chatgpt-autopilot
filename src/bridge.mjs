@@ -126,7 +126,12 @@ export function createBridgeServer({
           latestAssistantExcerpt: String(payload.latestAssistantExcerpt || ""),
           latestUserExcerpt: String(payload.latestUserExcerpt || ""),
           extensionVersion: String(payload.extensionVersion || ""),
-          backgroundWorker: String(payload.backgroundWorker || "")
+          backgroundWorker: String(payload.backgroundWorker || ""),
+          schedulerLastStartedAt: Number(payload.schedulerLastStartedAt || 0),
+          schedulerLastCompletedAt: Number(payload.schedulerLastCompletedAt || 0),
+          schedulerLastSource: String(payload.schedulerLastSource || ""),
+          schedulerRunning: Boolean(payload.schedulerRunning),
+          schedulerConsecutiveFailures: Number(payload.schedulerConsecutiveFailures || 0)
         };
         const result = progressWatchdog.observe(projectId, detail);
         runtimeStore?.observe(projectId, detail);
