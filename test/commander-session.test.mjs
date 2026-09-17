@@ -74,7 +74,14 @@ test('device registry replaces duplicate sessions and rejects stale heartbeats',
 });
 
 test('Phase 2 configuration is disabled and loopback-only by default', () => {
-  assert.equal(commanderEnabled(undefined), false);
+  const previousGlobal = process.env.COMMANDER_ENABLED;
+  process.env.COMMANDER_ENABLED = 'true';
+  try {
+    assert.equal(commanderEnabled(undefined), false);
+  } finally {
+    if (previousGlobal === undefined) delete process.env.COMMANDER_ENABLED;
+    else process.env.COMMANDER_ENABLED = previousGlobal;
+  }
   assert.equal(commanderEnabled('true'), true);
   assert.equal(commanderPort(undefined), 8790);
   assert.equal(assertPhase2GatewayHost('127.0.0.1'), '127.0.0.1');
