@@ -29,6 +29,7 @@ render_unit() {
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-agent.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-agent.service"
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-gateway.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-gateway.service"
 render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-github-bridge.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-github-bridge.service"
+render_unit "$REPO_DIR/systemd/chatgpt-autopilot-commander-pairing-operator.service.template" "$UNIT_DIR/chatgpt-autopilot-commander-pairing-operator.service"
 
 if [[ ! -e "$CONFIG_DIR/agent.env" ]]; then
   cat > "$CONFIG_DIR/agent.env" <<'ENV'
@@ -52,6 +53,21 @@ COMMANDER_GATEWAY_HOST=127.0.0.1
 COMMANDER_GATEWAY_PORT=8790
 ENV
   chmod 600 "$CONFIG_DIR/gateway.env"
+fi
+
+if [[ ! -e "$CONFIG_DIR/pairing-operator.env" ]]; then
+  cat > "$CONFIG_DIR/pairing-operator.env" <<'ENV'
+COMMANDER_PAIRING_OPERATOR_ENABLED=false
+COMMANDER_PAIRING_PRIVATE_BIND_ENABLED=false
+COMMANDER_PAIRING_HOST=127.0.0.1
+COMMANDER_PAIRING_PORT=8791
+COMMANDER_PAIRING_PUBLIC_BASE_URL=http://127.0.0.1:8791
+COMMANDER_OIDC_PROVIDER_ID=google
+COMMANDER_OIDC_ISSUER=https://accounts.google.com
+COMMANDER_OIDC_CLIENT_ID=
+COMMANDER_OIDC_CLIENT_SECRET=
+ENV
+  chmod 600 "$CONFIG_DIR/pairing-operator.env"
 fi
 
 if [[ ! -e "$CONFIG_DIR/github-bridge.env" ]]; then
@@ -103,3 +119,4 @@ echo "Commander units staged only. They were NOT enabled or started."
 echo "Agent unit:   $UNIT_DIR/chatgpt-autopilot-commander-agent.service"
 echo "Gateway unit: $UNIT_DIR/chatgpt-autopilot-commander-gateway.service"
 echo "GitHub bridge unit: $UNIT_DIR/chatgpt-autopilot-commander-github-bridge.service"
+echo "Pairing operator unit: $UNIT_DIR/chatgpt-autopilot-commander-pairing-operator.service"

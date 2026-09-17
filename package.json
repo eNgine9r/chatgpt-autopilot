@@ -47,7 +47,9 @@
     "start:commander-mcp": "node src/integrations/mcp/commander/stdio.mjs",
     "preflight:commander-phase8": "node scripts/commander-phase8-preflight.mjs",
     "start:commander-github-bridge": "node src/integrations/github/commander/service.mjs",
-    "install:commander-github-bridge": "bash scripts/install-commander-github-bridge-systemd.sh"
+    "install:commander-github-bridge": "bash scripts/install-commander-github-bridge-systemd.sh",
+    "start:commander-pairing-operator": "node src/commander/pairing/operator-service.mjs",
+    "commander:register": "node src/commander/pairing/register.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",

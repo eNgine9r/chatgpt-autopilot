@@ -5,6 +5,16 @@ import { devicePublicKeyFingerprint } from '../agent/device-keypair.mjs';
 const DEVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const PROVIDER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 
+function validateScopes(value = []) {
+  if (!Array.isArray(value) || value.length > 64) throw new Error('invalid_pairing_scopes');
+  const seen = new Set(); const scopes = [];
+  for (const raw of value) {
+    if (typeof raw !== 'string' || raw.length < 1 || raw.length > 160 || /[\0\r\n]/.test(raw)) throw new Error('invalid_pairing_scopes');
+    if (!seen.has(raw)) { seen.add(raw); scopes.push(raw); }
+  }
+  return scopes;
+}
+
 function validateOperator(operator) {
   if (!operator || typeof operator !== 'object' || Array.isArray(operator)) throw new Error('invalid_pairing_operator');
   if (typeof operator.provider !== 'string' || !PROVIDER.test(operator.provider)) throw new Error('invalid_pairing_operator_provider');
@@ -43,7 +53,7 @@ export class CommanderTrustStore {
     return this;
   }
 
-  async trustDevice({ deviceId, publicKeyPem, operator }) {
+  async trustDevice({ deviceId, publicKeyPem, operator, scopes = [] }) {
     await this.load();
     if (typeof deviceId !== 'string' || !DEVICE_ID.test(deviceId)) throw new Error('invalid_pairing_device_id');
     const fingerprint = devicePublicKeyFingerprint(publicKeyPem);
@@ -52,7 +62,7 @@ export class CommanderTrustStore {
     const timestamp = new Date(this.now()).toISOString();
     const record = {
       version: 1, deviceId, algorithm: 'Ed25519', publicKeyPem, fingerprint,
-      status: 'trusted', operator: validateOperator(operator), pairedAt: existing?.pairedAt || timestamp,
+      status: 'trusted', operator: validateOperator(operator), approvedScopes: validateScopes(scopes), pairedAt: existing?.pairedAt || timestamp,
       updatedAt: timestamp,
     };
     this.state.devices[deviceId] = record;
@@ -74,22 +84,40 @@ export class CommanderTrustStore {
     return this.publicRecord(record);
   }
 
-  async resolvePublicKey(deviceId) {
+  async refresh() {
     await this.load();
+    const stat = await fs.lstat(this.filePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('invalid_trust_store_file');
+    if ((stat.mode & 0o077) !== 0) throw new Error('trust_store_permissions_too_open');
+    const parsed = JSON.parse(await fs.readFile(this.filePath, 'utf8'));
+    if (!parsed || parsed.version !== 1 || !parsed.devices || typeof parsed.devices !== 'object' || Array.isArray(parsed.devices)) throw new Error('invalid_trust_store');
+    this.state = parsed;
+    return this;
+  }
+
+  async resolvePublicKey(deviceId) {
+    await this.refresh();
     const record = this.state.devices[deviceId];
     return record?.status === 'trusted' ? record.publicKeyPem : null;
   }
 
   async get(deviceId) {
-    await this.load();
+    await this.refresh();
     const record = this.state.devices[deviceId];
     return record ? this.publicRecord(record) : null;
+  }
+
+  async list() {
+    await this.refresh();
+    return Object.values(this.state.devices)
+      .map((record) => this.publicRecord(record))
+      .sort((a, b) => a.deviceId.localeCompare(b.deviceId));
   }
 
   publicRecord(record) {
     return {
       version: record.version, deviceId: record.deviceId, algorithm: record.algorithm,
-      fingerprint: record.fingerprint, status: record.status, operator: { ...record.operator },
+      fingerprint: record.fingerprint, status: record.status, operator: { ...record.operator }, approvedScopes: [...(record.approvedScopes || [])],
       pairedAt: record.pairedAt, updatedAt: record.updatedAt,
       ...(record.revokedAt ? { revokedAt: record.revokedAt } : {}),
     };
