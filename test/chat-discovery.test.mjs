@@ -54,13 +54,29 @@ test("ordered discovery considers only chats newer than the configured current c
   assert.equal(result.candidate.url, newer);
 });
 
-test("discovery fails closed until the current chat is observed", () => {
+test("automatic discovery fails closed when the current chat is not observed", () => {
   const result = selectDiscoveryCandidate(project, [
     { url: `https://chatgpt.com/g/${id}/c/newer`, title: "BTC Radar newer" }
   ]);
   assert.equal(result.candidate, null);
   assert.equal(result.reason, "current_not_observed");
-  assert.equal(selectManualDiscoveryCandidate(project, [{ url: `https://chatgpt.com/g/${id}/c/newer` }]), null);
+});
+
+test("manual selector recovers the newest same-project candidate when the anchor is absent", () => {
+  const other = `g-p-fedcba9876543210fedcba9876543210`;
+  const candidate = selectManualDiscoveryCandidate(project, [
+    { url: `https://chatgpt.com/g/${other}/c/foreign`, title: "Foreign newest" },
+    { url: `https://chatgpt.com/g/${id}/c/manual-newest`, title: "Unclassified newest" },
+    { url: `https://chatgpt.com/g/${id}/c/manual-older`, title: "Unclassified older" }
+  ]);
+  assert.equal(candidate.url, `https://chatgpt.com/g/${id}/c/manual-newest`);
+});
+
+test("manual selector returns null when anchor is absent and no same-project candidate exists", () => {
+  const other = `g-p-fedcba9876543210fedcba9876543210`;
+  assert.equal(selectManualDiscoveryCandidate(project, [
+    { url: `https://chatgpt.com/g/${other}/c/foreign`, title: "Foreign" }
+  ]), null);
 });
 
 test("current newest chat never offers an older conversation for manual adoption", () => {
