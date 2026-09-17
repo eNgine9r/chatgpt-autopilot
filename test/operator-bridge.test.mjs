@@ -60,7 +60,10 @@ test("heartbeat attests extension worker and recovers turn metadata from progres
     projectId: "demo", progressKey: "assistant|turn-42|finished|idle|abc|def", status: "assistant",
     extensionVersion: "0.3.12", backgroundWorker: "v10",
     schedulerLastStartedAt: 1010, schedulerLastCompletedAt: 1020,
-    schedulerLastSource: "heartbeat", schedulerRunning: false, schedulerConsecutiveFailures: 2
+    schedulerLastSource: "heartbeat", schedulerRunning: false, schedulerConsecutiveFailures: 2,
+    discoverySchedulerGate: "source_status_unavailable",
+    discoverySchedulerControlGeneration: 6, discoverySchedulerScanGeneration: 5,
+    discoverySchedulerPending: false, discoverySchedulerUpdatedAt: 1030
   });
   assert.equal(heartbeat.response.status, 200);
   let runtime = store.snapshot("demo").runtime;
@@ -73,12 +76,21 @@ test("heartbeat attests extension worker and recovers turn metadata from progres
   assert.equal(runtime.schedulerLastSource, "heartbeat");
   assert.equal(runtime.schedulerRunning, false);
   assert.equal(runtime.schedulerConsecutiveFailures, 2);
+  assert.equal(runtime.discoverySchedulerGate, "source_status_unavailable");
+  assert.equal(runtime.discoverySchedulerControlGeneration, 6);
+  assert.equal(runtime.discoverySchedulerScanGeneration, 5);
+  assert.equal(runtime.discoverySchedulerPending, false);
+  assert.equal(runtime.discoverySchedulerUpdatedAt, 1030);
 
   const status = await fetch(`${base}/operator/status`);
   const statusBody = await status.json();
   assert.equal(statusBody.projects[0].state.runtime.schedulerLastStartedAt, 1010);
   assert.equal(statusBody.projects[0].state.runtime.schedulerLastCompletedAt, 1020);
   assert.equal(statusBody.projects[0].state.runtime.schedulerLastSource, "heartbeat");
+  assert.equal(statusBody.projects[0].state.runtime.discoverySchedulerGate, "source_status_unavailable");
+  assert.equal(statusBody.projects[0].state.runtime.discoverySchedulerControlGeneration, 6);
+  assert.equal(statusBody.projects[0].state.runtime.discoverySchedulerScanGeneration, 5);
+  assert.equal(statusBody.projects[0].state.runtime.discoverySchedulerUpdatedAt, 1030);
 
   await post(base, "/heartbeat", { projectId: "demo", progressKey: "assistant|turn-42|finished|idle|abc|ghi", status: "assistant" });
   runtime = store.snapshot("demo").runtime;
@@ -87,4 +99,8 @@ test("heartbeat attests extension worker and recovers turn metadata from progres
   assert.equal(runtime.schedulerLastStartedAt, 1010);
   assert.equal(runtime.schedulerLastCompletedAt, 1020);
   assert.equal(runtime.schedulerLastSource, "heartbeat");
+  assert.equal(runtime.discoverySchedulerGate, "source_status_unavailable");
+  assert.equal(runtime.discoverySchedulerControlGeneration, 6);
+  assert.equal(runtime.discoverySchedulerScanGeneration, 5);
+  assert.equal(runtime.discoverySchedulerUpdatedAt, 1030);
 });
