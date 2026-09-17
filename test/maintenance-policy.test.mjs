@@ -29,11 +29,14 @@ test("snapshot exposes bounded scheduler health fields", () => {
 });
 
 
-test("v21 routes alarm, heartbeat, and tab activity through one maintenance gate", () => {
-  const worker = fs.readFileSync(new URL("../extension/service-worker-v21.js", import.meta.url), "utf8");
+test("current worker routes activity through one durable maintenance gate", () => {
+  const manifest = JSON.parse(fs.readFileSync(new URL("../extension/manifest.json", import.meta.url), "utf8"));
+  const worker = fs.readFileSync(new URL(`../extension/${manifest.background.service_worker}`, import.meta.url), "utf8");
+  assert.match(worker, /MAINTENANCE_STATE_KEY = "maintenance:state"/);
+  assert.match(worker, /chrome\.storage\.session\.get\(MAINTENANCE_STATE_KEY\)/);
   assert.match(worker, /runMaintenance\(\{ source: "heartbeat" \}\)/);
   assert.match(worker, /runMaintenance\(\{ source: "alarm", sendPulse: true, force: true \}\)/);
   assert.match(worker, /runMaintenance\(\{ source: "tab_updated", force: true \}\)/);
-  assert.match(worker, /runMaintenance\(\{ source: "tab_removed", force: true \}\)/);
   assert.match(worker, /startMaintenance\("service_worker_start"\)/);
+  assert.doesNotMatch(worker, /startMaintenance\("service_worker_start", \{ force: true \}\)/);
 });
