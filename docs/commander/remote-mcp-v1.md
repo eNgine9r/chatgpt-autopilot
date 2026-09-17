@@ -25,3 +25,17 @@ A ChatGPT-side MCP/app connection targets the remote MCP endpoint, never the Gat
 ## Continuity
 
 The remote MCP adapter is stateless with respect to project work. The persisted Agent-side `WorkSession` is the source of truth, so a new MCP client connection can call `work_session.resume` and continue from the last checkpoint.
+
+## Multi-device mode
+
+For a single ChatGPT/operator connection controlling several paired Commander Agents, set `COMMANDER_REMOTE_MCP_MULTI_DEVICE_ENABLED=true` and omit `COMMANDER_REMOTE_MCP_DEVICE_ID`. The adapter registers `commander_v1_device_list` plus the union of currently advertised non-ADMIN operations from online devices.
+
+Every operation tool in multi-device mode requires an explicit `deviceId`. The adapter re-reads that selected device immediately before forwarding the operation and fails closed with `OPERATION_NOT_ADVERTISED` if the device is offline or the capability was revoked. A fresh MCP connection refreshes the visible union when device capabilities change.
+
+Single-device mode remains unchanged and does not require `deviceId` in each tool call.
+
+## Interactive operator terminal
+
+Commander does not create a second shell protocol. An operator terminal is an explicit execution-policy alias that starts an unprivileged shell through the existing `execution.start/get/output/input/cancel` lifecycle. The alias is runtime opt-in, runs as the Commander Agent service user, inherits execution concurrency/output/time bounds, and does not grant ADMIN or root authority.
+
+A managed host may define an alias such as `operator.shell` with executable `/bin/bash`, fixed arguments `--noprofile --norc`, `allowStdin=true`, an approved working directory, and a bounded timeout. This is intentionally not enabled by the repository example policy because it expands user-level authority and must be accepted per host.

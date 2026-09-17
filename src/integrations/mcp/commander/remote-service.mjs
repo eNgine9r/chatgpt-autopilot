@@ -16,8 +16,9 @@ export async function runCommanderRemoteMcpService(env = process.env) {
     console.info(JSON.stringify({ event: 'commander_remote_mcp_disabled' }));
     return null;
   }
+  const multiDevice = commanderEnabled(env.COMMANDER_REMOTE_MCP_MULTI_DEVICE_ENABLED);
   const deviceId = String(env.COMMANDER_REMOTE_MCP_DEVICE_ID || '');
-  if (!DEVICE_ID.test(deviceId)) throw new Error('COMMANDER_REMOTE_MCP_DEVICE_ID_required');
+  if (!multiDevice && !DEVICE_ID.test(deviceId)) throw new Error('COMMANDER_REMOTE_MCP_DEVICE_ID_required');
   const tokenFile = env.COMMANDER_REMOTE_MCP_TOKEN_FILE;
   if (!tokenFile) throw new Error('COMMANDER_REMOTE_MCP_TOKEN_FILE_required');
   const token = await loadCommanderRemoteMcpBearerToken(tokenFile);
@@ -26,12 +27,13 @@ export async function runCommanderRemoteMcpService(env = process.env) {
   const server = new CommanderRemoteMcpHttpServer({
     host,
     port: commanderPort(env.COMMANDER_REMOTE_MCP_PORT, 8792),
-    deviceId,
+    deviceId: multiDevice ? undefined : deviceId,
+    multiDevice,
     client: commanderPublicClientFromEnv(env),
     verifyAuthorization: commanderRemoteMcpBearerVerifier(token),
   });
   await server.start();
-  console.info(JSON.stringify({ event: 'commander_remote_mcp_started', address: server.server.address(), deviceId }));
+  console.info(JSON.stringify({ event: 'commander_remote_mcp_started', address: server.server.address(), deviceId: multiDevice ? 'multi' : deviceId }));
   return server;
 }
 
