@@ -19,3 +19,30 @@ test('Phase 4 advertises only execution lifecycle operations and no ADMIN capabi
   assert.deepEqual(capabilities.map((c) => c.operation), ['execution.start', 'execution.get', 'execution.output', 'execution.input', 'execution.cancel']);
   assert.equal(capabilities.some((c) => c.authority === 'admin'), false);
 });
+
+
+test('interactive operator shell is explicit, fixed, stdin-enabled and no-new-privs', () => {
+  const policy = validateExecutionPolicy({
+    ...base,
+    interactiveShell: { enabled: true, cwd: '/tmp', timeoutMs: 1800000 },
+  });
+  const shell = policy.commands.get('operator.shell');
+  assert.equal(policy.interactiveShellEnabled, true);
+  assert.equal(shell.executable, '/usr/bin/setpriv');
+  assert.deepEqual(shell.args, ['--no-new-privs', '/bin/bash', '--noprofile', '--norc']);
+  assert.equal(shell.allowStdin, true);
+  assert.equal(shell.timeoutMs, 1800000);
+  assert.throws(() => validateExecutionPolicy({
+    ...base, interactiveShell: { enabled: true, cwd: 'relative', timeoutMs: 1000 },
+  }), /invalid_interactive_shell_cwd/);
+  assert.throws(() => validateExecutionPolicy({
+    ...base, commands: { ...base.commands, 'operator.shell': base.commands.probe },
+    interactiveShell: { enabled: true, cwd: '/tmp', timeoutMs: 1000 },
+  }), /interactive_shell_alias_conflict/);
+});
+
+test('interactive shell remains absent when the explicit gate is disabled', () => {
+  const policy = validateExecutionPolicy({ ...base, interactiveShell: { enabled: false } });
+  assert.equal(policy.interactiveShellEnabled, false);
+  assert.equal(policy.commands.has('operator.shell'), false);
+});

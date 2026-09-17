@@ -96,8 +96,9 @@ function capabilityStillEnabled(snapshot, operation) {
     && snapshot?.device?.capabilities?.some((capability) => capability.operation === operation);
 }
 
-function inputSchemaFor(definition) {
+function inputSchemaFor(definition, { requireDeviceId = false } = {}) {
   const shape = {
+    ...(requireDeviceId ? { deviceId: z.string().min(1).max(128).regex(ID) } : {}),
     params: z.record(z.string(), z.json()).default({}),
     timeoutMs: z.number().int().min(100).max(30_000).optional(),
     workSessionId: z.string().min(1).max(128).regex(ID).optional(),
@@ -115,24 +116,71 @@ export function commanderMcpToolNames(deviceEntry) {
     .map((capability) => toolName(capability.operation));
 }
 
-export function buildCommanderMcpServer({ client, deviceId, deviceEntry } = {}) {
+function eligibleCapabilities(entries = []) {
+  const byOperation = new Map();
+  for (const entry of entries) {
+    if (!entry || entry.status !== 'online' || !Array.isArray(entry.device?.capabilities)) continue;
+    for (const capability of entry.device.capabilities) {
+      const definition = operationDefinition(capability.operation);
+      if (definition.authority === 'admin' || capability.authority !== definition.authority || capability.operationVersion !== definition.operationVersion) continue;
+      if (!byOperation.has(capability.operation)) byOperation.set(capability.operation, capability);
+    }
+  }
+  return [...byOperation.values()];
+}
+
+function boundedDeviceList(entries = []) {
+  return entries.slice(0, 64).map((entry) => ({
+    deviceId: String(entry?.device?.deviceId || '').slice(0, 128),
+    displayName: String(entry?.device?.displayName || '').slice(0, 160),
+    status: entry?.status === 'online' ? 'online' : 'offline',
+    capabilities: eligibleCapabilities([entry]).map((capability) => capability.operation).slice(0, 64),
+  })).filter((entry) => ID.test(entry.deviceId));
+}
+
+export function buildCommanderMcpServer({ client, deviceId, deviceEntry, deviceEntries = [], multiDevice = false } = {}) {
   if (!client || typeof client.request !== 'function' || typeof client.getDevice !== 'function') throw new Error('commander_public_client_required');
-  if (typeof deviceId !== 'string' || !ID.test(deviceId)) throw new Error('invalid_commander_mcp_device_id');
-  if (!deviceEntry || deviceEntry.status !== 'online' || deviceEntry.device?.deviceId !== deviceId) throw new Error('commander_mcp_device_offline');
+  if (multiDevice) {
+    if (typeof client.listDevices !== 'function') throw new Error('commander_public_client_list_required');
+    if (!Array.isArray(deviceEntries)) throw new Error('invalid_commander_mcp_device_entries');
+  } else {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId)) throw new Error('invalid_commander_mcp_device_id');
+    if (!deviceEntry || deviceEntry.status !== 'online' || deviceEntry.device?.deviceId !== deviceId) throw new Error('commander_mcp_device_offline');
+  }
 
   const server = new McpServer(
     { name: 'chatgpt-autopilot-commander', version: '0.1.0' },
     { capabilities: { tools: {} } },
   );
 
-  for (const capability of deviceEntry.device.capabilities) {
+  if (multiDevice) {
+    server.registerTool('commander_v1_device_list', {
+      title: 'Commander device.list',
+      description: 'List bounded Commander device metadata and currently advertised non-admin capabilities.',
+      inputSchema: z.object({}).strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async () => {
+      try {
+        const current = await client.listDevices();
+        const entries = Array.isArray(current) ? current : current?.devices;
+        if (!Array.isArray(entries)) throw new Error('commander_mcp_device_list_invalid');
+        const data = { devices: boundedDeviceList(entries) };
+        return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
+      } catch {
+        const data = { devices: [], error: 'COMMANDER_DEVICE_LIST_UNAVAILABLE' };
+        return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data, isError: true };
+      }
+    });
+  }
+
+  const advertisedCapabilities = multiDevice ? eligibleCapabilities(deviceEntries) : eligibleCapabilities([deviceEntry]);
+  for (const capability of advertisedCapabilities) {
     const definition = operationDefinition(capability.operation);
-    if (definition.authority === 'admin' || capability.authority !== definition.authority || capability.operationVersion !== definition.operationVersion) continue;
     const operation = capability.operation;
     server.registerTool(toolName(operation), {
       title: `Commander ${operation}`,
       description: DESCRIPTIONS[operation] || `Run Commander operation ${operation} on the selected device.`,
-      inputSchema: inputSchemaFor(definition),
+      inputSchema: inputSchemaFor(definition, { requireDeviceId: multiDevice }),
       annotations: {
         readOnlyHint: definition.authority === 'read',
         destructiveHint: definition.authority !== 'read',
@@ -140,9 +188,11 @@ export function buildCommanderMcpServer({ client, deviceId, deviceEntry } = {}) 
         openWorldHint: false,
       },
     }, async (args, ctx) => {
+      const selectedDeviceId = multiDevice ? String(args.deviceId || '') : deviceId;
       const requestId = correlationRequestId(operation, ctx);
       try {
-        const current = await client.getDevice(deviceId, { signal: ctx?.mcpReq?.signal });
+        if (!ID.test(selectedDeviceId)) throw new Error('invalid_commander_mcp_device_id');
+        const current = await client.getDevice(selectedDeviceId, { signal: ctx?.mcpReq?.signal });
         if (!capabilityStillEnabled(current, operation)) {
           throw Object.assign(new Error('operation_not_advertised'), {
             commanderError: commanderError({
@@ -152,7 +202,7 @@ export function buildCommanderMcpServer({ client, deviceId, deviceEntry } = {}) 
           });
         }
         const request = {
-          ...protocolEnvelope(), requestId, deviceId, operation, params: args.params,
+          ...protocolEnvelope(), requestId, deviceId: selectedDeviceId, operation, params: args.params,
           ...(definition.requiresIdempotencyKey ? { idempotencyKey: args.idempotencyKey } : {}),
           ...(args.workSessionId ? { workSessionId: args.workSessionId } : {}),
           ...(args.timeoutMs ? { deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString() } : {}),
@@ -160,7 +210,7 @@ export function buildCommanderMcpServer({ client, deviceId, deviceEntry } = {}) 
         const result = await client.request(request, { timeoutMs: args.timeoutMs, signal: ctx?.mcpReq?.signal });
         return toolResult(validateOperationResult(result));
       } catch (error) {
-        return toolResult(failedResult({ requestId, deviceId, operation, error }));
+        return toolResult(failedResult({ requestId, deviceId: selectedDeviceId, operation, error }));
       }
     });
   }

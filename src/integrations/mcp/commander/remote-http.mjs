@@ -55,13 +55,20 @@ async function sendWebResponse(res, response) {
 }
 
 export class CommanderRemoteMcpHttpServer {
-  constructor({ host = '127.0.0.1', port = 0, deviceId, client, verifyAuthorization, logger = console } = {}) {
-    if (!DEVICE_ID.test(String(deviceId || ''))) throw new Error('remote_mcp_device_id_required');
+  constructor({ host = '127.0.0.1', port = 0, deviceId, multiDevice = false, client, verifyAuthorization, logger = console } = {}) {
+    if (!multiDevice && !DEVICE_ID.test(String(deviceId || ''))) throw new Error('remote_mcp_device_id_required');
     if (!client || typeof client.getDevice !== 'function' || typeof client.request !== 'function') throw new Error('remote_mcp_public_client_required');
+    if (multiDevice && typeof client.listDevices !== 'function') throw new Error('remote_mcp_public_client_list_required');
     if (typeof verifyAuthorization !== 'function') throw new Error('remote_mcp_auth_verifier_required');
-    this.host = host; this.port = Number(port); this.deviceId = deviceId; this.client = client;
+    this.host = host; this.port = Number(port); this.deviceId = deviceId; this.multiDevice = multiDevice === true; this.client = client;
     this.verifyAuthorization = verifyAuthorization; this.logger = logger; this.server = null;
     this.mcpHandler = createMcpHandler(async () => {
+      if (this.multiDevice) {
+        const listed = await this.client.listDevices();
+        const deviceEntries = Array.isArray(listed) ? listed : listed?.devices;
+        if (!Array.isArray(deviceEntries)) throw new Error('commander_mcp_device_list_invalid');
+        return buildCommanderMcpServer({ client: this.client, deviceEntries, multiDevice: true });
+      }
       const deviceEntry = await this.client.getDevice(this.deviceId);
       if (deviceEntry?.status !== 'online') throw new Error('commander_mcp_device_offline');
       return buildCommanderMcpServer({ client: this.client, deviceId: this.deviceId, deviceEntry });

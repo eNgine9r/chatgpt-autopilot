@@ -36,15 +36,42 @@ function validateCommand(alias, value) {
   return Object.freeze({ alias, executable: value.executable, args: [...value.args], cwd: value.cwd, timeoutMs: value.timeoutMs, allowStdin: value.allowStdin });
 }
 
+
+function validateInteractiveShell(value) {
+  if (value == null) return null;
+  plain(value, 'invalid_interactive_shell');
+  if (typeof value.enabled !== 'boolean') throw new Error('invalid_interactive_shell_enabled');
+  if (!value.enabled) {
+    exact(value, ['enabled'], [], 'invalid_interactive_shell');
+    return null;
+  }
+  exact(value, ['enabled', 'cwd', 'timeoutMs'], [], 'invalid_interactive_shell');
+  if (!path.isAbsolute(value.cwd) || value.cwd.length > 2048) throw new Error('invalid_interactive_shell_cwd');
+  positiveInt(value.timeoutMs, 100, 30 * 60 * 1000, 'invalid_interactive_shell_timeout');
+  return Object.freeze({
+    alias: 'operator.shell',
+    executable: '/usr/bin/setpriv',
+    args: ['--no-new-privs', '/bin/bash', '--noprofile', '--norc'],
+    cwd: value.cwd,
+    timeoutMs: value.timeoutMs,
+    allowStdin: true,
+  });
+}
+
 export function validateExecutionPolicy(value) {
-  exact(value, ['version', 'maxConcurrent', 'commands']);
+  exact(value, ['version', 'maxConcurrent', 'commands'], ['interactiveShell']);
   if (value.version !== 1) throw new Error('unsupported_execution_policy_version');
   positiveInt(value.maxConcurrent, 1, 8, 'invalid_execution_concurrency');
   plain(value.commands, 'invalid_execution_commands');
   const entries = Object.entries(value.commands);
-  if (entries.length > MAX_COMMANDS) throw new Error('too_many_execution_commands');
+  const interactiveShell = validateInteractiveShell(value.interactiveShell);
+  if (entries.length + (interactiveShell ? 1 : 0) > MAX_COMMANDS) throw new Error('too_many_execution_commands');
   const commands = new Map(entries.map(([alias, command]) => [alias, validateCommand(alias, command)]));
-  return Object.freeze({ version: 1, maxConcurrent: value.maxConcurrent, commands });
+  if (interactiveShell) {
+    if (commands.has(interactiveShell.alias)) throw new Error('interactive_shell_alias_conflict');
+    commands.set(interactiveShell.alias, interactiveShell);
+  }
+  return Object.freeze({ version: 1, maxConcurrent: value.maxConcurrent, commands, interactiveShellEnabled: Boolean(interactiveShell) });
 }
 
 export async function loadCommanderExecutionPolicy(filePath) {
