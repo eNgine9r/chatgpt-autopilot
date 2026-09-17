@@ -10,6 +10,7 @@ import {
 } from '../config.mjs';
 import { CommanderControlServer } from './control-server.mjs';
 import { CommanderGatewayServer } from './server.mjs';
+import { CommanderTrustStore } from './trust-store.mjs';
 
 export async function runGatewayService(env = process.env) {
   if (!commanderEnabled(env.COMMANDER_ENABLED)) {
@@ -18,9 +19,24 @@ export async function runGatewayService(env = process.env) {
   }
   if (commanderEnabled(env.COMMANDER_ADMIN_ENABLED)) throw new Error('commander_admin_not_supported_phase5');
   const home = env.HOME || os.homedir();
+  const pairingAuthEnabled = commanderEnabled(env.COMMANDER_PAIRING_AUTH_ENABLED);
   const secretMap = env.COMMANDER_GATEWAY_SECRET_MAP
     || path.join(home, '.config/chatgpt-autopilot-commander/gateway-secrets.json');
-  const secretResolver = await loadGatewaySecretMap(secretMap);
+  let secretResolver = null;
+  try { secretResolver = await loadGatewaySecretMap(secretMap); }
+  catch (error) {
+    if (!pairingAuthEnabled || error?.code !== 'ENOENT') throw error;
+  }
+  let trustStore = null;
+  let deviceKeyResolver = null;
+  if (pairingAuthEnabled) {
+    const trustStoreFile = env.COMMANDER_GATEWAY_TRUST_STORE
+      || path.join(home, '.config/chatgpt-autopilot-commander/gateway-trust.json');
+    trustStore = new CommanderTrustStore({ filePath: trustStoreFile });
+    await trustStore.load();
+    deviceKeyResolver = (deviceId) => trustStore.resolvePublicKey(deviceId);
+  }
+  if (!secretResolver && !deviceKeyResolver) throw new Error('commander_gateway_authentication_required');
   const privateBindEnabled = commanderEnabled(env.COMMANDER_PRIVATE_BIND_ENABLED);
   const networkInterfaces = os.networkInterfaces();
   const gatewayHost = resolveCommanderGatewayBindHost(env.COMMANDER_GATEWAY_HOST || '127.0.0.1', {
@@ -33,6 +49,7 @@ export async function runGatewayService(env = process.env) {
     networkInterfaces,
     port: commanderPort(env.COMMANDER_GATEWAY_PORT),
     secretResolver,
+    deviceKeyResolver,
     allowedAuthorities: (commanderEnabled(env.COMMANDER_EXECUTION_ENABLED) || commanderEnabled(env.COMMANDER_WRITE_ENABLED)) ? ['read', 'write'] : ['read'],
   });
   await server.start();
@@ -57,6 +74,7 @@ export async function runGatewayService(env = process.env) {
     await stopGateway();
   };
   server.controlServer = controlServer;
+  server.trustStore = trustStore;
   console.info(JSON.stringify({ event: 'commander_gateway_started', address: server.address(), controlSocket: controlServer.socketPath }));
   return server;
 }

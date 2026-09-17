@@ -4,7 +4,7 @@ import net from 'node:net';
 import {
   operationDefinition, protocolEnvelope, validateDevice, validateExecutionEvent, validateOperationRequest, validateOperationResult,
 } from '../contracts/index.mjs';
-import { createChallenge, verifyRegistrationProof } from '../session/auth.mjs';
+import { createChallenge, verifyDeviceSignatureProof, verifyRegistrationProof } from '../session/auth.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
 import { resolveCommanderGatewayBindHost } from '../config.mjs';
 import { CommanderDeviceRegistry } from './device-registry.mjs';
@@ -33,13 +33,14 @@ function validTimestamp(value) { return typeof value === 'string' && Number.isFi
 export class CommanderGatewayServer extends EventEmitter {
   constructor(options = {}) {
     super();
-    if (typeof options.secretResolver !== 'function') throw new Error('secret_resolver_required');
+    if (typeof options.secretResolver !== 'function' && typeof options.deviceKeyResolver !== 'function') throw new Error('authentication_resolver_required');
     this.host = resolveCommanderGatewayBindHost(options.host ?? '127.0.0.1', {
       privateBindEnabled: options.privateBindEnabled === true,
       networkInterfaces: options.networkInterfaces,
     });
     this.port = Number(options.port ?? 0);
-    this.secretResolver = options.secretResolver;
+    this.secretResolver = typeof options.secretResolver === 'function' ? options.secretResolver : null;
+    this.deviceKeyResolver = typeof options.deviceKeyResolver === 'function' ? options.deviceKeyResolver : null;
     this.registry = options.registry ?? new CommanderDeviceRegistry({ heartbeatTimeoutMs: options.heartbeatTimeoutMs });
     this.logger = options.logger ?? console;
     this.now = options.now ?? Date.now;
@@ -198,10 +199,11 @@ export class CommanderGatewayServer extends EventEmitter {
       exactMessage(message, ['type', 'challengeId', 'device', 'proof']);
       if (message.type !== 'register' || message.challengeId !== challenge.challengeId) throw new Error('invalid_registration_challenge');
       const device = validateDevice(message.device);
-      const secret = await this.secretResolver(device.deviceId);
-      if (!secret || !verifyRegistrationProof(secret, challenge, device, message.proof, { now: this.now })) {
-        throw new Error('invalid_registration_proof');
-      }
+      const secret = this.secretResolver ? await this.secretResolver(device.deviceId) : null;
+      const publicKey = this.deviceKeyResolver ? await this.deviceKeyResolver(device.deviceId) : null;
+      const hmacOk = secret ? verifyRegistrationProof(secret, challenge, device, message.proof, { now: this.now }) : false;
+      const signatureOk = publicKey ? verifyDeviceSignatureProof(publicKey, challenge, device, message.proof, { now: this.now }) : false;
+      if (!hmacOk && !signatureOk) throw new Error('invalid_registration_proof');
       const sessionId = `session-${this.randomBytes(16).toString('hex')}`;
       const { previous } = this.registry.register(device, sessionId, socket);
       state.stage = 'active';
