@@ -22,6 +22,9 @@ const DESCRIPTIONS = Object.freeze({
   'git.status': 'Read Git working-tree status for an allowlisted repository.',
   'git.diff': 'Read a bounded Git diff for an allowlisted repository.',
   'git.log': 'Read bounded Git history for an allowlisted repository.',
+  'work_session.list': 'List persisted Commander work sessions on the selected device.',
+  'work_session.get': 'Read a persisted Commander work-session checkpoint.',
+  'work_session.resume': 'Resume a persisted Commander work session and detect repository divergence.',
   'execution.get': 'Read the state of a Commander-owned execution.',
   'execution.output': 'Read bounded output events from a Commander-owned execution.',
   'execution.start': 'Start a fixed-alias Commander execution. Requires an idempotency key.',
@@ -38,6 +41,9 @@ const DESCRIPTIONS = Object.freeze({
   'service.restart': 'Restart an allowlisted user service through Commander policy. Requires an idempotency key and may require approval.',
   'git.commit': 'Create an allowlisted Git commit through Commander policy. Requires an idempotency key and may require approval.',
   'git.push': 'Push an allowlisted Git branch through Commander policy. Requires an idempotency key and may require approval.',
+  'work_session.open': 'Open a persistent device/project/workspace session. Requires an idempotency key.',
+  'work_session.checkpoint': 'Checkpoint the current persistent work session and re-sync repository state. Requires an idempotency key.',
+  'work_session.close': 'Close a persistent work session while keeping its final checkpoint. Requires an idempotency key.',
 });
 
 function toolName(operation) {
@@ -94,6 +100,7 @@ function inputSchemaFor(definition) {
   const shape = {
     params: z.record(z.string(), z.json()).default({}),
     timeoutMs: z.number().int().min(100).max(30_000).optional(),
+    workSessionId: z.string().min(1).max(128).regex(ID).optional(),
   };
   if (definition.requiresIdempotencyKey) {
     shape.idempotencyKey = z.string().min(1).max(128).regex(ID);
@@ -147,6 +154,7 @@ export function buildCommanderMcpServer({ client, deviceId, deviceEntry } = {}) 
         const request = {
           ...protocolEnvelope(), requestId, deviceId, operation, params: args.params,
           ...(definition.requiresIdempotencyKey ? { idempotencyKey: args.idempotencyKey } : {}),
+          ...(args.workSessionId ? { workSessionId: args.workSessionId } : {}),
           ...(args.timeoutMs ? { deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString() } : {}),
         };
         const result = await client.request(request, { timeoutMs: args.timeoutMs, signal: ctx?.mcpReq?.signal });

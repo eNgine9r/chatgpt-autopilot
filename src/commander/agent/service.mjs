@@ -10,6 +10,7 @@ import { CommanderAgentOperationDispatcher } from './operation-dispatcher.mjs';
 import { CommanderControlledWriteDispatcher } from './controlled-write-dispatcher.mjs';
 import { loadCommanderWritePolicy, phase5WriteCapabilities } from './write-policy.mjs';
 import { loadCommanderReadPolicy, phase3ReadCapabilities } from './read-policy.mjs';
+import { CommanderWorkSessionManager, workSessionCapabilities } from './work-session.mjs';
 import { commanderEnabled, commanderPort, loadCommanderSecret } from '../config.mjs';
 
 export async function runAgentService(env = process.env) {
@@ -29,6 +30,12 @@ export async function runAgentService(env = process.env) {
     || path.join(home, '.config/chatgpt-autopilot-commander/read-policy.json');
   const readPolicy = await loadCommanderReadPolicy(readPolicyFile);
   const readDispatcher = new CommanderReadOnlyDispatcher({ deviceId: identity.deviceId, policy: readPolicy });
+  const workSessionStateFile = env.COMMANDER_WORK_SESSION_STATE_FILE
+    || path.join(home, '.local/state/chatgpt-autopilot-commander/work-sessions.json');
+  const workSessionManager = new CommanderWorkSessionManager({
+    deviceId: identity.deviceId, stateFile: workSessionStateFile, readPolicy,
+  });
+  await workSessionManager.load();
   const executionEnabled = commanderEnabled(env.COMMANDER_EXECUTION_ENABLED);
   let executionEngine = null;
   if (executionEnabled) {
@@ -41,8 +48,16 @@ export async function runAgentService(env = process.env) {
     const writePolicyFile = env.COMMANDER_WRITE_POLICY_FILE || path.join(home, '.config/chatgpt-autopilot-commander/write-policy.json');
     writeDispatcher = new CommanderControlledWriteDispatcher({ deviceId: identity.deviceId, policy: await loadCommanderWritePolicy(writePolicyFile) });
   }
-  const dispatcher = new CommanderAgentOperationDispatcher({ readDispatcher, executionEngine, writeDispatcher });
-  const capabilities = [...phase3ReadCapabilities(), ...(executionEnabled ? phase4ExecutionCapabilities() : []), ...(writeEnabled ? phase5WriteCapabilities() : [])];
+  if (executionEngine) {
+    executionEngine.on('event', (event) => { workSessionManager.observeExecutionEvent(event).catch(() => {}); });
+  }
+  const dispatcher = new CommanderAgentOperationDispatcher({ readDispatcher, executionEngine, writeDispatcher, workSessionManager });
+  const capabilities = [
+    ...phase3ReadCapabilities(),
+    ...workSessionCapabilities({ writeEnabled }),
+    ...(executionEnabled ? phase4ExecutionCapabilities() : []),
+    ...(writeEnabled ? phase5WriteCapabilities() : []),
+  ];
   const client = new CommanderAgentClient({
     gatewayHost: env.COMMANDER_GATEWAY_HOST || '127.0.0.1',
     gatewayPort: commanderPort(env.COMMANDER_GATEWAY_PORT),
@@ -57,6 +72,7 @@ export async function runAgentService(env = process.env) {
   client.start();
   client.executionEngine = executionEngine;
   client.writeDispatcher = writeDispatcher;
+  client.workSessionManager = workSessionManager;
   return client;
 }
 
