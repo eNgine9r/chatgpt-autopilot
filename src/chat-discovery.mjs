@@ -55,5 +55,15 @@ export function selectDiscoveryCandidate(project, candidates = []) {
 
 export function selectManualDiscoveryCandidate(project, candidates = []) {
   const window = newerDiscoveryCandidates(project, candidates);
-  return window.ready ? (window.candidates[0] || null) : null;
+  if (window.ready) return window.candidates[0] || null;
+
+  const current = normalizeChatUrl(project.chatUrl);
+  const seen = new Set();
+  for (const raw of candidates.slice(0, 40)) {
+    const candidate = sanitizeDiscoveryCandidate(raw);
+    if (!candidateIsSameProject(project, candidate) || candidate.url === current || seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    return candidate;
+  }
+  return null;
 }
