@@ -276,6 +276,14 @@ Depends on: #353
 
 Add the user-facing RDC-style enrollment adapter over the Phase 11 trust foundation: private/Tailscale-only operator HTTP service, one-time-code device review, Google-compatible OIDC Authorization Code + PKCE, CSRF-protected approve/reject/revoke UI, Agent status polling and a `commander:register` terminal flow. Reviewed scopes are metadata only and cannot widen Commander capability/policy authority. Runtime remains disabled until separately configured and accepted. See ADR-012 and `docs/commander/pairing-operator-v1.md`.
 
+## Phase 14 — Remote MCP / ChatGPT App Boundary
+
+Issue: #420
+Area: `area/commander`
+Depends on: #363 and #409
+
+Add a separately deployable modern Streamable HTTP MCP adapter over `CommanderPublicClient`. The adapter is authenticated independently from device pairing, binds loopback by default, allows only an exact `tailscale0` address behind an explicit private-bind gate, and never exposes Gateway/Agent HTTP directly. Existing stdio MCP remains available. WorkSession continuity remains Agent-owned and survives MCP client reconnects. The service is staged disabled and no Funnel/public routing is introduced. See ADR-013 and `docs/commander/remote-mcp-v1.md`.
+
 ## CI roadmap
 
 Phase 0 keeps current repository-wide CI unchanged.
