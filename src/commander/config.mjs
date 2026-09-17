@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
 
-export function commanderEnabled(value = process.env.COMMANDER_ENABLED) {
+export function commanderEnabled(value) {
   return String(value ?? '').toLowerCase() === 'true';
 }
 
