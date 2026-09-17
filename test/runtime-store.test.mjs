@@ -129,3 +129,26 @@ test("mirror sync telemetry persists across supervisor restarts", () => {
   assert.equal(mirror.remoteTurnId, "turn-2");
   assert.equal(mirror.lastRefreshAt, 5000);
 });
+
+
+test("scheduler health telemetry persists across heartbeats", () => {
+  const { store, stateDir, tick } = fixture();
+  store.observe("demo", {
+    progressKey: "a", status: "operator_paused", schedulerLastStartedAt: 1000,
+    schedulerLastCompletedAt: 990, schedulerLastSource: "heartbeat",
+    schedulerRunning: false, schedulerConsecutiveFailures: 2
+  });
+  tick(20000);
+  store.observe("demo", {
+    progressKey: "a", status: "operator_paused", schedulerLastStartedAt: 19000,
+    schedulerLastCompletedAt: 19500, schedulerLastSource: "alarm",
+    schedulerRunning: false, schedulerConsecutiveFailures: 0
+  });
+  const reloaded = new ProjectRuntimeStore({ stateDir, projects: [{ id: "demo" }] });
+  const runtime = reloaded.snapshot("demo").runtime;
+  assert.equal(runtime.schedulerLastStartedAt, 19000);
+  assert.equal(runtime.schedulerLastCompletedAt, 19500);
+  assert.equal(runtime.schedulerLastSource, "alarm");
+  assert.equal(runtime.schedulerRunning, false);
+  assert.equal(runtime.schedulerConsecutiveFailures, 0);
+});
