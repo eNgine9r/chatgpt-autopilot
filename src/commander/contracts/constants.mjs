@@ -30,12 +30,14 @@ const operationEntries = [
   ['file.read', 'read'], ['file.list', 'read'], ['file.info', 'read'], ['file.search', 'read'],
   ['process.list', 'read'], ['service.status', 'read'],
   ['git.status', 'read'], ['git.diff', 'read'], ['git.log', 'read'],
+  ['work_session.list', 'read'], ['work_session.get', 'read'], ['work_session.resume', 'read'],
   ['execution.get', 'read'], ['execution.output', 'read'],
   ['execution.start', 'write'], ['execution.input', 'write'], ['execution.cancel', 'write'],
   ['file.write', 'write'], ['file.edit', 'write'], ['file.move', 'write'], ['file.delete', 'write'],
   ['directory.create', 'write'], ['directory.remove', 'write'], ['process.terminate', 'write'],
   ['service.start', 'write'], ['service.stop', 'write'], ['service.restart', 'write'],
   ['git.commit', 'write'], ['git.push', 'write'],
+  ['work_session.open', 'write'], ['work_session.checkpoint', 'write'], ['work_session.close', 'write'],
   ['system.reboot', 'admin'], ['system.package.install', 'admin'],
 ];
 

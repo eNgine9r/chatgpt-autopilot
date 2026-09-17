@@ -254,6 +254,13 @@ Required:
 
 Remote Desktop Commander decommission is not automatic. It requires a separate explicit decision after stable operation.
 
+## Phase 12 — Persistent Work Session & Exact Resume
+
+Issue: #363
+Area: `area/commander`
+
+Add Agent-owned, private `WorkSession` state so interactive Commander work survives MCP reconnects, Gateway restarts and host reboot without becoming an autonomous scheduler. The session records bounded device/project/workspace/repository context, supports list/get/resume/open/checkpoint/close, detects out-of-band repository divergence before scoped writes, and marks non-terminal executions interrupted after Agent restart. See ADR-010 and `docs/commander/work-session-v1.md`.
+
 ## CI roadmap
 
 Phase 0 keeps current repository-wide CI unchanged.

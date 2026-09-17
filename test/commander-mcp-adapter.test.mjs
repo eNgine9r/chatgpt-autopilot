@@ -151,3 +151,32 @@ test('stdio adapter interoperates with modern MCP over the private Commander pub
   assert.equal(result.structuredContent.ok, true);
   assert.equal(result.structuredContent.operation, 'device.health');
 });
+
+test('MCP exposes persistent work-session tools and forwards the selected workSessionId', async (t) => {
+  const snapshot = entry([
+    capability('work_session.resume'),
+    capability('work_session.checkpoint'),
+    capability('file.read'),
+  ]);
+  const requests = [];
+  const publicClient = {
+    getDevice: async () => snapshot,
+    request: async (request) => { requests.push(request); return okResult(request); },
+  };
+  const client = await connectedInMemory(t, publicClient, snapshot);
+  const tools = (await client.listTools()).tools;
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+    'commander_v1_file_read',
+    'commander_v1_work_session_checkpoint',
+    'commander_v1_work_session_resume',
+  ]);
+  const checkpoint = tools.find((tool) => tool.name === 'commander_v1_work_session_checkpoint');
+  assert.equal(checkpoint.inputSchema.required.includes('idempotencyKey'), true);
+
+  const result = await client.callTool({
+    name: 'commander_v1_file_read',
+    arguments: { params: { path: '/tmp/example' }, workSessionId: 'work-123' },
+  });
+  assert.equal(result.structuredContent.ok, true);
+  assert.equal(requests.at(-1).workSessionId, 'work-123');
+});

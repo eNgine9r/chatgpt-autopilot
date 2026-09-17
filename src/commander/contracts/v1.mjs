@@ -153,13 +153,14 @@ export function validateOperationRequest(value) {
   const path = 'request';
   exactKeys(value, path,
     [...commonRequired, 'requestId', 'deviceId', 'operation', 'params'],
-    ['idempotencyKey', 'deadlineAt']);
+    ['idempotencyKey', 'deadlineAt', 'workSessionId']);
   protocolFields(value, path);
   identifier(value.requestId, `${path}.requestId`);
   identifier(value.deviceId, `${path}.deviceId`);
   const definition = operationDefinition(value.operation);
   boundedJson(value.params, `${path}.params`, COMMANDER_LIMITS.maxMessageBytes);
   if (value.deadlineAt !== undefined) timestamp(value.deadlineAt, `${path}.deadlineAt`);
+  if (value.workSessionId !== undefined) identifier(value.workSessionId, `${path}.workSessionId`);
   if (definition.requiresIdempotencyKey && value.idempotencyKey === undefined) {
     fail('missing_idempotency_key', `${path}.idempotencyKey`);
   }
