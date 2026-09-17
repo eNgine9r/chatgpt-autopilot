@@ -131,7 +131,12 @@ export function createBridgeServer({
           schedulerLastCompletedAt: Number(payload.schedulerLastCompletedAt || 0),
           schedulerLastSource: String(payload.schedulerLastSource || ""),
           schedulerRunning: Boolean(payload.schedulerRunning),
-          schedulerConsecutiveFailures: Number(payload.schedulerConsecutiveFailures || 0)
+          schedulerConsecutiveFailures: Number(payload.schedulerConsecutiveFailures || 0),
+          discoverySchedulerGate: String(payload.discoverySchedulerGate || ""),
+          discoverySchedulerControlGeneration: Number(payload.discoverySchedulerControlGeneration || 0),
+          discoverySchedulerScanGeneration: Number(payload.discoverySchedulerScanGeneration || 0),
+          discoverySchedulerPending: Boolean(payload.discoverySchedulerPending),
+          discoverySchedulerUpdatedAt: Number(payload.discoverySchedulerUpdatedAt || 0)
         };
         const result = progressWatchdog.observe(projectId, detail);
         runtimeStore?.observe(projectId, detail);
