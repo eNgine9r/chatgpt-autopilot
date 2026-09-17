@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import { loadConfig } from './config.mjs';
 import { JsonStateStore } from './store.mjs';
 import { Orchestrator } from './orchestrator.mjs';
-import { DeterministicExecutor } from './executor.mjs';
+import { DeterministicExecutor, runFile } from './executor.mjs';
 import { ExecutionEngine } from './execution-engine.mjs';
+import { V3CodingWorker } from './coding-worker.mjs';
 import { CommanderV3Client } from './commander-client.mjs';
 import { commanderPublicClientFromEnv } from '../commander/client/index.mjs';
 import { createControlServer, createGitHubServer } from './http-servers.mjs';
@@ -38,7 +39,10 @@ const commanderSelected = commanderEnabled && config.projects.some((project) => 
 const commanderClient = commanderSelected
   ? new CommanderV3Client({ client: commanderPublicClientFromEnv(process.env) })
   : null;
-const engine = new ExecutionEngine(orchestrator, new DeterministicExecutor({ commanderEnabled, commanderClient }));
+const codingWorker = config.projects.some((project) => project.coding?.enabled === true)
+  ? new V3CodingWorker({ stateDir, runner: runFile })
+  : null;
+const engine = new ExecutionEngine(orchestrator, new DeterministicExecutor({ commanderEnabled, commanderClient, codingWorker }));
 const controlServer = createControlServer({
   store,
   engine,

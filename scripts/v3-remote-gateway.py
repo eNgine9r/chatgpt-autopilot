@@ -138,6 +138,83 @@ def publish_tracked(config, repo, expected_head, expected_branch):
     return {"ok": True, "branch": branch, "issue": issue, "commit": commit, "files": changed}
 
 
+
+def coding_identity(config, issue, token):
+    if config.get("codingEnabled") is not True:
+        raise ValueError("coding_disabled")
+    try:
+        issue = int(issue)
+    except Exception as exc:
+        raise ValueError("invalid_coding_issue") from exc
+    if issue < 1 or issue > 999999999:
+        raise ValueError("invalid_coding_issue")
+    token = str(token or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{12}", token):
+        raise ValueError("invalid_coding_token")
+    root = pathlib.Path(str(config.get("codingWorktreeRoot") or "")).expanduser()
+    if not root.is_absolute():
+        raise ValueError("invalid_coding_worktree_root")
+    base_ref = str(config.get("codingBaseRef") or "origin/main")
+    if not re.fullmatch(r"origin/[A-Za-z0-9][A-Za-z0-9._/-]{0,159}", base_ref):
+        raise ValueError("invalid_coding_base_ref")
+    branch = f"autopilot-shadow/{issue}-{token}"
+    worktree = root / f"issue-{issue}-{token}"
+    return issue, token, root, base_ref, branch, worktree
+
+
+def coding_prepare(config, repo, issue, token):
+    issue, token, root, base_ref, branch, worktree = coding_identity(config, issue, token)
+    repo_resolved = repo.resolve()
+    root_resolved = root.resolve()
+    if root_resolved == repo_resolved or repo_resolved in root_resolved.parents:
+        raise ValueError("coding_worktree_root_inside_repo")
+    status = run(["git", "status", "--porcelain=v1", "--untracked-files=no"], repo, 15000).stdout
+    if status.strip():
+        raise ValueError("coding_source_worktree_dirty")
+    base_head = run(["git", "rev-parse", "--verify", base_ref], repo, 15000).stdout.strip()
+    exists = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo, env=clean_env(), check=False).returncode == 0
+    if exists or worktree.exists():
+        raise ValueError("coding_worktree_exists")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    run(["git", "worktree", "add", "-b", branch, str(worktree), base_head], repo, 60000)
+    return {"ok": True, "issue": issue, "token": token, "branch": branch, "worktreePath": str(worktree), "baseHead": base_head}
+
+
+def coding_inspect(config, repo, issue, token):
+    issue, token, _root, base_ref, branch, worktree = coding_identity(config, issue, token)
+    if not worktree.exists():
+        raise ValueError("coding_worktree_missing")
+    current_branch = run(["git", "branch", "--show-current"], worktree, 15000).stdout.strip()
+    if current_branch != branch:
+        raise ValueError("coding_branch_mismatch")
+    head = run(["git", "rev-parse", "HEAD"], worktree, 15000).stdout.strip()
+    base_head = run(["git", "merge-base", "HEAD", base_ref], worktree, 15000).stdout.strip()
+    raw = run(["git", "status", "--porcelain=v1", "--untracked-files=all"], worktree, 15000).stdout
+    lines = [line for line in raw.splitlines() if line]
+    changed = []
+    for line in lines:
+        name = line[3:] if len(line) > 3 else ""
+        if " -> " in name:
+            name = name.split(" -> ", 1)[1]
+        if name and name not in changed:
+            changed.append(name)
+    if len(changed) > 100:
+        raise ValueError("coding_changed_files_exceeded")
+    return {
+        "ok": True, "issue": issue, "token": token, "branch": branch, "worktreePath": str(worktree),
+        "baseHead": base_head, "head": head, "headChanged": head != base_head,
+        "dirty": bool(lines), "changedFiles": changed, "status": bounded(raw, 4000),
+    }
+
+
+def coding_cleanup(config, repo, issue, token):
+    state = coding_inspect(config, repo, issue, token)
+    if state["dirty"] or state["headChanged"]:
+        raise ValueError("coding_worktree_not_disposable")
+    run(["git", "worktree", "remove", state["worktreePath"]], repo, 60000)
+    run(["git", "branch", "-D", state["branch"]], repo, 30000)
+    return {"ok": True, "removed": True, "branch": state["branch"], "worktreePath": state["worktreePath"]}
+
 def run_test(config, repo, alias):
     if not re.fullmatch(r"[A-Za-z0-9._-]+", alias or ""):
         raise ValueError("invalid_test_alias")
@@ -174,6 +251,21 @@ def main():
         if len(parts) != 3:
             raise ValueError("invalid_publish_operation")
         output = publish_tracked(config, repo, parts[1], parts[2])
+    elif command.startswith("coding-prepare "):
+        parts = command.split(" ")
+        if len(parts) != 3:
+            raise ValueError("invalid_coding_operation")
+        output = coding_prepare(config, repo, parts[1], parts[2])
+    elif command.startswith("coding-inspect "):
+        parts = command.split(" ")
+        if len(parts) != 3:
+            raise ValueError("invalid_coding_operation")
+        output = coding_inspect(config, repo, parts[1], parts[2])
+    elif command.startswith("coding-cleanup "):
+        parts = command.split(" ")
+        if len(parts) != 3:
+            raise ValueError("invalid_coding_operation")
+        output = coding_cleanup(config, repo, parts[1], parts[2])
     else:
         raise ValueError("unsupported_operation")
     print(json.dumps(output, separators=(",", ":"), ensure_ascii=False))

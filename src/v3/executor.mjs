@@ -90,6 +90,7 @@ export class DeterministicExecutor {
     this.runner = options.runner ?? runFile;
     this.commanderEnabled = options.commanderEnabled === true;
     this.commanderClient = options.commanderClient ?? null;
+    this.codingWorker = options.codingWorker ?? null;
   }
 
   async execute(project, dispatch) {
@@ -100,6 +101,9 @@ export class DeterministicExecutor {
     switch (dispatch.action) {      case 'repo.inspect': return inspectRepo(project, this.runner);
       case 'repo.test': return runTest(project, dispatch, this.runner);
       case 'operator.review': return JSON.stringify({ approved: true });
+      case 'coding.run':
+        if (!this.codingWorker || typeof this.codingWorker.execute !== 'function') throw new Error('coding_worker_unavailable');
+        return this.codingWorker.execute(project, dispatch);
       default: throw new Error(`unsupported_action:${dispatch.action}`);
     }
   }

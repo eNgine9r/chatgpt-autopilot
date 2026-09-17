@@ -8,6 +8,9 @@ import {
   TelegramBridgeStateStore,
   isAuthorized,
   parseTelegramCommand,
+  presentationStatus,
+  statusSummary,
+  notificationFor,
 } from '../src/v3/telegram-bridge.mjs';
 
 const config = {
@@ -151,4 +154,22 @@ test('retry is allowed only for blocked state and unauthorized updates are ignor
   assert.equal(sent.length, 1);
   assert.match(sent[0], /retry запущено/);
   assert.equal((await f.store.load()).offset, 22);
+});
+
+test('running coding step is presented as coding without changing core state', () => {
+  const codingConfig = {
+    version: 3,
+    projects: [{
+      id: 'demo', enabled: true,
+      steps: [{ id: 'coding', action: 'coding.run' }, { id: 'review', action: 'operator.review', approval: 'user' }],
+    }],
+  };
+  const state = {
+    projectId: 'demo', status: 'running', stepIndex: 0,
+    task: { id: 'github:demo#174', title: 'Implement shadow task' }, lastError: '',
+  };
+  assert.equal(presentationStatus(codingConfig, state), 'coding');
+  assert.match(statusSummary([state], codingConfig), /demo: coding/);
+  assert.match(notificationFor(state, codingConfig), /coding/);
+  assert.equal(state.status, 'running');
 });

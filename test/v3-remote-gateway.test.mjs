@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -34,6 +34,9 @@ async function fixture(t) {
     version: 3,
     repoPath: repo,
     publishEnabled: true,
+    codingEnabled: true,
+    codingWorktreeRoot: path.join(root, 'coding-worktrees'),
+    codingBaseRef: 'origin/fix/42-test',
     tests: {
       syntax: { command: 'python3', args: ['-c', 'import ast,pathlib; ast.parse(pathlib.Path("demo.py").read_text())'], timeoutMs: 1000 },
     },
@@ -127,4 +130,56 @@ test('remote gateway publish rejects non-cache untracked source', async (t) => {
   await fs.writeFile(path.join(repo, 'demo.py'), 'x = 4\n');
   await fs.writeFile(path.join(repo, 'new_source.py'), 'y = 1\n');
   await assert.rejects(() => gateway(`publish ${before} fix/42-test`, config), /publish_untracked_source/);
+});
+
+
+test('remote gateway creates isolated coding worktree and cleans only pristine shadow state', async (t) => {
+  const { repo, config } = await fixture(t);
+  const token = 'a'.repeat(12);
+  const prepared = JSON.parse((await gateway(`coding-prepare 174 ${token}`, config)).stdout);
+  assert.equal(prepared.issue, 174);
+  assert.equal(prepared.branch, `autopilot-shadow/174-${token}`);
+  assert.match(prepared.baseHead, /^[0-9a-f]{40}$/);
+  assert.ok(prepared.worktreePath.includes('coding-worktrees'));
+
+  let inspected = JSON.parse((await gateway(`coding-inspect 174 ${token}`, config)).stdout);
+  assert.equal(inspected.dirty, false);
+  assert.equal(inspected.headChanged, false);
+  assert.deepEqual(inspected.changedFiles, []);
+
+  await fs.writeFile(path.join(prepared.worktreePath, 'demo.py'), 'x = 99\n');
+  inspected = JSON.parse((await gateway(`coding-inspect 174 ${token}`, config)).stdout);
+  assert.equal(inspected.dirty, true);
+  assert.deepEqual(inspected.changedFiles, ['demo.py']);
+  await assert.rejects(() => gateway(`coding-cleanup 174 ${token}`, config), /coding_worktree_not_disposable/);
+
+  execFileSync('git', ['checkout', '--', 'demo.py'], { cwd: prepared.worktreePath });
+  const cleaned = JSON.parse((await gateway(`coding-cleanup 174 ${token}`, config)).stdout);
+  assert.equal(cleaned.removed, true);
+  await assert.rejects(fs.stat(prepared.worktreePath));
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${prepared.branch}`], { cwd: repo }).status, 1);
+});
+
+test('remote gateway coding operations reject malformed identity and dirty source checkout', async (t) => {
+  const { repo, config } = await fixture(t);
+  await assert.rejects(() => gateway('coding-prepare 174 not-a-token', config), /invalid_coding_token/);
+  await fs.writeFile(path.join(repo, 'demo.py'), 'x = 7\n');
+  await assert.rejects(() => gateway(`coding-prepare 174 ${'b'.repeat(12)}`, config), /coding_source_worktree_dirty/);
+});
+
+
+test('remote gateway coding operations require explicit codingEnabled=true', async (t) => {
+  const { config } = await fixture(t);
+  const value = JSON.parse(await fs.readFile(config, 'utf8'));
+  value.codingEnabled = false;
+  await fs.writeFile(config, JSON.stringify(value));
+  await assert.rejects(() => gateway(`coding-prepare 174 ${'c'.repeat(12)}`, config), /coding_disabled/);
+});
+
+test('remote gateway rejects a coding worktree root inside the product repo', async (t) => {
+  const { repo, config } = await fixture(t);
+  const value = JSON.parse(await fs.readFile(config, 'utf8'));
+  value.codingWorktreeRoot = path.join(repo, '.shadow-worktrees');
+  await fs.writeFile(config, JSON.stringify(value));
+  await assert.rejects(() => gateway(`coding-prepare 174 ${'d'.repeat(12)}`, config), /coding_worktree_root_inside_repo/);
 });

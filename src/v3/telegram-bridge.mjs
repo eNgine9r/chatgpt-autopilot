@@ -34,22 +34,32 @@ export function currentStepId(config, state) {
   return project?.steps?.[state.stepIndex]?.id ?? '';
 }
 
+export function presentationStatus(config, state) {
+  if (state.status !== 'running') return state.status;
+  const project = config?.projects?.find((item) => item.id === state.projectId);
+  const step = project?.steps?.[state.stepIndex];
+  return step?.action === 'coding.run' ? 'coding' : state.status;
+}
+
 export function stateFingerprint(state) {
   const taskId = state.task?.id ?? '';
   return [state.status, taskId, state.stepIndex, state.lastError ?? ''].join('|');
 }
 
-export function statusSummary(projects) {
+export function statusSummary(projects, config = null) {
   const lines = ['Autopilot v3'];
   for (const state of projects) {
     const task = bounded(state.task?.title || state.task?.id || '—', 90);
-    lines.push(`${state.projectId}: ${state.status} · ${task}`);
+    lines.push(`${state.projectId}: ${presentationStatus(config, state)} · ${task}`);
   }
   return lines.join('\n').slice(0, 3500);
 }
 
-export function notificationFor(state) {
+export function notificationFor(state, config = null) {
   const task = bounded(state.task?.title || state.task?.id || '—', 180);
+  if (presentationStatus(config, state) === 'coding') {
+    return `🛠 ${state.projectId}: coding\n${task}`;
+  }
   if (state.status === 'waiting_approval') {
     return `⏸ ${state.projectId} очікує підтвердження\n${task}\n/approve ${state.projectId}`;
   }
@@ -105,7 +115,7 @@ export class TelegramBridge {
       const fingerprint = stateFingerprint(project);
       const previous = state.notified[project.projectId];
       if (previous === fingerprint) continue;
-      const text = notificationFor(project);
+      const text = notificationFor(project, this.config);
       const shouldSend = Boolean(text) && (project.status !== 'complete' || Boolean(previous));
       if (shouldSend) {
         const sent = await this.telegram.sendMessage(this.chatId, text);
@@ -120,7 +130,7 @@ export class TelegramBridge {
 
   async handleCommand(update, command, projects) {
     if (command.kind === 'status') {
-      return this.telegram.sendMessage(this.chatId, statusSummary(projects));
+      return this.telegram.sendMessage(this.chatId, statusSummary(projects, this.config));
     }
     if (command.kind === 'invalid') {
       return this.telegram.sendMessage(this.chatId, `Формат: /${command.command} <project-id>`);
