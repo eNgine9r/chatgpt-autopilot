@@ -28,6 +28,13 @@ test("lazy sidebar discovery waits until the configured current chat is observed
   assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["newer","current","older"] }), "finalize");
 });
 
+test("forced operator discovery finalizes a bounded candidate set after current anchor loss", () => {
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:["newer"], forced:true }), "finalize");
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"current", candidateUrls:[], forced:true }), "wait");
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"", candidateUrls:["newer"], forced:true }), "finalize");
+  assert.equal(scanDisposition({ timedOut:false, currentChatUrl:"", candidateUrls:["newer"], forced:false }), "wait");
+});
+
 test("discovery timeout closes a scan even when the sidebar never exposes another chat", () => {
   assert.equal(scanDisposition({ timedOut:true, currentChatUrl:"current", candidateUrls:[] }), "timeout");
   assert.equal(scanDisposition({ timedOut:true, currentChatUrl:"current", candidateUrls:["current","new"] }), "timeout");

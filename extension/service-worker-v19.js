@@ -477,7 +477,7 @@ async function processPendingDiscoveries() {
     if (!scan?.ok || !Array.isArray(scan.candidates)) continue;
     const currentChatUrl = normalizeChatUrl(project.chatUrl || "");
     const candidateUrls = scan.candidates.map((candidate) => normalizeChatUrl(candidate?.url || ""));
-    const disposition = AutopilotDiscoveryPolicy.scanDisposition({ currentChatUrl, candidateUrls });
+    const disposition = AutopilotDiscoveryPolicy.scanDisposition({ currentChatUrl, candidateUrls, forced: Boolean(entry.forced) });
     if (disposition !== "finalize") continue;
     const result = await bridge("/discovery-candidates", {
       method: "POST", headers: { "content-type": "application/json" },
