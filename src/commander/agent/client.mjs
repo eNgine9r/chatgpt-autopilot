@@ -3,7 +3,7 @@ import net from 'node:net';
 import {
   commanderError, operationDefinition, protocolEnvelope, validateDevice, validateOperationRequest, validateOperationResult,
 } from '../contracts/index.mjs';
-import { createRegistrationProof, validateChallenge } from '../session/auth.mjs';
+import { createDeviceSignatureProof, createRegistrationProof, validateChallenge } from '../session/auth.mjs';
 import { encodeJsonLine, JsonLineDecoder } from '../session/framing.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -40,11 +40,12 @@ export class CommanderAgentClient extends EventEmitter {
   constructor(options = {}) {
     super();
     if (!options.identity?.deviceId) throw new Error('agent_identity_required');
-    if (!options.secret) throw new Error('agent_secret_required');
+    if (!options.secret && !options.devicePrivateKeyPem) throw new Error('agent_authentication_material_required');
     this.gatewayHost = options.gatewayHost ?? '127.0.0.1';
     this.gatewayPort = Number(options.gatewayPort ?? 8790);
     this.identity = options.identity;
-    this.secret = options.secret;
+    this.secret = options.secret || null;
+    this.devicePrivateKeyPem = options.devicePrivateKeyPem || null;
     this.agentVersion = options.agentVersion ?? '0.1.0';
     this.displayName = options.displayName;
     this.capabilities = options.capabilities ?? [];
@@ -156,7 +157,9 @@ export class CommanderAgentClient extends EventEmitter {
             const device = this.device();
             socket.write(encodeJsonLine({
               ...protocolEnvelope(), type: 'register', challengeId: message.challengeId,
-              device, proof: createRegistrationProof(this.secret, message, device, { now: this.now }),
+              device, proof: this.devicePrivateKeyPem
+                ? createDeviceSignatureProof(this.devicePrivateKeyPem, message, device, { now: this.now })
+                : createRegistrationProof(this.secret, message, device, { now: this.now }),
             }));
             return;
           }

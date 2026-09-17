@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CommanderAgentClient } from './client.mjs';
 import { loadOrCreateDeviceIdentity } from './identity.mjs';
+import { loadOrCreateDeviceKeypair } from './device-keypair.mjs';
 import { CommanderReadOnlyDispatcher } from './readonly-dispatcher.mjs';
 import { CommanderExecutionEngine } from './execution-engine.mjs';
 import { loadCommanderExecutionPolicy, phase4ExecutionCapabilities } from './execution-policy.mjs';
@@ -22,10 +23,20 @@ export async function runAgentService(env = process.env) {
   const home = env.HOME || os.homedir();
   const identityFile = env.COMMANDER_DEVICE_IDENTITY_FILE
     || path.join(home, '.local/state/chatgpt-autopilot-commander/device.json');
-  const secretFile = env.COMMANDER_AGENT_SECRET_FILE;
-  if (!secretFile) throw new Error('COMMANDER_AGENT_SECRET_FILE_required');
   const identity = await loadOrCreateDeviceIdentity(identityFile, { configuredDeviceId: env.COMMANDER_DEVICE_ID });
-  const secret = await loadCommanderSecret(secretFile);
+  const pairingAuthEnabled = commanderEnabled(env.COMMANDER_PAIRING_AUTH_ENABLED);
+  let secret = null;
+  let devicePrivateKeyPem = null;
+  if (pairingAuthEnabled) {
+    const keypairFile = env.COMMANDER_DEVICE_KEYPAIR_FILE
+      || path.join(home, '.local/state/chatgpt-autopilot-commander/device-keypair.json');
+    const keypair = await loadOrCreateDeviceKeypair(keypairFile);
+    devicePrivateKeyPem = keypair.privateKeyPem;
+  } else {
+    const secretFile = env.COMMANDER_AGENT_SECRET_FILE;
+    if (!secretFile) throw new Error('COMMANDER_AGENT_SECRET_FILE_required');
+    secret = await loadCommanderSecret(secretFile);
+  }
   const readPolicyFile = env.COMMANDER_READ_POLICY_FILE
     || path.join(home, '.config/chatgpt-autopilot-commander/read-policy.json');
   const readPolicy = await loadCommanderReadPolicy(readPolicyFile);
@@ -63,6 +74,7 @@ export async function runAgentService(env = process.env) {
     gatewayPort: commanderPort(env.COMMANDER_GATEWAY_PORT),
     identity,
     secret,
+    devicePrivateKeyPem,
     displayName: env.COMMANDER_DEVICE_NAME || os.hostname(),
     capabilities,
     operationHandler: (request) => dispatcher.handle(request),

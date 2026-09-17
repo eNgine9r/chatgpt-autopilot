@@ -39,6 +39,28 @@ export function createRegistrationProof(secret, challenge, device, options = {})
     .digest('base64url');
 }
 
+export function createDeviceSignatureProof(privateKeyPem, challenge, device, options = {}) {
+  validateChallenge(challenge, options);
+  assertId(device?.deviceId, 'device_id');
+  if (typeof device?.agentVersion !== 'string') throw new Error('invalid_agent_version');
+  if (typeof privateKeyPem !== 'string' || Buffer.byteLength(privateKeyPem) > 8192) throw new Error('invalid_device_private_key');
+  const payload = Buffer.from(canonicalProof({ ...challenge, deviceId: device.deviceId, agentVersion: device.agentVersion }));
+  return crypto.sign(null, payload, crypto.createPrivateKey(privateKeyPem)).toString('base64url');
+}
+
+export function verifyDeviceSignatureProof(publicKeyPem, challenge, device, proof, options = {}) {
+  validateChallenge(challenge, options);
+  assertId(device?.deviceId, 'device_id');
+  if (typeof device?.agentVersion !== 'string' || typeof proof !== 'string') return false;
+  if (typeof publicKeyPem !== 'string' || Buffer.byteLength(publicKeyPem) > 8192) return false;
+  let signature;
+  try { signature = Buffer.from(proof, 'base64url'); } catch { return false; }
+  if (signature.length < 32 || signature.length > 256) return false;
+  const payload = Buffer.from(canonicalProof({ ...challenge, deviceId: device.deviceId, agentVersion: device.agentVersion }));
+  try { return crypto.verify(null, payload, crypto.createPublicKey(publicKeyPem), signature); }
+  catch { return false; }
+}
+
 export function validateChallenge(challenge, { now = Date.now, ttlMs = COMMANDER_CHALLENGE_TTL_MS } = {}) {
   if (!challenge || challenge.protocol !== 'commander' || challenge.protocolVersion !== 1 || challenge.minProtocolVersion !== 1) {
     throw new Error('invalid_challenge_protocol');

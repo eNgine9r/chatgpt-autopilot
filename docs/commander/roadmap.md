@@ -254,6 +254,13 @@ Required:
 
 Remote Desktop Commander decommission is not automatic. It requires a separate explicit decision after stable operation.
 
+## Phase 11 — Human Identity, Device Pairing & Plugin Onboarding
+
+Issue: #353
+Area: `area/commander`
+
+Introduce an RDC-style trust bootstrap without coupling Commander Core to ChatGPT: persistent Ed25519 device keypairs, one-time pairing requests, private trust/revocation state and optional signature-based Agent registration alongside the legacy HMAC fallback. Google/OIDC and operator UI remain provider adapters over this foundation. See ADR-011 and `docs/commander/device-pairing-v1.md`.
+
 ## Phase 12 — Persistent Work Session & Exact Resume
 
 Issue: #363
