@@ -72,3 +72,23 @@ test('Commander structured failure becomes durable blocked state without raw tra
   assert.equal(result.state.lastFailure.newAttempt, false);
   assert.equal(JSON.stringify(result.state).includes('raw socket detail'), false);
 });
+
+
+test('executor dispatch receives the durable bounded task payload and attempt', async (t) => {
+  const seen = [];
+  const runner = await engine(t, {
+    async execute(_project, dispatch) {
+      seen.push(dispatch);
+      return 'pass';
+    },
+  });
+  const task = {
+    id: 'github:eNgine9r/demo#42', source: 'github', repository: 'eNgine9r/demo',
+    issueNumber: 42, title: 'Scoped change', body: 'Only this bounded issue body.',
+  };
+  const result = await runner.handle({ id: 'task-payload', projectId: 'demo', kind: 'task.received', task });
+  assert.equal(result.state.status, 'waiting_approval');
+  assert.equal(seen[0].task.id, task.id);
+  assert.equal(seen[0].task.body, task.body);
+  assert.equal(seen[0].attempt, 1);
+});

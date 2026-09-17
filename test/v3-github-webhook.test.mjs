@@ -25,6 +25,7 @@ function payload(overrides = {}) {
     issue: {
       number: 42,
       title: 'Do the deterministic thing',
+      body: 'Implement the issue exactly as scoped.',
       html_url: 'https://github.com/eNgine9r/demo/issues/42',
       labels: [{ name: 'autopilot' }],
     },
@@ -48,6 +49,7 @@ test('configured labelled issue becomes one bounded v3 task event', () => {
   assert.equal(translated.event.kind, 'task.received');
   assert.equal(translated.event.task.id, 'github:eNgine9r/demo#42');
   assert.equal(translated.event.task.issueNumber, 42);
+  assert.equal(translated.event.task.body, 'Implement the issue exactly as scoped.');
 });
 
 test('cross-repository, unlabelled and unsupported events are ignored', () => {
@@ -64,10 +66,12 @@ test('cross-repository, unlabelled and unsupported events are ignored', () => {
     issue: {
       ...payload().issue,
       title: 'x'.repeat(1000),
+      body: 'b'.repeat(12000),
       html_url: `https://example.test/${'y'.repeat(1000)}`,
     },
   }));
   assert.equal(translated.event.task.title.length, 300);
+  assert.equal(translated.event.task.body.length, 8000);
   assert.equal(translated.event.task.url.length, 500);
 });
 

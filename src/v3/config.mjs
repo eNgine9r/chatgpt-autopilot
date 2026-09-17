@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const APPROVALS = new Set(['none', 'user']);
-export const ALLOWED_ACTIONS = new Set(['repo.inspect', 'repo.test', 'operator.review']);
+export const ALLOWED_ACTIONS = new Set(['repo.inspect', 'repo.test', 'operator.review', 'coding.run']);
 export const ALLOWED_TEST_COMMANDS = new Set([
   'npm', 'node', 'python3', 'pytest', 'uv', 'pnpm', 'yarn', 'cargo', 'go', 'make',
 ]);
@@ -64,6 +64,37 @@ function validateCommander(project) {
   }
 }
 
+const CODING_EFFORT = new Set(['low', 'medium', 'high']);
+
+function validateCoding(project) {
+  if (project.coding == null) return;
+  const c = project.coding;
+  if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error(`invalid_coding:${project.id}`);
+  const allowed = new Set([
+    'enabled', 'mode', 'instructions', 'timeoutMs', 'approvalPolicy',
+    'networkAccess', 'effort', 'model', 'codexTransport',
+  ]);
+  for (const key of Object.keys(c)) if (!allowed.has(key)) throw new Error(`unknown_coding_field:${project.id}:${key}`);
+  if (typeof c.enabled !== 'boolean') throw new Error(`invalid_coding_enabled:${project.id}`);
+  if (c.mode !== 'shadow') throw new Error(`invalid_coding_mode:${project.id}`);
+  if (typeof c.instructions !== 'string' || !c.instructions.trim() || c.instructions.length > 8000) {
+    throw new Error(`invalid_coding_instructions:${project.id}`);
+  }
+  const timeout = Number(c.timeoutMs ?? 900000);
+  if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 1800000) throw new Error(`invalid_coding_timeout:${project.id}`);
+  if ((c.approvalPolicy ?? 'on-request') !== 'on-request') throw new Error(`invalid_coding_approval_policy:${project.id}`);
+  if (c.networkAccess !== false) throw new Error(`invalid_coding_network_access:${project.id}`);
+  if (c.effort != null && !CODING_EFFORT.has(String(c.effort))) throw new Error(`invalid_coding_effort:${project.id}`);
+  if (c.model != null && (typeof c.model !== 'string' || c.model.length > 120)) throw new Error(`invalid_coding_model:${project.id}`);
+  const t = c.codexTransport;
+  if (!t || typeof t !== 'object' || Array.isArray(t) || t.type !== 'ssh') throw new Error(`invalid_coding_transport:${project.id}`);
+  if (!/^[A-Za-z0-9._-]{1,253}$/.test(String(t.host ?? ''))) throw new Error(`invalid_coding_host:${project.id}`);
+  if (!/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(String(t.user ?? ''))) throw new Error(`invalid_coding_user:${project.id}`);
+  if (!path.isAbsolute(String(t.identityFile ?? ''))) throw new Error(`invalid_coding_identity:${project.id}`);
+  if (project.transport?.type !== 'ssh-gateway') throw new Error(`coding_requires_ssh_gateway:${project.id}`);
+  if (!project.github?.repository) throw new Error(`coding_requires_github:${project.id}`);
+}
+
 function validateGitHub(project, repositories) {
   if (project.github == null) return;
   if (!project.github || typeof project.github !== 'object') throw new Error(`invalid_github:${project.id}`);
@@ -96,6 +127,7 @@ export function validateConfig(value) {
     validateTests(project);
     validateCommander(project);
     validateGitHub(project, repositories);
+    validateCoding(project);
 
     const stepIds = new Set();
     for (const step of project.steps) {
@@ -114,6 +146,15 @@ export function validateConfig(value) {
         }
         if (project.commander?.enabled === true && !project.commander.testAliases?.[alias]) {
           throw new Error(`missing_commander_test_alias:${project.id}:${step.id}`);
+        }
+      }
+      if (step.action === 'coding.run') {
+        if (project.coding?.enabled !== true || project.coding?.mode !== 'shadow') {
+          throw new Error(`coding_not_enabled:${project.id}:${step.id}`);
+        }
+        const params = step.params ?? {};
+        if (!params || typeof params !== 'object' || Array.isArray(params) || Object.keys(params).length > 0) {
+          throw new Error(`coding_params_not_allowed:${project.id}:${step.id}`);
         }
       }
     }

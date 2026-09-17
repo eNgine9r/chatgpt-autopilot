@@ -39,6 +39,7 @@ export class ExecutionEngine {
       const executionDispatch = {
         ...dispatch,
         taskId: String(result.state.task?.id ?? ''),
+        task: result.state.task ?? null,
         attempt: Number(result.state.attempt ?? 1),
       };
       result = await this.orchestrator.handle({

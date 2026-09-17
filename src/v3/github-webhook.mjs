@@ -68,6 +68,7 @@ export function translateGitHubEvent(config, eventName, deliveryId, payload) {
         repository,
         issueNumber,
         title: clip(payload.issue?.title, 300),
+        body: clip(payload.issue?.body, 8000),
         url: clip(payload.issue?.html_url, 500),
       },
     },

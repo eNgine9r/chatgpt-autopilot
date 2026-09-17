@@ -125,3 +125,21 @@ test('Commander routing requires both global and per-project gates and never sil
   assert.equal(legacy.branch, 'main');
   assert.ok(legacyCalls.length >= 3);
 });
+
+
+test('coding.run is delegated only to the explicit one-shot coding worker', async () => {
+  const calls = [];
+  const codingWorker = {
+    async execute(project, dispatch) {
+      calls.push({ project, dispatch });
+      return JSON.stringify({ mode: 'shadow', issueNumber: dispatch.task.issueNumber });
+    },
+  };
+  const project = { id: 'nexo', coding: { enabled: true, mode: 'shadow' } };
+  const dispatch = { action: 'coding.run', task: { issueNumber: 174 }, stepId: 'coding', attempt: 1 };
+  const enabled = new DeterministicExecutor({ codingWorker });
+  assert.equal(JSON.parse(await enabled.execute(project, dispatch)).issueNumber, 174);
+  assert.equal(calls.length, 1);
+  const unavailable = new DeterministicExecutor();
+  await assert.rejects(() => unavailable.execute(project, dispatch), /coding_worker_unavailable/);
+});

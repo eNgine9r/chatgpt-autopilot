@@ -111,3 +111,36 @@ test('Commander integration is additive, explicit per project and preserves fall
   }] }), /missing_commander_test_alias/);
   assert.equal(validateConfig(valid), valid);
 });
+
+
+test('coding.run requires an explicit bounded shadow coding configuration', () => {
+  const codingProject = {
+    id: 'nexo-coding', enabled: true,
+    transport: {
+      type: 'ssh-gateway', host: 'nexolab-edge-01', user: 'nexolab',
+      identityFile: '/home/btcradar/.ssh/autopilot-v3-nexolab',
+    },
+    github: { repository: 'eNgine9r/nexolab-platform', taskLabels: ['autopilot'] },
+    tests: { required: { remote: true, timeoutMs: 1000 } },
+    coding: {
+      enabled: true, mode: 'shadow', timeoutMs: 900000,
+      approvalPolicy: 'on-request', networkAccess: false, effort: 'low',
+      instructions: 'Implement only the scoped issue in the isolated worktree.',
+      codexTransport: {
+        type: 'ssh', host: 'nexolab-edge-01', user: 'nexolab',
+        identityFile: '/home/btcradar/.ssh/autopilot-nexolab',
+      },
+    },
+    steps: [{ id: 'coding', action: 'coding.run' }],
+  };
+  assert.equal(validateConfig({ version: 3, projects: [codingProject] }).projects[0], codingProject);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...codingProject, coding: { ...codingProject.coding, enabled: false },
+  }] }), /coding_not_enabled/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...codingProject, coding: { ...codingProject.coding, networkAccess: true },
+  }] }), /invalid_coding_network_access/);
+  assert.throws(() => validateConfig({ version: 3, projects: [{
+    ...codingProject, steps: [{ id: 'coding', action: 'coding.run', params: { prompt: 'arbitrary' } }],
+  }] }), /coding_params_not_allowed/);
+});

@@ -10,5 +10,8 @@
       ],
       "timeoutMs": 120000
     }
-  }
+  },
+  "codingEnabled": false,
+  "codingWorktreeRoot": "/home/nexolab/.local/state/chatgpt-autopilot-v3/worktrees",
+  "codingBaseRef": "origin/main"
 }
