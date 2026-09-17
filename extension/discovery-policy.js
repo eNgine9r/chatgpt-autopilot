@@ -10,12 +10,15 @@
     return mode === "manual";
   }
 
-  function scanDisposition({ timedOut = false, currentChatUrl = "", candidateUrls = [] }) {
+  function scanDisposition({ timedOut = false, currentChatUrl = "", candidateUrls = [], forced = false }) {
     if (timedOut) return "timeout";
+    const candidates = Array.isArray(candidateUrls) ? candidateUrls : [];
     const current = String(currentChatUrl || "");
-    if (!current) return "wait";
-    const currentObserved = candidateUrls.some((url) => String(url || "") === current);
-    return currentObserved ? "finalize" : "wait";
+    if (current) {
+      const currentObserved = candidates.some((url) => String(url || "") === current);
+      if (currentObserved) return "finalize";
+    }
+    return forced && candidates.length > 0 ? "finalize" : "wait";
   }
 
   function durableCandidate(discovery = {}) {
