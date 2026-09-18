@@ -1,6 +1,18 @@
 const tg = window.Telegram?.WebApp;
+const TELEGRAM_DARK_COLOR = '#081019';
+
+function applyTelegramChromeTheme() {
+  document.documentElement.style.backgroundColor = TELEGRAM_DARK_COLOR;
+  if (document.body) document.body.style.backgroundColor = TELEGRAM_DARK_COLOR;
+  for (const method of ['setHeaderColor', 'setBackgroundColor', 'setBottomBarColor']) {
+    try { tg?.[method]?.(TELEGRAM_DARK_COLOR); } catch {}
+  }
+}
+
 tg?.ready();
+applyTelegramChromeTheme();
 tg?.expand();
+tg?.onEvent?.('themeChanged', applyTelegramChromeTheme);
 
 const initData = tg?.initData || '';
 const $ = (id) => document.getElementById(id);
@@ -450,7 +462,19 @@ function renderSystem(data) {
     </section>`;
 }
 
-function render(data) {
+function restoreScrollPosition(position) {
+  if (!position) return;
+  requestAnimationFrame(() => {
+    const maxTop = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const targetTop = Math.min(Math.max(0, position.top), maxTop);
+    if (Math.abs(window.scrollY - targetTop) > 1 || Math.abs(window.scrollX - position.left) > 1) {
+      window.scrollTo({ top: targetTop, left: position.left, behavior: 'auto' });
+    }
+  });
+}
+
+function render(data, { preserveScroll = true } = {}) {
+  const scrollPosition = preserveScroll ? { top: window.scrollY, left: window.scrollX } : null;
   lastPayload = data;
   renderOverview(data);
   renderCommander(data);
@@ -463,15 +487,15 @@ function render(data) {
   $('updated').textContent = `Оновлено о ${new Date(data.generatedAt).toLocaleTimeString('uk-UA', {
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   })}`;
-  applyView(currentView);
+  restoreScrollPosition(scrollPosition);
 }
 
-function applyView(view) {
+function applyView(view, { scrollToTop = true } = {}) {
   currentView = ['overview', 'commander', 'autopilot', 'system'].includes(view) ? view : 'overview';
   sessionStorage.setItem('project-control-view', currentView);
   document.querySelectorAll('.view').forEach((node) => node.classList.toggle('active', node.dataset.view === currentView));
   document.querySelectorAll('.nav-button').forEach((button) => button.classList.toggle('active', button.dataset.viewTarget === currentView));
-  window.scrollTo({ top: 0, behavior: 'auto' });
+  if (scrollToTop) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
 }
 
 function showMessage(text, tone = '') {
@@ -480,10 +504,10 @@ function showMessage(text, tone = '') {
   node.className = `toast ${tone}`;
 }
 
-async function load({ quiet = false } = {}) {
+async function load({ quiet = false, preserveScroll = true } = {}) {
   $('refresh').disabled = true;
   try {
-    render(await api('./api/status'));
+    render(await api('./api/status'), { preserveScroll });
     if (!quiet) showMessage('');
   } catch (error) {
     showMessage(`Не вдалося оновити дані: ${error.message}`, 'bad');
@@ -531,6 +555,6 @@ $('refresh').onclick = async () => {
   await load();
 };
 
-applyView(currentView);
-load();
-setInterval(() => load({ quiet: true }), 15000);
+applyView(currentView, { scrollToTop: false });
+load({ preserveScroll: false });
+setInterval(() => load({ quiet: true, preserveScroll: true }), 15000);
