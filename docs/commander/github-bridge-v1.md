@@ -26,7 +26,26 @@ For Commander operations that require idempotency, add:
 }
 ```
 
-The bridge does not accept arbitrary shell command text.
+### One-call terminal workflow
+
+For the private Plus control path, the bridge may explicitly allow the bridge-native `terminal.exec` workflow:
+
+```json
+{
+  "version": 1,
+  "deviceId": "btc-radar",
+  "operation": "terminal.exec",
+  "params": {
+    "command": "git status --short"
+  },
+  "timeoutMs": 30000,
+  "idempotencyKey": "stable-terminal-key"
+}
+```
+
+`terminal.exec` is not a new Commander capability and cannot bypass device policy. The bridge requires the selected device to advertise `execution.start`, `execution.input`, `execution.get`, and `execution.output`, then orchestrates the fixed `operator.shell` alias through that existing lifecycle. The command is bounded to 8 KiB, stdout/stderr returned to GitHub are bounded, the workflow timeout is bounded to 120 seconds, and ADMIN operations remain forbidden.
+
+The bridge does not expose a separate root shell or accept an executable path from the task.
 
 ## Result contract
 
@@ -47,7 +66,7 @@ COMMANDER_GITHUB_BRIDGE_ENABLED=true
 COMMANDER_GITHUB_REPOSITORY=eNgine9r/chatgpt-autopilot
 COMMANDER_GITHUB_ALLOWED_AUTHOR=eNgine9r
 COMMANDER_GITHUB_TASK_LABEL=commander/task
-COMMANDER_GITHUB_POLL_MS=10000
+COMMANDER_GITHUB_POLL_MS=3000
 ```
 
 `COMMANDER_GITHUB_ALLOWED_OPERATIONS` is optional. When absent, only Phase 3 READ operations are accepted. Add execution or controlled-write operations only after their Commander gates and target policy are accepted.
