@@ -42,3 +42,20 @@ test('Mini App exposes separated Commander Autopilot and System information', ()
   assert.doesNotMatch(app, /Deterministic control plane/);
   assert.doesNotMatch(app, /local-only/);
 });
+
+
+test('Mini App preserves scroll on refresh and requests dark Telegram chrome', () => {
+  assert.match(html, /meta name="theme-color" content="#081019"/);
+  assert.match(html, /meta name="color-scheme" content="dark"/);
+  assert.match(html, /apple-mobile-web-app-status-bar-style" content="black-translucent"/);
+  assert.match(app, /setHeaderColor/);
+  assert.match(app, /setBackgroundColor/);
+  assert.match(app, /setBottomBarColor/);
+  assert.match(app, /themeChanged/);
+  assert.match(app, /preserveScroll/);
+  assert.match(app, /restoreScrollPosition/);
+  assert.match(app, /scrollToTop/);
+  assert.doesNotMatch(app, /function render\(data[^]*?applyView\(currentView\)/);
+  assert.match(app, /load\(\{ preserveScroll: false \}\)/);
+  assert.match(app, /setInterval\(\(\) => load\(\{ quiet: true, preserveScroll: true \}\), 15000\)/);
+});
