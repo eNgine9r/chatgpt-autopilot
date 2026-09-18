@@ -142,7 +142,7 @@ async function readCommander(commanderClient, activityFile, services) {
     devices: [],
     activity,
     transport: {
-      name: 'GitHub Bridge',
+      name: 'Міст GitHub',
       active: services.commanderBridge?.activeState === 'active',
       pollSeconds: 3,
     },
