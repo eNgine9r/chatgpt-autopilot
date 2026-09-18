@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { protocolEnvelope } from '../src/commander/contracts/index.mjs';
 import { JsonStateStore } from '../src/v3/store.mjs';
 import { createMiniAppServer } from '../src/v3/miniapp-server.mjs';
 
@@ -44,7 +45,7 @@ async function controlStub(events) {
   return { server, port: await listen(server) };
 }
 
-async function fixture(projectState, authenticateRequest = () => ({ ok: true })) {
+async function fixture(projectState, authenticateRequest = () => ({ ok: true }), extras = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'autopilot-v3-miniapp-'));
   const stateDir = path.join(dir, 'state-v3');
   const store = new JsonStateStore(stateDir);
@@ -52,6 +53,10 @@ async function fixture(projectState, authenticateRequest = () => ({ ok: true }))
   await store.save(projectState.projectId, projectState);
   const telegramStateFile = path.join(stateDir, 'telegram.json');
   await fs.writeFile(telegramStateFile, JSON.stringify({ version: 1, offset: 0, notified: {} }));
+  const commanderActivityFile = path.join(dir, 'commander-activity.json');
+  if (extras.activityItems) {
+    await fs.writeFile(commanderActivityFile, JSON.stringify({ version: 1, items: extras.activityItems }));
+  }
   const events = [];
   const control = await controlStub(events);
   const server = createMiniAppServer({
@@ -60,6 +65,9 @@ async function fixture(projectState, authenticateRequest = () => ({ ok: true }))
     authenticateRequest,
     controlBaseUrl: `http://127.0.0.1:${control.port}`,
     telegramStateFile,
+    commanderClient: extras.commanderClient || null,
+    commanderActivityFile,
+    serviceStatusReader: extras.serviceStatusReader || null,
     staticDir: path.resolve('web/miniapp'),
   });
   const port = await listen(server);
@@ -145,6 +153,120 @@ test('v3 Mini App allows retry only from blocked state', async () => {
 
     const wrong = await fetch(`http://127.0.0.1:${f.port}/api/projects/nexolab-development/approve`, { method: 'POST' });
     assert.equal(wrong.status, 409);
+  } finally {
+    await cleanup(f);
+  }
+});
+
+
+test('Project Control status aggregates Commander devices activity and system services', async () => {
+  const now = Date.now();
+  const capabilities = [
+    'device.health', 'execution.start', 'execution.input', 'execution.get', 'execution.output',
+    'file.read', 'file.write', 'service.status', 'service.restart',
+    'git.status', 'git.diff', 'git.log',
+  ].map((operation) => ({ operation, authority: operation.startsWith('execution.') || ['file.write', 'service.restart'].includes(operation) ? 'write' : 'read', operationVersion: 1 }));
+  const commanderClient = {
+    listDevices: async () => ({
+      devices: [{
+        device: {
+          ...protocolEnvelope(), deviceId: 'btc-radar', displayName: 'btc-radar', platform: 'linux',
+          agentVersion: '0.4.0', sessionId: 'session-btc', connectedAt: new Date(now - 5000).toISOString(),
+          capabilities,
+        },
+        status: 'online',
+        connectedAt: now - 5000,
+        lastHeartbeatAt: now - 1000,
+      }],
+    }),
+    request: async (request) => ({
+      ...protocolEnvelope(),
+      requestId: request.requestId,
+      deviceId: request.deviceId,
+      operation: request.operation,
+      ok: true,
+      completedAt: new Date(now).toISOString(),
+      data: {
+        hostname: 'btc-radar',
+        uptimeSeconds: 3600,
+        loadAverage: [0.1, 0.2, 0.3],
+        totalMemoryBytes: 4_000_000_000,
+        freeMemoryBytes: 1_500_000_000,
+      },
+    }),
+  };
+  const activeUnits = new Set([
+    'chatgpt-autopilot-commander-gateway.service',
+    'chatgpt-autopilot-commander-github-bridge.service',
+    'chatgpt-autopilot-v3.service',
+    'chatgpt-autopilot-v3-miniapp.service',
+    'chatgpt-autopilot-v3-telegram.service',
+  ]);
+  const serviceStatusReader = async (unit) => ({
+    unit,
+    activeState: activeUnits.has(unit) ? 'active' : 'inactive',
+    subState: activeUnits.has(unit) ? 'running' : 'dead',
+    unitFileState: activeUnits.has(unit) ? 'enabled' : 'disabled',
+  });
+  const f = await fixture({
+    version: 3,
+    projectId: 'btc-radar-development',
+    status: 'complete',
+    task: { id: 'task-complete', title: 'Completed task' },
+    stepIndex: 1,
+    lastError: '', evidence: [], recentEventIds: [], resumeStatus: '', updatedAt: now,
+  }, () => ({ ok: true }), {
+    commanderClient,
+    serviceStatusReader,
+    activityItems: [{
+      issueNumber: 500,
+      deviceId: 'btc-radar',
+      operation: 'terminal.exec',
+      ok: true,
+      completedAt: new Date(now - 2000).toISOString(),
+      state: 'success',
+      exitCode: 0,
+    }],
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${f.port}/api/status`);
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.version, 4);
+    assert.equal(payload.mode, 'project-control');
+    assert.equal(payload.commander.state, 'operational');
+    assert.equal(payload.commander.onlineDevices, 1);
+    assert.equal(payload.commander.devices[0].name, 'BTC Radar');
+    assert.equal(payload.commander.devices[0].capabilities.terminal, true);
+    assert.equal(payload.commander.devices[0].health.hostname, 'btc-radar');
+    assert.equal(payload.commander.activity[0].operation, 'terminal.exec');
+    assert.equal(payload.autopilot.infrastructureOnline, true);
+    assert.equal(payload.autopilot.automationState, 'idle');
+    assert.equal(payload.system.legacyRdcDisabled, true);
+    assert.equal(payload.system.secureTunnelDisabled, true);
+    assert.equal(payload.system.alerts, 0);
+  } finally {
+    await cleanup(f);
+  }
+});
+
+test('Project Control degrades Commander independently when the private Gateway is unavailable', async () => {
+  const commanderClient = {
+    listDevices: async () => { throw new Error('control_connection_closed'); },
+  };
+  const f = await fixture({
+    version: 3,
+    projectId: 'nexolab-development',
+    status: 'complete',
+    task: { id: 'task-complete', title: 'Completed task' },
+    stepIndex: 1,
+    lastError: '', evidence: [], recentEventIds: [], resumeStatus: '', updatedAt: Date.now(),
+  }, () => ({ ok: true }), { commanderClient });
+  try {
+    const payload = await (await fetch(`http://127.0.0.1:${f.port}/api/status`)).json();
+    assert.equal(payload.commander.state, 'offline');
+    assert.equal(payload.commander.devices.length, 0);
+    assert.equal(payload.autopilot.projects[0].name, 'NEXOLAB');
   } finally {
     await cleanup(f);
   }
