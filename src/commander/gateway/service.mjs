@@ -45,6 +45,12 @@ export async function runGatewayService(env = process.env) {
     networkInterfaces,
   });
   const activityFile = commanderActivityFile(env);
+  let activityQueue = Promise.resolve();
+  const activityRecorder = (entry) => {
+    const next = activityQueue.then(() => writeCommanderActivity(activityFile, entry));
+    activityQueue = next.catch(() => {});
+    return next;
+  };
   const server = new CommanderGatewayServer({
     host: gatewayHost,
     privateBindEnabled,
@@ -53,7 +59,7 @@ export async function runGatewayService(env = process.env) {
     secretResolver,
     deviceKeyResolver,
     allowedAuthorities: (commanderEnabled(env.COMMANDER_EXECUTION_ENABLED) || commanderEnabled(env.COMMANDER_WRITE_ENABLED)) ? ['read', 'write'] : ['read'],
-    activityRecorder: (entry) => writeCommanderActivity(activityFile, entry),
+    activityRecorder,
   });
   await server.start();
 
