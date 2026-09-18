@@ -25,7 +25,7 @@ export function githubBridgeConfig(env = process.env) {
     repository,
     allowedAuthor,
     taskLabel: env.COMMANDER_GITHUB_TASK_LABEL || 'commander/task',
-    pollMs: boundedInt(env.COMMANDER_GITHUB_POLL_MS, 10_000, 3_000, 300_000, 'invalid_github_bridge_poll_ms'),
+    pollMs: boundedInt(env.COMMANDER_GITHUB_POLL_MS, 3_000, 3_000, 300_000, 'invalid_github_bridge_poll_ms'),
     maxIssues: boundedInt(env.COMMANDER_GITHUB_MAX_ISSUES, 10, 1, 50, 'invalid_github_bridge_max_issues'),
     allowedOperations: parseAllowedOperations(env.COMMANDER_GITHUB_ALLOWED_OPERATIONS),
     ghBin: env.COMMANDER_GITHUB_GH_BIN || '/usr/bin/gh',

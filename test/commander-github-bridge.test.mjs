@@ -182,6 +182,114 @@ test('GitHub bridge result comments are bounded plain JSON', () => {
 });
 
 
+
+test('GitHub bridge accepts bounded terminal.exec workflows and requires idempotency', () => {
+  const terminalConfig = config('device.health,terminal.exec');
+  const body = {
+    version: 1, deviceId: 'btc-radar', operation: 'terminal.exec',
+    params: { command: 'echo hello' }, timeoutMs: 120_000,
+  };
+  assert.throws(() => parseCommanderGithubTask(issue(body), terminalConfig), /github_task_idempotency_required/);
+  const accepted = parseCommanderGithubTask(issue({ ...body, idempotencyKey: 'terminal-321' }), terminalConfig);
+  assert.equal(accepted.operation, 'terminal.exec');
+  assert.equal(accepted.params.command, 'echo hello');
+  assert.equal(accepted.timeoutMs, 120_000);
+  assert.throws(() => parseCommanderGithubTask(issue({
+    ...body, timeoutMs: 120_001, idempotencyKey: 'terminal-too-long',
+  }), terminalConfig), /invalid_github_task_timeout/);
+  assert.throws(() => parseCommanderGithubTask(issue({
+    ...body, params: { command: 'echo hello', alias: 'other' }, idempotencyKey: 'terminal-extra',
+  }), terminalConfig), /invalid_github_terminal_params/);
+});
+
+test('GitHub bridge terminal.exec performs start input get output in one task', async () => {
+  const operations = [];
+  const caps = ['execution.start', 'execution.input', 'execution.get', 'execution.output'];
+  const client = {
+    getDevice: async () => ({
+      status: 'online',
+      device: {
+        ...protocolEnvelope(), deviceId: 'btc-radar', displayName: 'btc-radar', platform: 'linux',
+        agentVersion: '0.1.0', sessionId: 'session-terminal', connectedAt: NOW,
+        capabilities: caps.map(capability),
+      },
+    }),
+    request: async (request) => {
+      operations.push(request);
+      const base = {
+        ...protocolEnvelope(), requestId: request.requestId, deviceId: request.deviceId,
+        operation: request.operation, ok: true, completedAt: NOW,
+      };
+      if (request.operation === 'execution.start') {
+        return { ...base, data: { execution: { executionId: 'exec-terminal-1', state: 'running' } } };
+      }
+      if (request.operation === 'execution.input') {
+        return { ...base, data: { executionId: 'exec-terminal-1', acceptedBytes: request.params.data.length } };
+      }
+      if (request.operation === 'execution.get') {
+        return { ...base, data: { execution: { executionId: 'exec-terminal-1', state: 'success', exitCode: 0 } } };
+      }
+      if (request.operation === 'execution.output') {
+        return {
+          ...base,
+          data: {
+            events: [
+              { type: 'stdout', payload: { chunk: 'hello\\n' } },
+              { type: 'stderr', payload: { chunk: 'warn\\n' } },
+            ],
+            truncated: false,
+            totalBytes: 11,
+          },
+        };
+      }
+      assert.fail(`unexpected operation ${request.operation}`);
+    },
+  };
+  const result = await executeCommanderGithubTask({
+    issue: issue({
+      version: 1, deviceId: 'btc-radar', operation: 'terminal.exec',
+      params: { command: 'echo hello' }, timeoutMs: 10_000, idempotencyKey: 'terminal-workflow-1',
+    }),
+    config: config('terminal.exec'),
+    client,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.workflow, 'terminal.exec');
+  assert.equal(result.data.state, 'success');
+  assert.equal(result.data.exitCode, 0);
+  assert.equal(result.data.stdout, 'hello\\n');
+  assert.equal(result.data.stderr, 'warn\\n');
+  assert.deepEqual(operations.map((request) => request.operation), [
+    'execution.start', 'execution.input', 'execution.get', 'execution.output',
+  ]);
+  assert.deepEqual(operations[0].params, { alias: 'operator.shell' });
+  assert.match(operations[0].idempotencyKey, /^ghwf-321-start-/);
+  assert.match(operations[1].idempotencyKey, /^ghwf-321-input-/);
+  assert.equal(operations[1].params.data, 'echo hello\nexit\n');
+});
+
+test('GitHub bridge terminal.exec fails closed when an execution capability is missing', async () => {
+  const client = {
+    getDevice: async () => ({
+      status: 'online',
+      device: {
+        ...protocolEnvelope(), deviceId: 'btc-radar', displayName: 'btc-radar', platform: 'linux',
+        agentVersion: '0.1.0', sessionId: 'session-terminal', connectedAt: NOW,
+        capabilities: ['execution.start', 'execution.get', 'execution.output'].map(capability),
+      },
+    }),
+    request: async () => assert.fail('must not dispatch partial terminal workflow'),
+  };
+  await assert.rejects(() => executeCommanderGithubTask({
+    issue: issue({
+      version: 1, deviceId: 'btc-radar', operation: 'terminal.exec',
+      params: { command: 'echo hello' }, timeoutMs: 10_000, idempotencyKey: 'terminal-capability-check',
+    }),
+    config: config('terminal.exec'),
+    client,
+  }), /github_bridge_operation_not_advertised/);
+});
+
 test('GitHub bridge poll timer stays referenced so an idle service remains alive', async () => {
   let unrefCalled = false;
   const schedule = (callback) => {
