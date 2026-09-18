@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { commanderActivityFile, writeCommanderActivity } from '../activity-store.mjs';
 import {
   resolveCommanderGatewayBindHost,
   commanderControlSocketPath,
@@ -43,6 +44,13 @@ export async function runGatewayService(env = process.env) {
     privateBindEnabled,
     networkInterfaces,
   });
+  const activityFile = commanderActivityFile(env);
+  let activityQueue = Promise.resolve();
+  const activityRecorder = (entry) => {
+    const next = activityQueue.then(() => writeCommanderActivity(activityFile, entry));
+    activityQueue = next.catch(() => {});
+    return next;
+  };
   const server = new CommanderGatewayServer({
     host: gatewayHost,
     privateBindEnabled,
@@ -51,6 +59,7 @@ export async function runGatewayService(env = process.env) {
     secretResolver,
     deviceKeyResolver,
     allowedAuthorities: (commanderEnabled(env.COMMANDER_EXECUTION_ENABLED) || commanderEnabled(env.COMMANDER_WRITE_ENABLED)) ? ['read', 'write'] : ['read'],
+    activityRecorder,
   });
   await server.start();
 
@@ -75,7 +84,7 @@ export async function runGatewayService(env = process.env) {
   };
   server.controlServer = controlServer;
   server.trustStore = trustStore;
-  console.info(JSON.stringify({ event: 'commander_gateway_started', address: server.address(), controlSocket: controlServer.socketPath }));
+  console.info(JSON.stringify({ event: 'commander_gateway_started', address: server.address(), controlSocket: controlServer.socketPath, activityFile }));
   return server;
 }
 

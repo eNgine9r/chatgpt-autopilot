@@ -8,7 +8,6 @@ import {
   parseAllowedOperations,
 } from './bridge.mjs';
 import { CommanderGithubClient } from './github-client.mjs';
-import { commanderActivityFile, writeCommanderActivity } from './activity-store.mjs';
 
 function enabled(value) { return String(value ?? '').toLowerCase() === 'true'; }
 function boundedInt(value, fallback, min, max, code) {
@@ -30,34 +29,7 @@ export function githubBridgeConfig(env = process.env) {
     maxIssues: boundedInt(env.COMMANDER_GITHUB_MAX_ISSUES, 10, 1, 50, 'invalid_github_bridge_max_issues'),
     allowedOperations: parseAllowedOperations(env.COMMANDER_GITHUB_ALLOWED_OPERATIONS),
     ghBin: env.COMMANDER_GITHUB_GH_BIN || '/usr/bin/gh',
-    activityFile: commanderActivityFile(env),
   });
-}
-
-function activityEntry(issue, payload) {
-  let task = {};
-  try { task = JSON.parse(String(issue?.body || '{}')); } catch {}
-  return {
-    issueNumber: issue?.number,
-    deviceId: String(task.deviceId || payload?.deviceId || ''),
-    operation: String(task.operation || payload?.operation || payload?.workflow || ''),
-    ok: payload?.ok === true,
-    completedAt: String(payload?.completedAt || new Date().toISOString()),
-    ...(typeof payload?.data?.state === 'string' ? { state: payload.data.state } : {}),
-    ...(Number.isInteger(payload?.data?.exitCode) ? { exitCode: payload.data.exitCode } : {}),
-  };
-}
-
-async function recordActivity(config, issue, payload, logger) {
-  try {
-    await writeCommanderActivity(config.activityFile, activityEntry(issue, payload));
-  } catch (error) {
-    logger.warn(JSON.stringify({
-      event: 'commander_github_activity_write_failed',
-      issueNumber: issue?.number,
-      error: String(error?.message || error),
-    }));
-  }
 }
 
 async function finalizeIssue(github, issueNumber, payload) {
@@ -75,7 +47,6 @@ export async function runGithubBridgeCycle({ config, github, client, logger = co
     try {
       const result = await executeCommanderGithubTask({ issue, config, client });
       await finalizeIssue(github, issue.number, result);
-      await recordActivity(config, issue, result, logger);
       completed += 1;
       logger.info(JSON.stringify({ event: 'commander_github_task_complete', issueNumber: issue.number, ok: result.ok }));
     } catch (error) {
@@ -85,7 +56,6 @@ export async function runGithubBridgeCycle({ config, github, client, logger = co
         continue;
       }
       await finalizeIssue(github, issue.number, failure);
-      await recordActivity(config, issue, failure, logger);
       completed += 1;
       logger.warn(JSON.stringify({ event: 'commander_github_task_rejected', issueNumber: issue.number, code: failure.error.code }));
     }

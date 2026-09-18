@@ -83,6 +83,11 @@ const automationStatus = {
 
 const operationNames = {
   'terminal.exec': 'Команда в терміналі',
+  'execution.start': 'Запуск виконання',
+  'execution.input': 'Ввід у термінал',
+  'execution.get': 'Стан виконання',
+  'execution.output': 'Результат виконання',
+  'execution.cancel': 'Скасування виконання',
   'device.health': 'Перевірка пристрою',
   'file.read': 'Читання файлу',
   'file.write': 'Запис файлу',
@@ -136,6 +141,13 @@ function friendlyDevice(id) {
   return id || '—';
 }
 
+function activitySource(item) {
+  if (Number.isInteger(item.issueNumber)) return `GitHub #${item.issueNumber}`;
+  if (item.source === 'gateway') return 'Шлюз Commander';
+  if (item.source === 'github') return 'Міст GitHub';
+  return 'Commander';
+}
+
 function activityItem(item) {
   const ok = item.ok === true;
   return `<article class="activity-item">
@@ -147,7 +159,7 @@ function activityItem(item) {
       </div>
       <div class="activity-meta">
         <span>${esc(friendlyDevice(item.deviceId))}</span>
-        <span>GitHub #${esc(item.issueNumber || '—')}</span>
+        <span>${esc(activitySource(item))}</span>
         ${Number.isInteger(item.exitCode) ? `<span>код ${esc(item.exitCode)}</span>` : ''}
       </div>
     </div>

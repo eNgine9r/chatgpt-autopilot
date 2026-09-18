@@ -43,6 +43,7 @@ export class CommanderGatewayServer extends EventEmitter {
     this.deviceKeyResolver = typeof options.deviceKeyResolver === 'function' ? options.deviceKeyResolver : null;
     this.registry = options.registry ?? new CommanderDeviceRegistry({ heartbeatTimeoutMs: options.heartbeatTimeoutMs });
     this.logger = options.logger ?? console;
+    this.activityRecorder = typeof options.activityRecorder === 'function' ? options.activityRecorder : null;
     this.now = options.now ?? Date.now;
     this.randomBytes = options.randomBytes ?? crypto.randomBytes;
     this.heartbeatIntervalMs = Number(options.heartbeatIntervalMs ?? 5_000);
@@ -99,6 +100,29 @@ export class CommanderGatewayServer extends EventEmitter {
   }
 
 
+  #recordActivity(entry) {
+    if (!this.activityRecorder) return;
+    const report = (error) => {
+      log(this.logger, 'warn', 'commander_activity_record_failed', {
+        deviceId: entry?.deviceId,
+        requestId: entry?.requestId,
+        operation: entry?.operation,
+        error: String(error?.message || error),
+      });
+    };
+    try {
+      Promise.resolve(this.activityRecorder(entry)).catch(report);
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  #shouldRecordActivity(request) {
+    if (String(request.requestId || '').startsWith('miniapp-')) return false;
+    if (['execution.input', 'execution.get', 'execution.output'].includes(String(request.operation || ''))) return false;
+    return true;
+  }
+
   request(input, options = {}) {
     const request = validateOperationRequest(input);
     const definition = operationDefinition(request.operation);
@@ -116,6 +140,19 @@ export class CommanderGatewayServer extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(request.requestId);
+        if (this.#shouldRecordActivity(request)) {
+          this.#recordActivity({
+            eventId: `gateway-${request.requestId}`,
+            requestId: request.requestId,
+            deviceId: request.deviceId,
+            operation: request.operation,
+            ok: false,
+            completedAt: new Date(this.now()).toISOString(),
+            source: 'gateway',
+            state: 'timeout',
+            errorCode: 'gateway_request_timeout',
+          });
+        }
         reject(new Error('gateway_request_timeout'));
       }, timeoutMs);
       timer.unref?.();
@@ -133,6 +170,19 @@ export class CommanderGatewayServer extends EventEmitter {
       } catch (error) {
         clearTimeout(timer);
         this.pendingRequests.delete(request.requestId);
+        if (this.#shouldRecordActivity(request)) {
+          this.#recordActivity({
+            eventId: `gateway-${request.requestId}`,
+            requestId: request.requestId,
+            deviceId: request.deviceId,
+            operation: request.operation,
+            ok: false,
+            completedAt: new Date(this.now()).toISOString(),
+            source: 'gateway',
+            state: 'failed',
+            errorCode: 'gateway_dispatch_failed',
+          });
+        }
         reject(error);
       }
     });
@@ -143,6 +193,19 @@ export class CommanderGatewayServer extends EventEmitter {
       if (pending.request.deviceId === deviceId && pending.sessionId === sessionId) {
         clearTimeout(pending.timer);
         this.pendingRequests.delete(requestId);
+        if (this.#shouldRecordActivity(pending.request)) {
+          this.#recordActivity({
+            eventId: `gateway-${pending.request.requestId}`,
+            requestId: pending.request.requestId,
+            deviceId: pending.request.deviceId,
+            operation: pending.request.operation,
+            ok: false,
+            completedAt: new Date(this.now()).toISOString(),
+            source: 'gateway',
+            state: 'failed',
+            errorCode: reason,
+          });
+        }
         pending.reject(new Error(reason));
       }
     }
@@ -262,6 +325,21 @@ export class CommanderGatewayServer extends EventEmitter {
       clearTimeout(pending.timer);
       this.pendingRequests.delete(result.requestId);
       pending.resolve(result);
+      if (this.#shouldRecordActivity(pending.request)) {
+        const execution = result.data?.execution;
+        this.#recordActivity({
+          eventId: `gateway-${result.requestId}`,
+          requestId: result.requestId,
+          deviceId: result.deviceId,
+          operation: result.operation,
+          ok: result.ok === true,
+          completedAt: result.completedAt || new Date(this.now()).toISOString(),
+          source: 'gateway',
+          ...(typeof execution?.state === 'string' ? { state: execution.state } : {}),
+          ...(Number.isInteger(execution?.exitCode) ? { exitCode: execution.exitCode } : {}),
+          ...(typeof result.error?.code === 'string' ? { errorCode: result.error.code } : {}),
+        });
+      }
       const resultDefinition = operationDefinition(result.operation);
       const kind = resultDefinition.authority === 'read' ? 'read' : (result.operation.startsWith('execution.') ? 'execution' : 'write');
       log(this.logger, 'info', `commander_${kind}_request_completed`, {

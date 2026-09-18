@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { commanderPublicClientFromEnv } from '../commander/client/client.mjs';
-import { commanderActivityFile } from '../integrations/github/commander/activity-store.mjs';
+import { commanderActivityFile } from '../commander/activity-store.mjs';
 import { loadDotEnv } from '../env.mjs';
 import { loadConfig } from './config.mjs';
 import { JsonStateStore } from './store.mjs';

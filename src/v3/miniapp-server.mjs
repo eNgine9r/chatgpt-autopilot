@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { protocolEnvelope } from '../commander/contracts/index.mjs';
-import { readCommanderActivity } from '../integrations/github/commander/activity-store.mjs';
+import { readCommanderActivity } from '../commander/activity-store.mjs';
 import { validateTelegramInitData } from '../telegram-webapp-auth.mjs';
 import { currentStep } from './state-machine.mjs';
 

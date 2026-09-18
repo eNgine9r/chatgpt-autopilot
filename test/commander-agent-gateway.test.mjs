@@ -191,3 +191,68 @@ test('wrong Agent secret never registers and stop prevents reconnect', async (t)
   assert.equal(agent.state, 'stopped');
   assert.equal(agent.socket, null);
 });
+
+
+test('Gateway activity recorder observes Commander operations and ignores Mini App probes', async (t) => {
+  const activity = [];
+  const capabilities = [{ operation: 'device.health', authority: 'read', operationVersion: 1 }];
+  const gateway = new CommanderGatewayServer({
+    host: '127.0.0.1',
+    port: 0,
+    heartbeatIntervalMs: 250,
+    heartbeatTimeoutMs: 1_000,
+    secretResolver: async (deviceId) => deviceId === identity.deviceId ? secret : null,
+    logger: silentLogger,
+    activityRecorder: (entry) => { activity.push(entry); },
+  });
+  const address = await gateway.start();
+  const agent = new CommanderAgentClient({
+    gatewayHost: '127.0.0.1',
+    gatewayPort: address.port,
+    identity,
+    secret,
+    capabilities,
+    logger: silentLogger,
+    reconnectBaseMs: 100,
+    reconnectMaxMs: 200,
+    reconnectJitterRatio: 0,
+    operationHandler: async (request) => ({
+      ...protocolEnvelope(),
+      requestId: request.requestId,
+      deviceId: request.deviceId,
+      operation: request.operation,
+      ok: true,
+      completedAt: new Date().toISOString(),
+      data: { healthy: true },
+    }),
+  });
+  t.after(async () => { await agent.stop(); await gateway.stop(); });
+
+  const registered = waitForEvent(agent, 'registered');
+  agent.start();
+  await registered;
+  await waitForState(agent, 'online');
+
+  await gateway.request({
+    ...protocolEnvelope(),
+    requestId: 'req-global-activity',
+    deviceId: identity.deviceId,
+    operation: 'device.health',
+    params: {},
+  });
+  assert.equal(activity.length, 1);
+  assert.equal(activity[0].requestId, 'req-global-activity');
+  assert.equal(activity[0].deviceId, identity.deviceId);
+  assert.equal(activity[0].operation, 'device.health');
+  assert.equal(activity[0].ok, true);
+  assert.equal(activity[0].source, 'gateway');
+
+  await gateway.request({
+    ...protocolEnvelope(),
+    requestId: 'miniapp-silent-health',
+    deviceId: identity.deviceId,
+    operation: 'device.health',
+    params: {},
+  });
+  assert.equal(activity.length, 1);
+});
