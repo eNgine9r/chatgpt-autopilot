@@ -102,14 +102,19 @@ export class CommanderGatewayServer extends EventEmitter {
 
   #recordActivity(entry) {
     if (!this.activityRecorder) return;
-    Promise.resolve(this.activityRecorder(entry)).catch((error) => {
+    const report = (error) => {
       log(this.logger, 'warn', 'commander_activity_record_failed', {
         deviceId: entry?.deviceId,
         requestId: entry?.requestId,
         operation: entry?.operation,
         error: String(error?.message || error),
       });
-    });
+    };
+    try {
+      Promise.resolve(this.activityRecorder(entry)).catch(report);
+    } catch (error) {
+      report(error);
+    }
   }
 
   #shouldRecordActivity(request) {
