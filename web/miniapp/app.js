@@ -91,11 +91,11 @@ const operationNames = {
   'service.status': 'Стан сервісу',
   'service.restart': 'Перезапуск сервісу',
   'process.list': 'Список процесів',
-  'git.status': 'Стан Git',
-  'git.diff': 'Зміни Git',
+  'git.status': 'Стан репозиторію Git',
+  'git.diff': 'Зміни в Git',
   'git.log': 'Історія Git',
-  'git.commit': 'Git commit',
-  'git.push': 'Git push',
+  'git.commit': 'Створення Git-коміту',
+  'git.push': 'Публікація змін Git',
 };
 
 function pill(label, tone = '') {
@@ -275,7 +275,7 @@ function renderCommander(data) {
       <div>
         <span class="section-kicker">COMMANDER</span>
         <h2>Віддалене керування</h2>
-        <p>Приватний контур керування Raspberry Pi через Міст GitHub та Commander Gateway.</p>
+        <p>Приватний контур керування Raspberry Pi через міст GitHub та шлюз Commander.</p>
       </div>
       ${pill(stateLabel, stateTone)}
       <div class="hero-metrics">
@@ -297,13 +297,13 @@ function renderCommander(data) {
           ${securityRow('Заборона нових привілеїв (NoNewPrivs)', security.noNewPrivs === true, 'Процеси не можуть отримати нові привілеї')}
           ${securityRow('Лише власник', security.ownerOnly === true, 'Команди приймаються через авторизований GitHub-контур')}
           ${securityRow('ADMIN вимкнено', security.adminOperations === false, 'Системні адміністративні операції не публікуються')}
-          ${securityRow('Root-shell відсутній', security.rootShell === false, 'Термінал працює як непривілейований користувач')}
+          ${securityRow('Привілейована root-оболонка відсутня', security.rootShell === false, 'Термінал працює як непривілейований користувач')}
         </div>
       </article>
       <article class="section-card">
         <div class="section-head compact"><div><span class="section-kicker">КАНАЛ КЕРУВАННЯ</span><h2>Маршрут команди</h2></div></div>
         <div class="control-path">
-          <span>ChatGPT Plus</span><b>↓</b><span>GitHub</span><b>↓</b><span>Commander Bridge</span><b>↓</b><span>Gateway → Agents</span>
+          <span>ChatGPT Plus</span><b>↓</b><span>GitHub</span><b>↓</b><span>Міст Commander</span><b>↓</b><span>Шлюз → Агенти</span>
         </div>
         <div class="inline-state">${pill(transport.active ? 'Міст активний' : 'Міст недоступний', transport.active ? 'ok' : 'bad')}</div>
       </article>
@@ -378,13 +378,13 @@ function renderAutopilot(data) {
 
 function serviceLabel(key) {
   return ({
-    commanderGateway: 'Commander Gateway',
+    commanderGateway: 'Шлюз Commander',
     commanderBridge: 'Commander Міст GitHub',
     autopilot: 'Автопілот v3',
-    miniapp: 'Telegram Mini App',
-    telegram: 'Telegram Bridge',
+    miniapp: 'Міні-додаток Telegram',
+    telegram: 'Міст Telegram',
     legacyRdc: 'Remote Desktop Commander',
-    secureTunnel: 'Secure MCP Tunnel',
+    secureTunnel: 'Захищений MCP-тунель',
   })[key] || key;
 }
 
