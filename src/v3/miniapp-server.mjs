@@ -195,6 +195,10 @@ async function readCommander(commanderClient, activityFile, services) {
   }
 }
 
+function serviceCompatibleOnline(service) {
+  return !service || service.activeState === 'active' || service.activeState === 'unknown';
+}
+
 function systemAlerts({ commander, autopilot, services }) {
   let count = 0;
   count += Math.max(0, commander.totalDevices - commander.onlineDevices);
@@ -240,13 +244,13 @@ export function createMiniAppServer({
     ]);
     const projects = states.map((state) => normalizeProject(config, state));
     const autopilot = {
-      infrastructureOnline: services.autopilot?.activeState === 'active' && Boolean(controlHealth),
+      infrastructureOnline: serviceCompatibleOnline(services.autopilot) && Boolean(controlHealth),
       automationState: automationState(projects),
       projects,
       aiCalls: 0,
       githubWebhook: { online: controlHealth?.githubWebhook === true },
       telegramBridge: {
-        online: services.telegram?.activeState === 'active' && telegramOnline,
+        online: serviceCompatibleOnline(services.telegram) && telegramOnline,
       },
     };
     const commander = await readCommander(commanderClient, commanderActivityFile, services);
