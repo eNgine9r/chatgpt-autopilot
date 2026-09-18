@@ -142,7 +142,7 @@ test('v3 Mini App allows retry only from blocked state', async () => {
   });
   try {
     const status = await (await fetch(`http://127.0.0.1:${f.port}/api/status`)).json();
-    assert.equal(status.projects[0].name, 'NexoLab');
+    assert.equal(status.projects[0].name, 'NEXOLAB');
     assert.equal(status.projects[0].canRetry, true);
     assert.equal(status.projects[0].lastError, 'test_failed');
 
