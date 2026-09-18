@@ -21,6 +21,6 @@ async function call(method, body) {
 
 await call("setChatMenuButton", {
   chat_id: owner,
-  menu_button: { type: "web_app", text: "Autopilot", web_app: { url } }
+  menu_button: { type: "web_app", text: "Центр керування", web_app: { url } }
 });
 console.log("Telegram Mini App menu button configured for the owner chat.");
