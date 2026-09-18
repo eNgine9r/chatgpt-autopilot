@@ -1,9 +1,9 @@
 export const TELEGRAM_TEST_MESSAGE = "✅ ChatGPT Autopilot: сповіщення Telegram працюють.";
 
 export const TELEGRAM_BOT_PROFILE_UK = Object.freeze({
-  name: "Autopilot — помічник розробки",
-  shortDescription: "Автоматично продовжує роботу в ChatGPT та сповіщає, коли потрібна ваша дія.",
-  description: "Autopilot працює у фоновому режимі на Raspberry Pi, продовжує вибрані ChatGPT Projects, контролює зависання та rollover. Через захищений Mini App власник може переглядати статуси, ставити проєкт на паузу, відновлювати та перезапускати Autopilot."
+  name: "Центр керування проєктами",
+  shortDescription: "Commander, Автопілот і стан Raspberry Pi в одному захищеному центрі керування.",
+  description: "Захищений Telegram-центр для власника: стан Commander і підключених Raspberry Pi, журнал останніх команд, Автопілот та його проєкти, системні сервіси й сповіщення. Керування ізольоване від торгових і апаратних дій."
 });
 
 export function telegramEventMessage(project, event) {
