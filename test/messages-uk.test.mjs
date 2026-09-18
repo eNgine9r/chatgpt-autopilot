@@ -19,9 +19,9 @@ test("Ukrainian bot profile fits Telegram limits", () => {
   assert.ok(TELEGRAM_BOT_PROFILE_UK.name.length <= 64);
   assert.ok(TELEGRAM_BOT_PROFILE_UK.shortDescription.length <= 120);
   assert.ok(TELEGRAM_BOT_PROFILE_UK.description.length <= 512);
-  assert.match(TELEGRAM_BOT_PROFILE_UK.shortDescription, /потрібна ваша дія/);
-  assert.match(TELEGRAM_BOT_PROFILE_UK.description, /захищений Mini App/);
-  assert.match(TELEGRAM_BOT_PROFILE_UK.description, /Autopilot/);
+  assert.match(TELEGRAM_BOT_PROFILE_UK.shortDescription, /Commander/);
+  assert.match(TELEGRAM_BOT_PROFILE_UK.description, /Telegram-центр/);
+  assert.match(TELEGRAM_BOT_PROFILE_UK.description, /Автопілот/);
 });
 
 test("all supported notification events have Ukrainian user-facing text", () => {
