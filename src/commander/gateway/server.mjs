@@ -119,7 +119,7 @@ export class CommanderGatewayServer extends EventEmitter {
 
   #shouldRecordActivity(request) {
     if (String(request.requestId || '').startsWith('miniapp-')) return false;
-    if (String(request.requestId || '').startsWith('github-') && String(request.operation || '').startsWith('execution.')) return false;
+    if (['execution.input', 'execution.get', 'execution.output'].includes(String(request.operation || ''))) return false;
     return true;
   }
 
