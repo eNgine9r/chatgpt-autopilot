@@ -1,8 +1,7 @@
 [Unit]
-Description=ChatGPT Autopilot v3 Telegram Mini App
-After=network-online.target chatgpt-autopilot-v3.service chatgpt-autopilot-v3-telegram.service
+Description=Project Control Telegram Mini App
+After=network-online.target
 Wants=network-online.target
-Requires=chatgpt-autopilot-v3.service
 
 [Service]
 Type=simple

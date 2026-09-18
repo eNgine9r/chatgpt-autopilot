@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#090d13">
-  <title>Autopilot v3 — центр керування</title>
+  <meta name="theme-color" content="#081019">
+  <title>Центр керування проєктами</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -12,17 +12,67 @@
   <main class="app-shell">
     <header class="app-header">
       <div class="brand-block">
-        <span class="eyebrow">AUTOPILOT V3</span>
-        <h1>Центр керування</h1>
-        <p id="updated" class="updated">Завантаження…</p>
+        <span class="eyebrow">ЦЕНТР КЕРУВАННЯ</span>
+        <h1>Керування проєктами</h1>
+        <div class="header-meta">
+          <p id="updated" class="updated">Завантаження…</p>
+          <span id="global-state" class="mini-status">Перевірка системи</span>
+        </div>
       </div>
-      <button id="refresh" class="icon-button" type="button" aria-label="Оновити статус">↻</button>
+      <button id="refresh" class="icon-button" type="button" aria-label="Оновити дані">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-4M4 4v5h5M4 13a8 8 0 0 0 14.9 4M20 20v-5h-5"/></svg>
+      </button>
     </header>
-    <section id="overview" class="overview-grid" aria-label="Огляд v3"></section>
-    <section id="services" class="ai-card" aria-label="Інфраструктура v3"></section>
-    <section id="projects" class="projects" aria-live="polite"></section>
+
+    <section id="view-overview" class="view active" data-view="overview" aria-label="Огляд">
+      <div id="overview-metrics" class="overview-grid"></div>
+      <div id="overview-modules" class="module-grid"></div>
+      <section class="section-block">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">ОСТАННІ ДІЇ</span>
+            <h2>Активність Commander</h2>
+          </div>
+          <button class="text-button" type="button" data-open-view="commander">Усі дії</button>
+        </div>
+        <div id="overview-activity" class="activity-list compact"></div>
+      </section>
+    </section>
+
+    <section id="view-commander" class="view" data-view="commander" aria-label="Commander">
+      <div id="commander-content"></div>
+    </section>
+
+    <section id="view-autopilot" class="view" data-view="autopilot" aria-label="Автопілот">
+      <div id="autopilot-content"></div>
+    </section>
+
+    <section id="view-system" class="view" data-view="system" aria-label="Система">
+      <div id="system-content"></div>
+    </section>
+
     <p id="message" class="toast" role="status" aria-live="polite"></p>
   </main>
+
+  <nav class="bottom-nav" aria-label="Основна навігація">
+    <button class="nav-button active" type="button" data-view-target="overview" aria-label="Огляд">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+      <span>Огляд</span>
+    </button>
+    <button class="nav-button" type="button" data-view-target="commander" aria-label="Commander">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13.5 7l-3 10"/></svg>
+      <span>Commander</span>
+    </button>
+    <button class="nav-button" type="button" data-view-target="autopilot" aria-label="Автопілот">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M18 12h3M7.7 16.3l-2.1 2.1M12 18v3M16.3 16.3l2.1 2.1M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg>
+      <span>Автопілот</span>
+    </button>
+    <button class="nav-button" type="button" data-view-target="system" aria-label="Система">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 12l-2-1 2-4 2 .5 1.5-1.5L7 4l4-2 1 2h2l1-2 4 2-.5 2 1.5 1.5 2-.5 2 4-2 1v2l2 1-2 4-2-.5-1.5 1.5.5 2-4 2-1-2h-2l-1 2-4-2 .5-2L6 18.5 4 19l-2-4 2-1Z"/></svg>
+      <span>Система</span>
+    </button>
+  </nav>
+
   <script src="./app.js"></script>
 </body>
 </html>
