@@ -239,7 +239,7 @@ function deviceCard(device) {
       ${capabilityTile('Сервіси', caps.services)}
       ${capabilityTile('Git', caps.git)}
     </div>
-    <div class="device-foot">Останній heartbeat: <strong>${esc(ago(device.lastHeartbeatAt))}</strong></div>
+    <div class="device-foot">Останній сигнал: <strong>${esc(ago(device.lastHeartbeatAt))}</strong></div>
   </article>`;
 }
 
@@ -269,12 +269,12 @@ function renderCommander(data) {
       <div>
         <span class="section-kicker">COMMANDER</span>
         <h2>Віддалене керування</h2>
-        <p>Приватний контур керування Raspberry Pi через GitHub Bridge та Commander Gateway.</p>
+        <p>Приватний контур керування Raspberry Pi через Міст GitHub та Commander Gateway.</p>
       </div>
       ${pill(stateLabel, stateTone)}
       <div class="hero-metrics">
         <div><strong>${esc(commander.onlineDevices || 0)}/${esc(commander.totalDevices || 0)}</strong><span>пристроїв онлайн</span></div>
-        <div><strong>${esc(transport.name || 'GitHub Bridge')}</strong><span>транспорт</span></div>
+        <div><strong>${esc(transport.name || 'Міст GitHub')}</strong><span>транспорт</span></div>
         <div><strong>${esc(transport.pollSeconds || 3)} с</strong><span>опитування</span></div>
       </div>
     </section>
@@ -288,7 +288,7 @@ function renderCommander(data) {
       <article class="section-card">
         <div class="section-head compact"><div><span class="section-kicker">БЕЗПЕКА</span><h2>Політика Commander</h2></div></div>
         <div class="security-list">
-          ${securityRow('NoNewPrivs', security.noNewPrivs === true, 'Процеси не можуть отримати нові привілеї')}
+          ${securityRow('Заборона нових привілеїв (NoNewPrivs)', security.noNewPrivs === true, 'Процеси не можуть отримати нові привілеї')}
           ${securityRow('Лише власник', security.ownerOnly === true, 'Команди приймаються через авторизований GitHub-контур')}
           ${securityRow('ADMIN вимкнено', security.adminOperations === false, 'Системні адміністративні операції не публікуються')}
           ${securityRow('Root-shell відсутній', security.rootShell === false, 'Термінал працює як непривілейований користувач')}
@@ -299,7 +299,7 @@ function renderCommander(data) {
         <div class="control-path">
           <span>ChatGPT Plus</span><b>↓</b><span>GitHub</span><b>↓</b><span>Commander Bridge</span><b>↓</b><span>Gateway → Agents</span>
         </div>
-        <div class="inline-state">${pill(transport.active ? 'Bridge активний' : 'Bridge недоступний', transport.active ? 'ok' : 'bad')}</div>
+        <div class="inline-state">${pill(transport.active ? 'Міст активний' : 'Міст недоступний', transport.active ? 'ok' : 'bad')}</div>
       </article>
     </section>
 
@@ -321,7 +321,7 @@ function autopilotProjectCard(project) {
     : '';
   return `<article class="project-card">
     <div class="card-head">
-      <div><h3>${esc(project.name)}</h3><span>Autopilot v3 · ${esc(project.id)}</span></div>
+      <div><h3>${esc(project.name)}</h3><span>Автопілот v3 · ${esc(project.id)}</span></div>
       ${pill(label, tone)}
     </div>
     <div class="task-box">
@@ -373,8 +373,8 @@ function renderAutopilot(data) {
 function serviceLabel(key) {
   return ({
     commanderGateway: 'Commander Gateway',
-    commanderBridge: 'Commander GitHub Bridge',
-    autopilot: 'Autopilot v3',
+    commanderBridge: 'Commander Міст GitHub',
+    autopilot: 'Автопілот v3',
     miniapp: 'Telegram Mini App',
     telegram: 'Telegram Bridge',
     legacyRdc: 'Remote Desktop Commander',
@@ -424,7 +424,7 @@ function renderSystem(data) {
     <section class="split-grid system-facts">
       <article class="fact-card"><span>Commander</span><strong>${esc(commander.state || 'offline')}</strong><small>${esc(commander.onlineDevices || 0)}/${esc(commander.totalDevices || 0)} пристроїв</small></article>
       <article class="fact-card"><span>Автопілот</span><strong>${esc((automationStatus[autopilot.automationState] || [autopilot.automationState || '—'])[0])}</strong><small>Виклики ШІ: ${esc(autopilot.aiCalls || 0)}</small></article>
-      <article class="fact-card"><span>Версія центру</span><strong>v${esc(data.version || '—')}</strong><small>режим project-control</small></article>
+      <article class="fact-card"><span>Версія центру</span><strong>v${esc(data.version || '—')}</strong><small>режим керування проєктами</small></article>
       <article class="fact-card"><span>Оновлено</span><strong>${new Date(data.generatedAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}</strong><small>автооновлення 15 с</small></article>
     </section>`;
 }
@@ -450,7 +450,7 @@ function applyView(view) {
   sessionStorage.setItem('project-control-view', currentView);
   document.querySelectorAll('.view').forEach((node) => node.classList.toggle('active', node.dataset.view === currentView));
   document.querySelectorAll('.nav-button').forEach((button) => button.classList.toggle('active', button.dataset.viewTarget === currentView));
-  window.scrollTo({ top: 0, behavior: 'instant' });
+  window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 function showMessage(text, tone = '') {
