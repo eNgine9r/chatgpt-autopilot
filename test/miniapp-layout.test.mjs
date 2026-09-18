@@ -34,7 +34,7 @@ test('Mini App exposes separated Commander Autopilot and System information', ()
   assert.match(app, /Автоматизація проєктів/);
   assert.match(app, /Інфраструктура/);
   assert.match(app, /NoNewPrivs/);
-  assert.match(app, /Міст GitHub/);
+  assert.match(app, /Міст Commander/);
   assert.match(app, /Remote Desktop Commander/);
   assert.match(app, /Виклики ШІ/);
   assert.doesNotMatch(app, /\bRetry\b/);
