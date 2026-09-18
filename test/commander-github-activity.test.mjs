@@ -7,7 +7,7 @@ import {
   COMMANDER_ACTIVITY_LIMIT,
   readCommanderActivity,
   writeCommanderActivity,
-} from '../src/integrations/github/commander/activity-store.mjs';
+} from '../src/commander/activity-store.mjs';
 
 test('Commander activity store is atomic bounded and newest-first', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'commander-activity-'));
@@ -56,4 +56,42 @@ test('Commander activity store replaces duplicate issue entries and rejects malf
     writeCommanderActivity(file, { ...base, deviceId: '../unsafe' }),
     /invalid_commander_activity_entry/,
   );
+});
+
+
+test('Commander activity store migrates v1 GitHub entries and accepts Gateway events', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'commander-activity-v2-'));
+  const file = path.join(root, 'activity.json');
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+
+  await fs.writeFile(file, JSON.stringify({
+    version: 1,
+    items: [{
+      issueNumber: 42,
+      deviceId: 'btc-radar',
+      operation: 'device.health',
+      ok: true,
+      completedAt: '2026-09-18T10:00:00.000Z'
+    }]
+  }));
+
+  await writeCommanderActivity(file, {
+    eventId: 'gateway-req-551',
+    requestId: 'req-551',
+    deviceId: 'nexolab-edge-01',
+    operation: 'git.status',
+    ok: true,
+    completedAt: '2026-09-18T10:01:00.000Z',
+    source: 'gateway'
+  });
+
+  const raw = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.equal(raw.version, 2);
+  const items = await readCommanderActivity(file, 10);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].deviceId, 'nexolab-edge-01');
+  assert.equal(items[0].source, 'gateway');
+  assert.equal(items[0].requestId, 'req-551');
+  assert.equal(items[1].issueNumber, 42);
+  assert.equal(items[1].source, 'github');
 });
