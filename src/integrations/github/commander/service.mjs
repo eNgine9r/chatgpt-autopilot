@@ -39,6 +39,8 @@ function activityEntry(issue, payload) {
   try { task = JSON.parse(String(issue?.body || '{}')); } catch {}
   return {
     issueNumber: issue?.number,
+    eventId: `github-${issue?.number}`,
+    source: 'github',
     deviceId: String(task.deviceId || payload?.deviceId || ''),
     operation: String(task.operation || payload?.operation || payload?.workflow || ''),
     ok: payload?.ok === true,
@@ -49,6 +51,9 @@ function activityEntry(issue, payload) {
 }
 
 async function recordActivity(config, issue, payload, logger) {
+  let task = {};
+  try { task = JSON.parse(String(issue?.body || '{}')); } catch {}
+  if (!(task.operation === 'terminal.exec' || String(task.operation || '').startsWith('execution.'))) return;
   try {
     await writeCommanderActivity(config.activityFile, activityEntry(issue, payload));
   } catch (error) {
