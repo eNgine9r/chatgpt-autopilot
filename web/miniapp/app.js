@@ -130,6 +130,12 @@ function moduleCard({ kicker, title, statusLabel, statusTone, body, footer, targ
   </article>`;
 }
 
+function friendlyDevice(id) {
+  if (id === 'btc-radar') return 'BTC Radar';
+  if (id === 'nexolab-edge-01') return 'NEXOLAB';
+  return id || '—';
+}
+
 function activityItem(item) {
   const ok = item.ok === true;
   return `<article class="activity-item">
@@ -140,7 +146,7 @@ function activityItem(item) {
         <span>${esc(ago(Date.parse(item.completedAt)))}</span>
       </div>
       <div class="activity-meta">
-        <span>${esc(item.deviceId || '—')}</span>
+        <span>${esc(friendlyDevice(item.deviceId))}</span>
         <span>GitHub #${esc(item.issueNumber || '—')}</span>
         ${Number.isInteger(item.exitCode) ? `<span>код ${esc(item.exitCode)}</span>` : ''}
       </div>
@@ -384,15 +390,18 @@ function serviceLabel(key) {
 
 function serviceRow(key, service) {
   const active = service?.activeState === 'active';
+  const unknown = !service || service.activeState === 'unknown';
+  const missing = service?.loadState === 'not-found';
   const legacy = ['legacyRdc', 'secureTunnel'].includes(key);
-  const desired = legacy ? !active : active;
+  const desired = legacy ? (!active && !unknown) : active;
   const value = legacy
-    ? (active ? 'Активний' : 'Вимкнено')
-    : (active ? 'Працює' : service?.activeState === 'unknown' ? 'Невідомо' : 'Не працює');
+    ? (missing ? 'Не встановлено' : active ? 'Активний' : unknown ? 'Невідомо' : 'Вимкнено')
+    : (active ? 'Працює' : unknown ? 'Невідомо' : 'Не працює');
+  const tone = desired ? 'ok' : unknown ? 'warn' : active ? 'warn' : 'bad';
   return `<div class="service-row">
-    <span class="service-led ${desired ? 'ok' : active ? 'warn' : 'bad'}"></span>
+    <span class="service-led ${tone}"></span>
     <div><strong>${esc(serviceLabel(key))}</strong><span>${esc(service?.unit || '')}</span></div>
-    <span class="service-value ${desired ? 'ok' : 'bad'}">${esc(value)}</span>
+    <span class="service-value ${tone}">${esc(value)}</span>
   </div>`;
 }
 
@@ -422,7 +431,7 @@ function renderSystem(data) {
       <div class="service-list">${legacyKeys.map((key) => serviceRow(key, services[key])).join('')}</div>
     </section>
     <section class="split-grid system-facts">
-      <article class="fact-card"><span>Commander</span><strong>${esc(commander.state || 'offline')}</strong><small>${esc(commander.onlineDevices || 0)}/${esc(commander.totalDevices || 0)} пристроїв</small></article>
+      <article class="fact-card"><span>Commander</span><strong>${esc((commanderStatus[commander.state] || ['Невідомо'])[0])}</strong><small>${esc(commander.onlineDevices || 0)}/${esc(commander.totalDevices || 0)} пристроїв</small></article>
       <article class="fact-card"><span>Автопілот</span><strong>${esc((automationStatus[autopilot.automationState] || [autopilot.automationState || '—'])[0])}</strong><small>Виклики ШІ: ${esc(autopilot.aiCalls || 0)}</small></article>
       <article class="fact-card"><span>Версія центру</span><strong>v${esc(data.version || '—')}</strong><small>режим керування проєктами</small></article>
       <article class="fact-card"><span>Оновлено</span><strong>${new Date(data.generatedAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}</strong><small>автооновлення 15 с</small></article>
