@@ -98,7 +98,25 @@ test('GitHub bridge rechecks the live advertised capability before forwarding', 
   await assert.rejects(() => executeCommanderGithubTask({
     issue: issue({ version: 1, deviceId: 'btc-radar', operation: 'device.health', params: {} }),
     config: config(), client: offlineClient,
-  }), /github_bridge_operation_not_advertised/);
+  }), /github_bridge_device_offline/);
+});
+
+test('GitHub bridge reports offline devices as retryable transport failures', async () => {
+  const failure = githubBridgeFailure(321, new Error('github_bridge_device_offline'));
+  assert.equal(failure.ok, false);
+  assert.equal(failure.error.category, 'transport');
+  assert.equal(failure.error.code, 'GITHUB_BRIDGE_DEVICE_OFFLINE');
+  assert.equal(failure.error.retryable, true);
+
+  const taskIssue = issue({ version: 1, deviceId: 'btc-radar', operation: 'device.health', params: {} });
+  const github = {
+    listOpenTasks: async () => [taskIssue],
+    addComment: async () => assert.fail('offline retry must not comment terminal result'),
+    closeIssue: async () => assert.fail('offline retry must not close issue'),
+  };
+  const client = { getDevice: async () => ({ status: 'offline', device: snapshot('device.health').device }) };
+  const outcome = await runGithubBridgeCycle({ config: config(), github, client, logger: { info() {}, warn() {} } });
+  assert.deepEqual(outcome, { seen: 1, completed: 0 });
 });
 
 test('GitHub bridge cycle comments and closes a completed issue', async () => {
