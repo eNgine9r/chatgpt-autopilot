@@ -50,9 +50,11 @@ function taskRequestId(issueNumber, body) {
   return `github-${issueNumber}-${digest}`;
 }
 
-function capabilityEnabled(snapshot, operation) {
-  return snapshot?.status === 'online'
-    && snapshot?.device?.capabilities?.some((item) => item.operation === operation);
+function assertCapabilityEnabled(snapshot, operation) {
+  if (snapshot?.status !== 'online') throw new Error('github_bridge_device_offline');
+  if (!snapshot?.device?.capabilities?.some((item) => item.operation === operation)) {
+    throw new Error('github_bridge_operation_not_advertised');
+  }
 }
 
 function bridgeOperationDefinition(operation) {
@@ -175,7 +177,7 @@ async function executeTerminalWorkflow(task, client) {
   const deadlineMs = Date.now() + task.timeoutMs;
   const snapshot = await client.getDevice(task.deviceId, { timeoutMs: Math.min(task.timeoutMs, 10_000) });
   for (const operation of TERMINAL_REQUIRED_OPERATIONS) {
-    if (!capabilityEnabled(snapshot, operation)) throw new Error('github_bridge_operation_not_advertised');
+    assertCapabilityEnabled(snapshot, operation);
   }
 
   const start = await workflowCommanderRequest(client, workflowRequest(
@@ -240,7 +242,7 @@ export async function executeCommanderGithubTask({ issue, config, client }) {
   const task = parseCommanderGithubTask(issue, config);
   if (task.operation === TERMINAL_EXEC_OPERATION) return executeTerminalWorkflow(task, client);
   const snapshot = await client.getDevice(task.deviceId, { timeoutMs: Math.min(task.timeoutMs, 10_000) });
-  if (!capabilityEnabled(snapshot, task.operation)) throw new Error('github_bridge_operation_not_advertised');
+  assertCapabilityEnabled(snapshot, task.operation);
   const request = commanderRequestFromGithubTask(task);
   return validateOperationResult(await client.request(request, { timeoutMs: task.timeoutMs }));
 }
@@ -252,6 +254,9 @@ function safeBridgeError(error) {
   const code = String(error?.code || error?.message || '');
   if (['control_request_timeout', 'control_connection_closed'].includes(code)) {
     return commanderError({ category: 'transport', code: 'GITHUB_BRIDGE_COMMANDER_UNAVAILABLE', message: 'Commander is temporarily unavailable', retryable: true });
+  }
+  if (code === 'github_bridge_device_offline') {
+    return commanderError({ category: 'transport', code: 'GITHUB_BRIDGE_DEVICE_OFFLINE', message: 'Commander device is offline', retryable: true });
   }
   const normalizedCode = code
     .toUpperCase()
