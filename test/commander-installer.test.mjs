@@ -42,6 +42,8 @@ test('Commander installer stages hardened disabled user units only', async () =>
   const pairingUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-pairing-operator.service'), 'utf8');
   const remoteMcpUnit = await fs.readFile(path.join(unitDir, 'chatgpt-autopilot-commander-remote-mcp.service'), 'utf8');
   assert.match(agentUnit, /ReadWritePaths=%h\/commander-workspaces/);
+  assert.match(agentUnit, /MemoryMax=512M/);
+  assert.match(agentUnit, /TasksMax=128/);
   const workspaceDir = path.join(root, 'commander-workspaces');
   assert.equal((await fs.stat(workspaceDir)).mode & 0o077, 0);
   for (const unit of [agentUnit, gatewayUnit, pairingUnit, remoteMcpUnit]) {
@@ -49,9 +51,11 @@ test('Commander installer stages hardened disabled user units only', async () =>
     assert.match(unit, /ProtectSystem=strict/);
     assert.match(unit, /ProtectHome=read-only/);
     assert.match(unit, /UMask=0077/);
+    assert.doesNotMatch(unit, /sudo/);
+  }
+  for (const unit of [gatewayUnit, pairingUnit, remoteMcpUnit]) {
     assert.match(unit, /MemoryMax=192M/);
     assert.match(unit, /TasksMax=32/);
-    assert.doesNotMatch(unit, /sudo/);
   }
   const agentEnv = await fs.readFile(path.join(configHome, 'chatgpt-autopilot-commander/agent.env'), 'utf8');
   assert.match(gatewayUnit, /RuntimeDirectory=chatgpt-autopilot-commander/);
@@ -99,7 +103,6 @@ test('Commander installer stages hardened disabled user units only', async () =>
   assert.match(script, /DBUS_SESSION_BUS_ADDRESS=.*unix:path/);
   assert.doesNotMatch(script, /systemctl\s+--user\s+(?:enable|start|restart)/);
 });
-
 
 test('Commander installer accepts explicit absolute Node binary for non-login shells', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'commander-node-override-'));
