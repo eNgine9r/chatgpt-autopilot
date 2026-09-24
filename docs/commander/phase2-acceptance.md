@@ -32,8 +32,10 @@ Measured after stabilization on the `btc-radar` Raspberry Pi:
 | Gateway | 54,720 KiB | 0.000% |
 | Agent | 52,112 KiB | 0.500% |
 
-The staged systemd units independently cap each process at `MemoryMax=192M` and `TasksMax=32` with `UMask=0077`, `NoNewPrivileges=true`, `ProtectSystem=strict` and no automatic enable/start.
+The original Phase 2 acceptance used `MemoryMax=192M` and `TasksMax=32` for every staged Commander unit. The Gateway, pairing operator and remote MCP units retain those limits.
+
+The Commander Agent later became the execution boundary for bounded AI CLI workloads such as OpenCode. Live Omarchy evidence showed OpenCode aborting at the Agent's `TasksMax=32` while `memory.events` reported no OOM. The Agent template therefore uses `MemoryMax=512M` and `TasksMax=128`, while preserving `UMask=0077`, `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=read-only` and the existing write allowlists. This is resource headroom only; it does not widen Commander capabilities or filesystem/network authority.
 
 ## Production status
 
-`COMMANDER_ENABLED` remains `false` by default. No Commander Agent/Gateway is running as a production service. Remote Desktop Commander and the existing Autopilot v3 restricted SSH path remain unchanged.
+`COMMANDER_ENABLED` remains `false` by default for fresh staging. Installing templates does not automatically enable or start Commander services. Production activation remains an explicit operator action.
