@@ -55,13 +55,14 @@ async function sendWebResponse(res, response) {
 }
 
 export class CommanderRemoteMcpHttpServer {
-  constructor({ host = '127.0.0.1', port = 0, deviceId, multiDevice = false, client, verifyAuthorization, logger = console } = {}) {
+  constructor({ host = '127.0.0.1', port = 0, deviceId, multiDevice = false, client, verifyAuthorization, verifyPeer, logger = console } = {}) {
     if (!multiDevice && !DEVICE_ID.test(String(deviceId || ''))) throw new Error('remote_mcp_device_id_required');
     if (!client || typeof client.getDevice !== 'function' || typeof client.request !== 'function') throw new Error('remote_mcp_public_client_required');
     if (multiDevice && typeof client.listDevices !== 'function') throw new Error('remote_mcp_public_client_list_required');
     if (typeof verifyAuthorization !== 'function') throw new Error('remote_mcp_auth_verifier_required');
+    if (verifyPeer !== undefined && typeof verifyPeer !== 'function') throw new Error('remote_mcp_peer_verifier_invalid');
     this.host = host; this.port = Number(port); this.deviceId = deviceId; this.multiDevice = multiDevice === true; this.client = client;
-    this.verifyAuthorization = verifyAuthorization; this.logger = logger; this.server = null;
+    this.verifyAuthorization = verifyAuthorization; this.verifyPeer = verifyPeer; this.logger = logger; this.server = null;
     this.mcpHandler = createMcpHandler(async () => {
       if (this.multiDevice) {
         const listed = await this.client.listDevices();
@@ -100,7 +101,11 @@ export class CommanderRemoteMcpHttpServer {
     const url = new URL(req.url || '/', `http://${this.host}`);
     if (req.method === 'GET' && url.pathname === '/healthz') return sendJson(res, 200, { ok: true });
     if (url.pathname !== '/mcp') return sendJson(res, 404, { error: 'not_found' });
-    if (!this.verifyAuthorization(req.headers.authorization)) {
+    let peerAuthorized = false;
+    if (this.verifyPeer) {
+      try { peerAuthorized = this.verifyPeer(req.socket?.remoteAddress) === true; } catch { peerAuthorized = false; }
+    }
+    if (!peerAuthorized && !this.verifyAuthorization(req.headers.authorization)) {
       req.resume();
       return sendJson(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer realm="Commander MCP"' });
     }
