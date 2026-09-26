@@ -3,7 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { commanderEnabled, commanderPort, resolveCommanderGatewayBindHost } from '../../../commander/config.mjs';
 import { commanderPublicClientFromEnv } from '../../../commander/client/index.mjs';
 import { CommanderRemoteMcpHttpServer } from './remote-http.mjs';
-import { commanderRemoteMcpBearerVerifier, loadCommanderRemoteMcpBearerToken } from './remote-auth.mjs';
+import {
+  commanderRemoteMcpBearerVerifier,
+  commanderRemoteMcpTailscalePeerVerifier,
+  loadCommanderRemoteMcpBearerToken,
+} from './remote-auth.mjs';
 
 const DEVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -24,6 +28,9 @@ export async function runCommanderRemoteMcpService(env = process.env) {
   const token = await loadCommanderRemoteMcpBearerToken(tokenFile);
   const privateBindEnabled = commanderEnabled(env.COMMANDER_REMOTE_MCP_PRIVATE_BIND_ENABLED);
   const host = resolveCommanderRemoteMcpBindHost(env.COMMANDER_REMOTE_MCP_HOST || '127.0.0.1', { privateBindEnabled });
+  const peerIp = String(env.COMMANDER_REMOTE_MCP_TAILSCALE_PEER_IP || '').trim();
+  if (peerIp && !privateBindEnabled) throw new Error('remote_mcp_tailscale_peer_requires_private_bind');
+  const verifyPeer = peerIp ? commanderRemoteMcpTailscalePeerVerifier(peerIp) : undefined;
   const server = new CommanderRemoteMcpHttpServer({
     host,
     port: commanderPort(env.COMMANDER_REMOTE_MCP_PORT, 8792),
@@ -31,9 +38,15 @@ export async function runCommanderRemoteMcpService(env = process.env) {
     multiDevice,
     client: commanderPublicClientFromEnv(env),
     verifyAuthorization: commanderRemoteMcpBearerVerifier(token),
+    verifyPeer,
   });
   await server.start();
-  console.info(JSON.stringify({ event: 'commander_remote_mcp_started', address: server.server.address(), deviceId: multiDevice ? 'multi' : deviceId }));
+  console.info(JSON.stringify({
+    event: 'commander_remote_mcp_started',
+    address: server.server.address(),
+    deviceId: multiDevice ? 'multi' : deviceId,
+    peerAuth: Boolean(peerIp),
+  }));
   return server;
 }
 
