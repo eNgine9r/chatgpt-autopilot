@@ -2,6 +2,17 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+function normalizePeerIp(value) {
+  const raw = String(value || '').trim();
+  return raw.startsWith('::ffff:') ? raw.slice(7) : raw;
+}
+
+function isTailscaleIpv4(value) {
+  const parts = normalizePeerIp(value).split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  return parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+}
+
 export async function loadCommanderRemoteMcpBearerToken(filePath) {
   if (!path.isAbsolute(String(filePath || ''))) throw new Error('remote_mcp_token_file_must_be_absolute');
   const stat = await fs.stat(filePath);
@@ -22,4 +33,10 @@ export function commanderRemoteMcpBearerVerifier(expectedToken) {
     const actual = Buffer.from(match[1]);
     return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
   };
+}
+
+export function commanderRemoteMcpTailscalePeerVerifier(expectedIp) {
+  const expected = normalizePeerIp(expectedIp);
+  if (!isTailscaleIpv4(expected)) throw new Error('invalid_remote_mcp_tailscale_peer_ip');
+  return (remoteAddress) => normalizePeerIp(remoteAddress) === expected;
 }
