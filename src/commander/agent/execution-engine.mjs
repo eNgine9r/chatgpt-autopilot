@@ -96,9 +96,18 @@ export class CommanderExecutionEngine extends EventEmitter {
     const command = this.policy.commands.get(alias);
     if (!command) return this.#result(request, { ok: false, error: commanderError({ category: 'policy', code: 'EXECUTION_ALIAS_DENIED', message: 'Execution alias is not allowlisted.', retryable: false }) });
     if (this.#activeCount() >= this.policy.maxConcurrent) return this.#result(request, { ok: false, error: commanderError({ category: 'conflict', code: 'EXECUTION_CONCURRENCY_LIMIT', message: 'Execution concurrency limit reached.', retryable: true }) });
+    // A request deadline bounds the start acknowledgment, not the lifetime of an
+    // already accepted, asynchronous execution. The fixed alias policy owns the
+    // process timeout; MCP callers poll execution.get / execution.output.
+    if (request.deadlineAt && Date.parse(request.deadlineAt) <= this.now()) {
+      return this.#result(request, { ok: false, error: commanderError({
+        category: 'timeout', code: 'EXECUTION_START_DEADLINE_EXPIRED',
+        message: 'Execution start request deadline has expired.', retryable: false,
+      }) });
+    }
     const executionId = `exec-${this.randomBytes(16).toString('hex')}`;
     const createdAt = nowIso(this.now);
-    const timeoutMs = Math.min(command.timeoutMs, request.deadlineAt ? Math.max(100, Date.parse(request.deadlineAt) - this.now()) : command.timeoutMs);
+    const timeoutMs = command.timeoutMs;
     const execution = validateExecution({
       ...protocolEnvelope(), executionId, requestId: request.requestId, deviceId: request.deviceId, operation: request.operation,
       state: 'queued', createdAt, updatedAt: createdAt, idempotencyKey: request.idempotencyKey,
