@@ -144,3 +144,39 @@ test('spawn boundary is shell-free and environment is sanitized', async () => {
   assert.equal(Object.hasOwn(captured.options.env, 'HOME'), false);
   await engine.shutdown();
 });
+
+test('request deadline bounds only the start request, not the accepted process lifetime', async (t) => {
+  const engine = new CommanderExecutionEngine({
+    deviceId: 'dev-exec',
+    policy: policy({ slow: cmd('setTimeout(()=>process.exit(0),250)', { timeoutMs: 2500 }) }),
+  });
+  t.after(() => engine.shutdown());
+  const request = {
+    ...req('short-ack-deadline', 'execution.start', { alias: 'slow' }, 'start-short-deadline'),
+    deadlineAt: new Date(Date.now() + 100).toISOString(),
+  };
+  const result = await engine.handle(request);
+  assert.equal(result.ok, true);
+  assert.equal(result.data.execution.limits.timeoutMs, 2500);
+  const terminal = await engine.waitForTerminal(result.data.execution.executionId, 4000);
+  assert.equal(terminal.state, 'success');
+});
+
+test('expired execution start request fails closed without spawning', async (t) => {
+  let spawned = false;
+  const engine = new CommanderExecutionEngine({
+    deviceId: 'dev-exec',
+    policy: policy({ probe: cmd("console.log('unused')") }),
+    spawnImpl: () => { spawned = true; throw new Error('must_not_spawn'); },
+  });
+  t.after(() => engine.shutdown());
+  const request = {
+    ...req('expired-ack-deadline', 'execution.start', { alias: 'probe' }, 'expired-start'),
+    deadlineAt: new Date(Date.now() - 1000).toISOString(),
+  };
+  const result = await engine.handle(request);
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'EXECUTION_START_DEADLINE_EXPIRED');
+  assert.equal(spawned, false);
+  assert.equal(engine.executions.size, 0);
+});
