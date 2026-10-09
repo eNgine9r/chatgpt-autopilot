@@ -1,0 +1,22 @@
+[Unit]
+Description=NEXUS bounded read-only load-spike evidence collector
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/lib/nexus-load-spike/collector.py --interval 15 --threshold 3.0 --state-dir %h/.local/state/nexus-load-spike
+Restart=on-failure
+RestartSec=15
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=5%
+MemoryMax=96M
+TasksMax=8
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/nexus-load-spike
+
+[Install]
+WantedBy=default.target
